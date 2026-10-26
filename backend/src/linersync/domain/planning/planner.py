@@ -54,11 +54,17 @@ class _Ops:
         self.items.append(op)
 
 
-def _metadata_differs(current: PlaylistSnapshot, draft: PlaylistDraft) -> bool:
-    meta = current.meta
-    if (meta.name, meta.description) != (draft.name, draft.description):
+def _metadata_differs(
+    current: PlaylistSnapshot,
+    draft: PlaylistDraft,
+    previous_draft: PlaylistDraft | None,
+) -> bool:
+    """Compare with the last-synced draft when there is one: the target stores
+    text and covers in its own form, so its values never equal the source's."""
+    base = previous_draft if previous_draft is not None else current.meta
+    if (base.name, base.description) != (draft.name, draft.description):
         return True
-    return draft.cover_url is not None and draft.cover_url != meta.cover_url
+    return draft.cover_url is not None and draft.cover_url != base.cover_url
 
 
 def _available(desired: Sequence[str], pool: Sequence[str]) -> list[str]:
@@ -83,6 +89,7 @@ def plan_member(
     protected: frozenset[str] = frozenset(),
     flag_removed: frozenset[str] = frozenset(),
     synced: tuple[SyncedEntry, ...] = (),
+    previous_draft: PlaylistDraft | None = None,
 ) -> MemberPlan:
     ops = _Ops(member_id)
     not_made: list[ChangeNotMade] = []
@@ -100,6 +107,10 @@ def plan_member(
         )
 
     if current is None:
+        if not desired:
+            # Created on the first run that has songs: an empty playlist can't
+            # always be read back (Apple, D3).
+            return plan((), ())
         if Capability.CREATE_PLAYLIST not in caps:
             not_made.append(
                 ChangeNotMade(
@@ -133,7 +144,7 @@ def plan_member(
             )
         return plan(cur + added, synced)
 
-    if _metadata_differs(current, draft):
+    if _metadata_differs(current, draft, previous_draft):
         if Capability.EDIT_METADATA in caps:
             ops.add(UpdateMetadata(ops.next_id(), draft))
         else:
@@ -297,5 +308,6 @@ def _plan_destination(
         protected=protected,
         flag_removed=flag_removed,
         synced=tuple(synced),
+        previous_draft=dest.last_synced.draft if dest.last_synced else None,
     )
     return member_plan, unresolved

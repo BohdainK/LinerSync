@@ -1,0 +1,94 @@
+{
+  "tracks": {
+    "href": "https://api.spotify.com/v1/search",
+    "limit": 10,
+    "next": null,
+    "offset": 0,
+    "previous": null,
+    "total": 2,
+    "items": [
+      {
+        "type": "track",
+        "id": "trk1",
+        "uri": "spotify:track:trk1",
+        "name": "Rock Song",
+        "duration_ms": 215000,
+        "artists": [
+          {
+            "name": "Band One"
+          },
+          {
+            "name": "Guest Two"
+          }
+        ],
+        "album": {
+          "name": "Debut",
+          "images": [
+            {
+              "url": "https://i.scdn.co/image/a640",
+              "height": 640,
+              "width": 640
+            },
+            {
+              "url": "https://i.scdn.co/image/a64",
+              "height": 64,
+              "width": 64
+            },
+            {
+              "url": "https://i.scdn.co/image/a300",
+              "height": 300,
+              "width": 300
+            }
+          ]
+        },
+        "external_ids": {
+          "isrc": "USRC17607839"
+        },
+        "external_urls": {
+          "spotify": "https://open.spotify.com/track/trk1"
+        }
+      },
+      {
+        "type": "track",
+        "id": "trk2",
+        "uri": "spotify:track:trk2",
+        "name": "Other Song",
+        "duration_ms": 215000,
+        "artists": [
+          {
+            "name": "Band One"
+          },
+          {
+            "name": "Guest Two"
+          }
+        ],
+        "album": {
+          "name": "Debut",
+          "images": [
+            {
+              "url": "https://i.scdn.co/image/a640",
+              "height": 640,
+              "width": 640
+            },
+            {
+              "url": "https://i.scdn.co/image/a64",
+              "height": 64,
+              "width": 64
+            },
+            {
+              "url": "https://i.scdn.co/image/a300",
+              "height": 300,
+              "width": 300
+            }
+          ]
+        },
+        "external_ids": {
+          "isrc": "GBAYE0601498"
+        },
+        "external_urls": {
+          "spotify": "https://open.spotify.com/track/trk2"
+        }
+      }
+    ]
+  }
+}

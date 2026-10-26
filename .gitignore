@@ -16,3 +16,6 @@ build/
 # Local documentation
 .temp/
 .ai-docs/
+
+# Live-test recordings (raw responses, review before sharing)
+backend/tests/fixtures/*/recorded/raw/

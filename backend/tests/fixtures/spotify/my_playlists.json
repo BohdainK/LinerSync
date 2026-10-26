@@ -1,0 +1,25 @@
+{
+  "href": "https://api.spotify.com/v1/me/playlists?offset=0&limit=50",
+  "limit": 50, "next": null, "offset": 0, "previous": null, "total": 4,
+  "items": [
+    {"id": "pl_owned", "name": "Road Trip", "description": "Songs for driving", "collaborative": false, "public": false,
+     "snapshot_id": "snap-owned-1", "owner": {"id": "me", "display_name": "Me Tester"},
+     "images": [{"url": "https://i.scdn.co/image/owned-640", "height": 640, "width": 640}],
+     "items": {"href": "https://api.spotify.com/v1/playlists/pl_owned/items", "total": 12},
+     "uri": "spotify:playlist:pl_owned", "type": "playlist"},
+    {"id": "pl_followed", "name": "Someone Else's Mix", "description": "", "collaborative": false, "public": true,
+     "snapshot_id": "snap-followed-1", "owner": {"id": "other", "display_name": "Other Person"},
+     "images": [{"url": "https://i.scdn.co/image/followed-640", "height": 640, "width": 640}],
+     "uri": "spotify:playlist:pl_followed", "type": "playlist"},
+    {"id": "pl_collab", "name": "Shared Party", "description": "Everyone adds", "collaborative": true, "public": false,
+     "snapshot_id": "snap-collab-1", "owner": {"id": "other", "display_name": "Other Person"},
+     "images": null,
+     "items": {"href": "https://api.spotify.com/v1/playlists/pl_collab/items", "total": 40},
+     "uri": "spotify:playlist:pl_collab", "type": "playlist"},
+    {"id": "pl_mosaic", "name": "Auto Cover", "description": "", "collaborative": false, "public": false,
+     "snapshot_id": "snap-mosaic-1", "owner": {"id": "me", "display_name": "Me Tester"},
+     "images": [{"url": "https://mosaic.scdn.co/640/abc123", "height": 640, "width": 640}],
+     "items": {"href": "https://api.spotify.com/v1/playlists/pl_mosaic/items", "total": 0},
+     "uri": "spotify:playlist:pl_mosaic", "type": "playlist"}
+  ]
+}

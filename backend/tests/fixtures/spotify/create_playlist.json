@@ -1,0 +1,4 @@
+{"id": "pl_new", "name": "New Mix", "description": "", "collaborative": false, "public": false, "snapshot_id": "snap-new-1",
+ "owner": {"id": "me", "display_name": "Me Tester"}, "images": [],
+ "items": {"href": "https://api.spotify.com/v1/playlists/pl_new/items", "limit": 100, "next": null, "offset": 0, "previous": null, "total": 0, "items": []},
+ "uri": "spotify:playlist:pl_new", "type": "playlist"}

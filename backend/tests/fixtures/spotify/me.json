@@ -1,0 +1,1 @@
+{"id": "me", "display_name": "Me Tester", "uri": "spotify:user:me", "href": "https://api.spotify.com/v1/users/me", "external_urls": {"spotify": "https://open.spotify.com/user/me"}, "images": [], "type": "user"}

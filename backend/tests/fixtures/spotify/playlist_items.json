@@ -1,0 +1,25 @@
+{
+  "href": "https://api.spotify.com/v1/playlists/pl_owned/items?offset=0&limit=4",
+  "limit": 4, "next": "https://api.spotify.com/v1/playlists/pl_owned/items?offset=4&limit=4", "offset": 0, "previous": null, "total": 9,
+  "items": [
+    {"added_at": "2026-03-01T10:00:00Z", "added_by": {"id": "me"}, "is_local": false,
+     "item": {"type": "track", "id": "trk1", "uri": "spotify:track:trk1", "name": "Rock Song", "duration_ms": 215000,
+       "artists": [{"name": "Band One"}, {"name": "Guest Two"}],
+       "album": {"name": "Debut", "images": [{"url": "https://i.scdn.co/image/a640", "height": 640, "width": 640}, {"url": "https://i.scdn.co/image/a64", "height": 64, "width": 64}, {"url": "https://i.scdn.co/image/a300", "height": 300, "width": 300}]},
+       "external_ids": {"isrc": "USRC17607839"}, "external_urls": {"spotify": "https://open.spotify.com/track/trk1"}}},
+    {"added_at": "2026-03-02T11:30:00Z", "added_by": {"id": "me"}, "is_local": false,
+     "item": {"type": "track", "id": "trk1", "uri": "spotify:track:trk1", "name": "Rock Song", "duration_ms": 215000,
+       "artists": [{"name": "Band One"}, {"name": "Guest Two"}],
+       "album": {"name": "Debut", "images": [{"url": "https://i.scdn.co/image/a640", "height": 640, "width": 640}, {"url": "https://i.scdn.co/image/a64", "height": 64, "width": 64}, {"url": "https://i.scdn.co/image/a300", "height": 300, "width": 300}]},
+       "external_ids": {"isrc": "USRC17607839"}, "external_urls": {"spotify": "https://open.spotify.com/track/trk1"}}},
+    {"added_at": "2026-03-03T09:00:00Z", "added_by": {"id": "me"}, "is_local": true,
+     "item": {"type": "track", "id": null, "uri": "spotify:local:Garage+Band:Demos:Rough+Mix:215", "name": "Rough Mix", "duration_ms": 215000,
+       "artists": [{"name": "Garage Band"}], "album": {"name": "Demos", "images": []},
+       "external_ids": {}, "external_urls": {}}},
+    {"added_at": "2026-03-04T08:15:00Z", "added_by": {"id": "me"}, "is_local": false,
+     "item": {"type": "episode", "id": "ep1", "uri": "spotify:episode:ep1", "name": "Episode One", "duration_ms": 1800000,
+       "show": {"name": "The Podcast"},
+       "images": [{"url": "https://i.scdn.co/image/e640", "height": 640, "width": 640}, {"url": "https://i.scdn.co/image/e64", "height": 64, "width": 64}],
+       "external_urls": {"spotify": "https://open.spotify.com/episode/ep1"}}}
+  ]
+}

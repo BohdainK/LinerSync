@@ -3,7 +3,17 @@ name = "linersync"
 version = "0.1.0"
 description = "LinerSync core engine"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+    "imagehash>=4.3.2",
+    "pillow>=13.0.0",
+    "pyjwt[crypto]>=2.15.1",
+    "tzdata>=2026.5",
+]
+
+[project.entry-points."linersync.connectors"]
+spotify = "linersync.adapters.connectors.spotify.plugin:PLUGIN"
+apple_music = "linersync.adapters.connectors.apple_music.plugin:PLUGIN"
 
 [build-system]
 requires = ["hatchling"]
@@ -24,6 +34,8 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["live: talks to real services"]
+addopts = "-m 'not live'"
 
 [tool.mypy]
 strict = true

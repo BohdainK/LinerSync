@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from unittest.mock import ANY
 
 import pytest
@@ -269,6 +270,18 @@ def test_missing_target_rebuilds() -> None:
     assert p.expected_after == ("A", "B", "C")
 
 
+def test_missing_target_with_empty_source_is_not_created() -> None:
+    # An empty playlist is created on the first run that has songs: an empty
+    # Apple playlist can't be read back (D3).
+    for caps in (ALL_CAPS, ALL_CAPS - {Capability.CREATE_PLAYLIST}):
+        for mode in (SyncMode.FULL, SyncMode.ADD_ONLY):
+            req = request([], None, modes=[mode], caps=caps)
+            p = plan_sync(req).for_member("dst0")
+            assert p.operations == ()
+            assert p.not_made == ()
+            assert p.expected_after == ()
+
+
 def test_missing_target_without_create_capability() -> None:
     req = request(["a"], None, caps=ALL_CAPS - {Capability.CREATE_PLAYLIST})
     p = plan_sync(req).for_member("dst0")
@@ -296,6 +309,74 @@ def test_metadata_update_full_only() -> None:
     p = plan_sync(no_edit).for_member("dst0")
     assert p.operations == ()
     assert p.not_made == (ChangeNotMade("metadata", None, ANY),)
+
+
+def _target_with(
+    name: str, description: str, cover_url: str | None
+) -> PlaylistSnapshot:
+    snap = snapshot(DST, "A0", ["A"], name=name)
+    return replace(
+        snap, meta=replace(snap.meta, description=description, cover_url=cover_url)
+    )
+
+
+_PREV = PlaylistDraft("Mix", "d", "https://src/c.jpg")
+_OTHER_COVER = "https://dst/other.jpg"
+
+
+def test_metadata_compared_with_last_synced_draft() -> None:
+    target = _target_with("Mix", "d", _OTHER_COVER)
+    p = plan_member(
+        "dst0", target, ["A"], _PREV, ALL_CAPS, SyncMode.FULL, previous_draft=_PREV
+    )
+    assert p.operations == ()
+
+
+def test_source_rename_updates_target() -> None:
+    target = _target_with("Mix", "d", _OTHER_COVER)
+    draft = PlaylistDraft("Mix 2", "d", "https://src/c.jpg")
+    p = plan_member(
+        "dst0", target, ["A"], draft, ALL_CAPS, SyncMode.FULL, previous_draft=_PREV
+    )
+    assert [type(o) for o in p.operations] == [UpdateMetadata]
+
+
+def test_source_cover_change_updates_target() -> None:
+    target = _target_with("Mix", "d", _OTHER_COVER)
+    draft = PlaylistDraft("Mix", "d", "https://src/new.jpg")
+    p = plan_member(
+        "dst0", target, ["A"], draft, ALL_CAPS, SyncMode.FULL, previous_draft=_PREV
+    )
+    assert [type(o) for o in p.operations] == [UpdateMetadata]
+
+
+def test_target_renamed_by_user_left_alone_until_source_changes() -> None:
+    target = _target_with("Mine", "d", _OTHER_COVER)
+    p = plan_member(
+        "dst0", target, ["A"], _PREV, ALL_CAPS, SyncMode.FULL, previous_draft=_PREV
+    )
+    assert p.operations == ()
+
+
+def test_plan_sync_uses_last_synced_draft() -> None:
+    state = MemberState(
+        entries=(SyncedEntry(key("a"), "A"),),
+        draft=PlaylistDraft("Mix", "", "https://src/c.jpg"),
+        version_token=None,
+        synced_at=NOW,
+    )
+    req = request(["a"], ["A"], last_synced=state)
+    dest_id = req.group.destinations[0].member_id
+    target, source = req.snapshots[dest_id], req.snapshots["src"]
+    assert target is not None and source is not None
+    snaps = {
+        "src": replace(
+            source, meta=replace(source.meta, cover_url="https://src/c.jpg")
+        ),
+        dest_id: replace(target, meta=replace(target.meta, cover_url=_OTHER_COVER)),
+    }
+    p = plan_sync(replace(req, snapshots=snaps)).for_member(dest_id)
+    assert not any(isinstance(o, UpdateMetadata) for o in p.operations)
 
 
 def test_no_reorder_capability_records_not_made() -> None:

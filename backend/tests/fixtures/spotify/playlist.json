@@ -1,0 +1,6 @@
+{"id": "pl_owned", "name": "Rock & Roll Mix", "description": "Rock &amp; roll", "collaborative": false, "public": false,
+ "snapshot_id": "snap-owned-2", "owner": {"id": "me", "display_name": "Me Tester"},
+ "images": [{"url": "https://i.scdn.co/image/owned-640", "height": 640, "width": 640}],
+ "items": {"href": "https://api.spotify.com/v1/playlists/pl_owned/items?offset=0&limit=100", "limit": 100, "next": null, "offset": 0, "previous": null, "total": 4,
+   "items": []},
+ "uri": "spotify:playlist:pl_owned", "type": "playlist"}

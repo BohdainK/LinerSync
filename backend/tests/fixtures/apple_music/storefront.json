@@ -1,0 +1,1 @@
+{"data": [{"id": "us", "type": "storefronts", "href": "/v1/storefronts/us", "attributes": {"name": "United States", "defaultLanguageTag": "en-US", "supportedLanguageTags": ["en-US"]}}]}

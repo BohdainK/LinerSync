@@ -13,6 +13,19 @@ FORBIDDEN = {
     ),
     "linersync.ports": ("linersync.application", "linersync.adapters"),
     "linersync.application": ("linersync.adapters",),
+    "linersync.adapters.connectors.kit": (
+        "linersync.adapters.connectors.spotify",
+        "linersync.adapters.connectors.apple_music",
+        "linersync.application",
+    ),
+    "linersync.adapters.connectors.spotify": (
+        "linersync.adapters.connectors.apple_music",
+        "linersync.application",
+    ),
+    "linersync.adapters.connectors.apple_music": (
+        "linersync.adapters.connectors.spotify",
+        "linersync.application",
+    ),
 }
 DOMAIN_FORBIDDEN_STDLIB = {
     "socket",
@@ -106,4 +119,15 @@ def test_checker_detects_violation(tmp_path: Path) -> None:
     )
     assert find_violations(tmp_path) == [
         "linersync.domain.bad imports linersync.adapters"
+    ]
+
+
+def test_checker_detects_kit_importing_service_package(tmp_path: Path) -> None:
+    (tmp_path / "linersync/adapters/connectors/kit").mkdir(parents=True)
+    (tmp_path / "linersync/adapters/connectors/kit/bad.py").write_text(
+        "from linersync.adapters.connectors.spotify import client\n"
+    )
+    assert find_violations(tmp_path) == [
+        "linersync.adapters.connectors.kit.bad imports "
+        "linersync.adapters.connectors.spotify"
     ]
