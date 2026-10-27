@@ -138,6 +138,14 @@ is a tuple of `SetupStep`s; each has a `StepKind` (`INFO`, `FORM`, `OAUTH`,
 `BROWSER_SIGN_IN`, `TEST`) and optional `body`, `fields`, `links`, `screenshots` and
 `copy_values`. Text may use `{placeholders}` (for example `{redirect_uri}`) that
 `render_guide(guide, context)` fills in; an unknown placeholder raises `ValueError`.
+
+**Guide placeholders.** The server renders every guide with exactly two keys:
+`{redirect_uri}` (the OAuth callback, `<public URL>/api/connections/oauth/callback`)
+and `{public_url}` (the server's public URL, without a trailing slash). They are the
+only keys; any other placeholder makes the guide fail to render. Placeholders are
+filled in step bodies, link URLs and copy values. A literal brace is written `{{`
+(and `}}`), as in Python's `str.format`.
+
 Screenshots are package-relative resources with `Annotation` regions given as 0..1
 fractions of the image. `SetupField` has a `key`, `label`, `kind` (`TEXT`, `SECRET`,
 `MULTILINE_SECRET`), an optional `pattern` (a full match regex) with a `pattern_hint`

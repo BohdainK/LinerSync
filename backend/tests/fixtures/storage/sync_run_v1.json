@@ -1,0 +1,163 @@
+{
+  "run_id": "r1",
+  "sync_id": "s1",
+  "kind": "sync",
+  "trigger": "manual",
+  "dry_run": false,
+  "status": "partial",
+  "started_at": "2026-01-01T00:00:00+00:00",
+  "finished_at": "2026-01-01T00:00:05+00:00",
+  "plan": {
+    "sync_id": "s1",
+    "member_plans": [
+      {
+        "member_id": "dst0",
+        "operations": [
+          {
+            "$type": "CreatePlaylist",
+            "op_id": "o1",
+            "draft": {
+              "name": "Mix",
+              "description": "desc",
+              "cover_url": null
+            }
+          },
+          {
+            "$type": "UpdateMetadata",
+            "op_id": "o2",
+            "draft": {
+              "name": "Mix",
+              "description": "desc",
+              "cover_url": null
+            }
+          },
+          {
+            "$type": "AddTracks",
+            "op_id": "o3",
+            "track_ids": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "$type": "Reorder",
+            "op_id": "o4",
+            "order": [
+              "b",
+              "a"
+            ]
+          },
+          {
+            "$type": "RemoveTracks",
+            "op_id": "o5",
+            "removals": [
+              {
+                "track_id": "z",
+                "position": 3
+              }
+            ]
+          }
+        ],
+        "not_made": [
+          {
+            "kind": "add",
+            "track_id": null,
+            "detail": "nope"
+          }
+        ],
+        "expected_after": [
+          "b",
+          "a"
+        ],
+        "synced": [
+          {
+            "source_key": {
+              "service": "spotify",
+              "track_id": "t1"
+            },
+            "target_track_id": "a"
+          }
+        ],
+        "draft": {
+          "name": "Mix",
+          "description": "desc",
+          "cover_url": null
+        }
+      }
+    ],
+    "unresolved": [
+      {
+        "member_id": "dst0",
+        "source": {
+          "service": "spotify",
+          "track_id": "t1",
+          "title": "t1",
+          "artists": [
+            "Artist"
+          ],
+          "album": "A",
+          "duration_ms": 200000,
+          "isrc": "X1",
+          "artwork_hash": null,
+          "url": null
+        },
+        "position": 2,
+        "decision": {
+          "reasons": [
+            "close"
+          ],
+          "candidates": [
+            {
+              "track": {
+                "service": "apple_music",
+                "track_id": "c1",
+                "title": "c1",
+                "artists": [
+                  "Artist"
+                ],
+                "album": null,
+                "duration_ms": 200000,
+                "isrc": null,
+                "artwork_hash": null,
+                "url": null
+              },
+              "confidence": 0.5,
+              "reasons": [
+                "title",
+                "artist"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "conflicts": []
+  },
+  "members": [
+    {
+      "member_id": "dst0",
+      "status": "failed",
+      "applied_op_ids": [
+        "o1"
+      ],
+      "not_made": [],
+      "mismatch": {
+        "member_id": "dst0",
+        "expected": [
+          "a"
+        ],
+        "actual": [
+          "b"
+        ]
+      },
+      "rebuilt": false,
+      "created_playlist_id": null,
+      "error": null,
+      "verified_after": [
+        "b"
+      ]
+    }
+  ],
+  "error": null,
+  "undoes_run_id": null
+}

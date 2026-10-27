@@ -1,13 +1,24 @@
 from collections.abc import Callable
 
 import pytest
+from cryptography.fernet import Fernet
 
 from linersync.adapters.memory.credentials import InMemoryCredentials
+from linersync.adapters.sqlite.credentials import SqliteCredentials
+from linersync.adapters.sqlite.db import connect, migrate
 from linersync.domain.tracks import ServiceId
 from linersync.ports.credentials import CredentialStore
 
 Factory = Callable[[], CredentialStore]
-pytestmark = pytest.mark.parametrize("make", [InMemoryCredentials])
+
+
+def sqlite_credentials() -> CredentialStore:
+    e = connect(":memory:")
+    migrate(e)
+    return SqliteCredentials(e, Fernet.generate_key())
+
+
+pytestmark = pytest.mark.parametrize("make", [InMemoryCredentials, sqlite_credentials])
 SP = ServiceId("spotify")
 
 

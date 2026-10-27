@@ -4,7 +4,7 @@ from datetime import datetime
 from linersync.domain.attention import AttentionItem
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.playlists import PlaylistSnapshot
-from linersync.domain.runs import SyncRun
+from linersync.domain.runs import RunStatus, SyncRun
 from linersync.domain.sync import SyncGroup
 from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.repositories import BreakerState, Repositories
@@ -23,6 +23,9 @@ class InMemorySyncs:
     def list(self) -> list[SyncGroup]:
         return list(self._data.values())
 
+    def delete(self, sync_id: str) -> None:
+        self._data.pop(sync_id, None)
+
 
 class InMemoryRuns:
     def __init__(self) -> None:
@@ -38,10 +41,16 @@ class InMemoryRuns:
     def get(self, run_id: str) -> SyncRun | None:
         return self._data.get(run_id)
 
-    def list_for_sync(self, sync_id: str) -> list[SyncRun]:
+    def list_for_sync(self, sync_id: str, limit: int | None = None) -> list[SyncRun]:
         runs = [r for r in self._data.values() if r.sync_id == sync_id]
         runs.sort(key=lambda r: (r.started_at, self._order[r.run_id]), reverse=True)
-        return runs
+        return runs if limit is None else runs[:limit]
+
+    def list_all(self) -> list[SyncRun]:
+        return sorted(self._data.values(), key=lambda r: self._order[r.run_id])
+
+    def list_running(self) -> list[SyncRun]:
+        return [r for r in self._data.values() if r.status == RunStatus.RUNNING]
 
 
 class InMemorySnapshots:
@@ -71,6 +80,9 @@ class InMemoryMatches:
 
     def remember(self, match: RememberedMatch) -> None:
         self._data[(match.source_key, match.target_service)] = match
+
+    def list_all(self) -> list[RememberedMatch]:
+        return list(self._data.values())
 
 
 class InMemoryAttention:

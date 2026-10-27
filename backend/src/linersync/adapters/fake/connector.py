@@ -46,6 +46,9 @@ class FakeConnector:
         self.playlists: dict[str, PlaylistSnapshot] = {}
         self.calls: list[str] = []
         self._read_failures: dict[str, int] = {}
+        self._read_failures_auth: dict[str, bool] = {}
+        self._list_failures = 0
+        self._list_failures_auth = False
         self._truncated: set[str] = set()
         self._write_failures: dict[type, list[bool]] = {}
         self._dropped: set[str] = set()
@@ -60,8 +63,15 @@ class FakeConnector:
     def delete_playlist(self, playlist_id: str) -> None:
         self.playlists.pop(playlist_id, None)
 
-    def fail_reads(self, playlist_id: str, times: int = 1) -> None:
+    def fail_list(self, times: int = 1, *, auth_required: bool = False) -> None:
+        self._list_failures = times
+        self._list_failures_auth = auth_required
+
+    def fail_reads(
+        self, playlist_id: str, times: int = 1, *, auth_required: bool = False
+    ) -> None:
         self._read_failures[playlist_id] = times
+        self._read_failures_auth[playlist_id] = auth_required
 
     def truncate_reads(self, playlist_id: str) -> None:
         self._truncated.add(playlist_id)
@@ -78,13 +88,24 @@ class FakeConnector:
     # -- Connector --------------------------------------------------------
     async def list_playlists(self) -> list[PlaylistMeta]:
         self.calls.append("list")
+        if self._list_failures > 0:
+            self._list_failures -= 1
+            raise ReadFailed(
+                self.service,
+                "injected list failure",
+                auth_required=self._list_failures_auth,
+            )
         return [s.meta for s in self.playlists.values()]
 
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
         self.calls.append(f"read:{playlist_id}")
         if self._read_failures.get(playlist_id, 0) > 0:
             self._read_failures[playlist_id] -= 1
-            raise ReadFailed(self.service, f"injected read failure for {playlist_id}")
+            raise ReadFailed(
+                self.service,
+                f"injected read failure for {playlist_id}",
+                auth_required=self._read_failures_auth.get(playlist_id, False),
+            )
         snap = self._get(playlist_id)
         if playlist_id in self._truncated:
             return replace(snap, expected_total=len(snap.entries) + 1)

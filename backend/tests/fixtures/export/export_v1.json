@@ -1,0 +1,305 @@
+{
+  "format": "linersync-export",
+  "version": 1,
+  "exported_at": "2026-01-02T00:00:00+00:00",
+  "app_version": "0.1.0",
+  "settings": {
+    "default_schedule": "0 * * * *",
+    "engine": {
+      "match": {
+        "accept_threshold": 0.85,
+        "min_margin": 0.05,
+        "max_candidates": 5,
+        "duration_full_s": 2.0,
+        "duration_zero_s": 15.0,
+        "artwork_max_distance": 6
+      },
+      "brake": {
+        "max_fraction": 0.2,
+        "max_count": 50
+      },
+      "breaker": {
+        "failure_threshold": 5,
+        "cooldown": 1800.0
+      },
+      "max_replans": 1
+    },
+    "backup_schedule": "0 3 * * *",
+    "backup_versions_kept": 7
+  },
+  "syncs": [
+    {
+      "sync_id": "s1",
+      "name": "Mix",
+      "direction": "one_way",
+      "members": [
+        {
+          "member_id": "src",
+          "service": "spotify",
+          "playlist_id": "P1",
+          "role": "source",
+          "mode": "full",
+          "last_synced": null
+        },
+        {
+          "member_id": "dst0",
+          "service": "apple_music",
+          "playlist_id": "A1",
+          "role": "destination",
+          "mode": "full",
+          "last_synced": {
+            "entries": [
+              {
+                "source_key": {
+                  "service": "spotify",
+                  "track_id": "a"
+                },
+                "target_track_id": "A"
+              }
+            ],
+            "draft": {
+              "name": "Mix",
+              "description": "",
+              "cover_url": null
+            },
+            "version_token": "tok",
+            "synced_at": "2026-01-01T00:00:00+00:00"
+          }
+        }
+      ],
+      "schedule": null,
+      "status": "active",
+      "pause_reason": null
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "r1",
+      "sync_id": "s1",
+      "kind": "sync",
+      "trigger": "manual",
+      "dry_run": false,
+      "status": "succeeded",
+      "started_at": "2026-01-01T00:00:00+00:00",
+      "finished_at": "2026-01-01T00:00:00+00:00",
+      "plan": null,
+      "members": [],
+      "error": null,
+      "undoes_run_id": null
+    },
+    {
+      "run_id": "r2",
+      "sync_id": "s1",
+      "kind": "sync",
+      "trigger": "manual",
+      "dry_run": false,
+      "status": "succeeded",
+      "started_at": "2026-01-01T00:00:00+00:00",
+      "finished_at": "2026-01-01T00:00:00+00:00",
+      "plan": null,
+      "members": [],
+      "error": null,
+      "undoes_run_id": null
+    }
+  ],
+  "run_contexts": [
+    {
+      "run_id": "r1",
+      "members": [
+        {
+          "member_id": "src",
+          "service": "spotify",
+          "playlist_id": "P1",
+          "role": "source"
+        }
+      ],
+      "tracks": [
+        {
+          "service": "spotify",
+          "track_id": "a",
+          "title": "a",
+          "artists": [
+            "Artist"
+          ],
+          "album": null,
+          "duration_ms": 200000,
+          "isrc": null,
+          "artwork_hash": null,
+          "url": null
+        }
+      ]
+    },
+    {
+      "run_id": "r2",
+      "members": [
+        {
+          "member_id": "src",
+          "service": "spotify",
+          "playlist_id": "P1",
+          "role": "source"
+        }
+      ],
+      "tracks": [
+        {
+          "service": "spotify",
+          "track_id": "a",
+          "title": "a",
+          "artists": [
+            "Artist"
+          ],
+          "album": null,
+          "duration_ms": 200000,
+          "isrc": null,
+          "artwork_hash": null,
+          "url": null
+        }
+      ]
+    }
+  ],
+  "remembered_matches": [
+    {
+      "source_key": {
+        "service": "spotify",
+        "track_id": "b"
+      },
+      "target_service": "apple_music",
+      "target_track_id": "B"
+    }
+  ],
+  "backup_playlists": [
+    {
+      "entry_id": "e1",
+      "service": "spotify",
+      "playlist_id": "P1",
+      "name": "P1",
+      "latest_version_id": "v2",
+      "track_count": 2,
+      "versions": 2,
+      "first_backed_up_at": "2026-01-01T00:00:00+00:00",
+      "last_seen_at": "2026-01-01T00:00:00+00:00",
+      "cover_sha256": "c0ffee",
+      "missing_since": null,
+      "archived_at": null
+    },
+    {
+      "entry_id": "e2",
+      "service": "spotify",
+      "playlist_id": "P2",
+      "name": "P2",
+      "latest_version_id": "v3",
+      "track_count": 0,
+      "versions": 1,
+      "first_backed_up_at": "2026-01-01T00:00:00+00:00",
+      "last_seen_at": "2026-01-01T00:00:00+00:00",
+      "cover_sha256": null,
+      "missing_since": null,
+      "archived_at": null
+    }
+  ],
+  "backup_versions": [
+    {
+      "version_id": "v2",
+      "entry_id": "e1",
+      "backup_id": "b1",
+      "snapshot": {
+        "meta": {
+          "service": "spotify",
+          "playlist_id": "P1",
+          "name": "P1",
+          "description": "",
+          "cover_url": null,
+          "version_token": null,
+          "owned": true,
+          "readable": true,
+          "unreadable_reason": null,
+          "track_count": null
+        },
+        "entries": [
+          {
+            "track": {
+              "service": "spotify",
+              "track_id": "a",
+              "title": "a",
+              "artists": [
+                "Artist"
+              ],
+              "album": null,
+              "duration_ms": 200000,
+              "isrc": null,
+              "artwork_hash": null,
+              "url": null
+            },
+            "added_at": null
+          },
+          {
+            "track": {
+              "service": "spotify",
+              "track_id": "b",
+              "title": "b",
+              "artists": [
+                "Artist"
+              ],
+              "album": null,
+              "duration_ms": 200000,
+              "isrc": null,
+              "artwork_hash": null,
+              "url": null
+            },
+            "added_at": null
+          }
+        ],
+        "expected_total": 2,
+        "taken_at": "2026-01-01T00:00:00+00:00"
+      },
+      "content_hash": "7e0cbfa65e2dd40b10b0fb7685c098191ba489b9b0c338c31ce457569f34070e",
+      "cover_sha256": "c0ffee"
+    },
+    {
+      "version_id": "v3",
+      "entry_id": "e2",
+      "backup_id": "b1",
+      "snapshot": {
+        "meta": {
+          "service": "spotify",
+          "playlist_id": "P2",
+          "name": "P2",
+          "description": "",
+          "cover_url": null,
+          "version_token": null,
+          "owned": true,
+          "readable": true,
+          "unreadable_reason": null,
+          "track_count": null
+        },
+        "entries": [],
+        "expected_total": 0,
+        "taken_at": "2026-01-01T00:00:00+00:00"
+      },
+      "content_hash": "de84011ff0365988ab7e08e8b82da2727ff3f9fbca3191c73931c54844b759e5",
+      "cover_sha256": null
+    }
+  ],
+  "backup_runs": [
+    {
+      "backup_id": "b1",
+      "service": "spotify",
+      "started_at": "2026-01-01T00:00:00+00:00",
+      "finished_at": "2026-01-01T00:00:00+00:00",
+      "status": "succeeded",
+      "playlists": 2,
+      "saved": 0,
+      "unchanged": 0,
+      "archived": 0,
+      "unreadable": 0,
+      "errors": [],
+      "error": null
+    }
+  ],
+  "covers": [
+    {
+      "sha256": "c0ffee",
+      "media_type": "image/jpeg",
+      "data_base64": "/9hqcGVnLWJ5dGVz"
+    }
+  ]
+}

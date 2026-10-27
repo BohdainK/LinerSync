@@ -1,15 +1,24 @@
 [project]
 name = "linersync"
 version = "0.1.0"
-description = "LinerSync core engine"
+description = "LinerSync"
 requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.20",
+    "apscheduler>=3.11,<4",
+    "cryptography>=50",
+    "fastapi>=0.162",
     "httpx>=0.28.1",
     "imagehash>=4.3.2",
     "pillow>=13.0.0",
     "pyjwt[crypto]>=2.15.1",
+    "sqlalchemy>=2.0",
     "tzdata>=2026.5",
+    "uvicorn[standard]>=0.54",
 ]
+
+[project.scripts]
+linersync = "linersync.server.cli:main"
 
 [project.entry-points."linersync.connectors"]
 spotify = "linersync.adapters.connectors.spotify.plugin:PLUGIN"
@@ -36,9 +45,16 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = ["live: talks to real services"]
 addopts = "-m 'not live'"
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
 
 [tool.mypy]
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["apscheduler.*"]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py313"

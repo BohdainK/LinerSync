@@ -114,3 +114,36 @@ def test_failures_search_drop_create() -> None:
 
     asyncio.run(go())
     assert "create:New" in fc.calls and "list" in fc.calls
+
+
+def test_fail_list() -> None:
+    fc = make()
+    fc.fail_list(times=2)
+
+    async def go() -> None:
+        for _ in range(2):
+            with pytest.raises(ReadFailed) as ei:
+                await fc.list_playlists()
+            assert ei.value.auth_required is False
+        assert [m.playlist_id for m in await fc.list_playlists()] == ["A1"]
+
+    asyncio.run(go())
+    assert fc.calls == ["list", "list", "list"]
+
+
+def test_injected_failures_can_require_auth() -> None:
+    fc = make()
+    fc.fail_list(auth_required=True)
+    fc.fail_reads("A1", auth_required=True)
+
+    async def go() -> None:
+        with pytest.raises(ReadFailed) as e1:
+            await fc.list_playlists()
+        assert e1.value.auth_required is True
+        with pytest.raises(ReadFailed) as e2:
+            await fc.read_playlist("A1")
+        assert e2.value.auth_required is True
+        await fc.list_playlists()
+        await fc.read_playlist("A1")
+
+    asyncio.run(go())

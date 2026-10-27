@@ -10,9 +10,18 @@ FORBIDDEN = {
         "linersync.ports",
         "linersync.application",
         "linersync.adapters",
+        "linersync.server",
     ),
-    "linersync.ports": ("linersync.application", "linersync.adapters"),
-    "linersync.application": ("linersync.adapters",),
+    "linersync.ports": (
+        "linersync.application",
+        "linersync.adapters",
+        "linersync.server",
+    ),
+    "linersync.application": ("linersync.adapters", "linersync.server"),
+    "linersync.adapters": ("linersync.server",),
+    "linersync.adapters.sqlite": ("linersync.adapters.connectors",),
+    "linersync.adapters.scheduler": ("linersync.adapters.connectors",),
+    "linersync.adapters.covers": ("linersync.adapters.connectors",),
     "linersync.adapters.connectors.kit": (
         "linersync.adapters.connectors.spotify",
         "linersync.adapters.connectors.apple_music",
@@ -130,4 +139,14 @@ def test_checker_detects_kit_importing_service_package(tmp_path: Path) -> None:
     assert find_violations(tmp_path) == [
         "linersync.adapters.connectors.kit.bad imports "
         "linersync.adapters.connectors.spotify"
+    ]
+
+
+def test_checker_detects_adapter_importing_server(tmp_path: Path) -> None:
+    (tmp_path / "linersync/adapters").mkdir(parents=True)
+    (tmp_path / "linersync/adapters/bad.py").write_text(
+        "from linersync.server import app\n"
+    )
+    assert find_violations(tmp_path) == [
+        "linersync.adapters.bad imports linersync.server"
     ]

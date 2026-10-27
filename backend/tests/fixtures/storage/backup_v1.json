@@ -1,0 +1,105 @@
+{
+  "entry": {
+    "entry_id": "e1",
+    "service": "spotify",
+    "playlist_id": "P1",
+    "name": "Mix",
+    "latest_version_id": "v1",
+    "track_count": 3,
+    "versions": 2,
+    "first_backed_up_at": "2026-01-01T00:00:00+00:00",
+    "last_seen_at": "2026-01-01T00:00:00+00:00",
+    "cover_sha256": "abc123",
+    "missing_since": "2026-01-02T03:04:05+00:00",
+    "archived_at": "2026-01-03T03:04:05+00:00"
+  },
+  "version": {
+    "version_id": "v1",
+    "entry_id": "e1",
+    "backup_id": "b1",
+    "snapshot": {
+      "meta": {
+        "service": "spotify",
+        "playlist_id": "P1",
+        "name": "Mix",
+        "description": "d",
+        "cover_url": "https://img.example/c.jpg",
+        "version_token": "tok",
+        "owned": true,
+        "readable": true,
+        "unreadable_reason": null,
+        "track_count": 3
+      },
+      "entries": [
+        {
+          "track": {
+            "service": "spotify",
+            "track_id": "T1",
+            "title": "T1",
+            "artists": [
+              "Artist"
+            ],
+            "album": null,
+            "duration_ms": 200000,
+            "isrc": null,
+            "artwork_hash": null,
+            "url": null
+          },
+          "added_at": "2025-05-06T07:08:09+00:00"
+        },
+        {
+          "track": {
+            "service": "spotify",
+            "track_id": "T2",
+            "title": "T2",
+            "artists": [
+              "Artist"
+            ],
+            "album": null,
+            "duration_ms": 200000,
+            "isrc": null,
+            "artwork_hash": null,
+            "url": null
+          },
+          "added_at": null
+        },
+        {
+          "track": {
+            "service": "spotify",
+            "track_id": "T1",
+            "title": "T1",
+            "artists": [
+              "Artist"
+            ],
+            "album": null,
+            "duration_ms": 200000,
+            "isrc": null,
+            "artwork_hash": null,
+            "url": null
+          },
+          "added_at": "2025-06-06T07:08:09+00:00"
+        }
+      ],
+      "expected_total": 3,
+      "taken_at": "2026-01-01T00:00:00+00:00"
+    },
+    "content_hash": "36f30af6bafc7c97b2c85828b312d1f4a57098ff4a2b74d54fb8f4810712f7b8",
+    "cover_sha256": "abc123"
+  },
+  "run": {
+    "backup_id": "b1",
+    "service": "spotify",
+    "started_at": "2026-01-01T00:00:00+00:00",
+    "finished_at": "2026-01-01T00:00:00+00:00",
+    "status": "partial",
+    "playlists": 3,
+    "saved": 1,
+    "unchanged": 1,
+    "archived": 0,
+    "unreadable": 1,
+    "errors": [
+      "Mix: could not be read"
+    ],
+    "error": null
+  }
+}

@@ -19,3 +19,7 @@ build/
 
 # Live-test recordings (raw responses, review before sharing)
 backend/tests/fixtures/*/recorded/raw/
+
+# Server data (database and secret key)
+/backend/data/
+/data/
