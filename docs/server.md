@@ -103,6 +103,12 @@ every service shows as "not set up" and you have to enter its credentials again.
 The API is described with OpenAPI. Interactive docs are at `/api/docs`, and the schema at
 `/api/openapi.json`. `/api/health` answers without a session and reports the version.
 
+## The web app
+
+The web app in `frontend/` talks to this API. To run it during development, start the
+server with `LINERSYNC_PUBLIC_URL=http://127.0.0.1:5173` and run the Vite dev server.
+See [frontend.md](frontend.md).
+
 ## What to expect
 
 **One thing at a time.** Jobs run one after another in the order they were queued. A

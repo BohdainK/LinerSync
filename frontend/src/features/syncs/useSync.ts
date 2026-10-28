@@ -1,0 +1,59 @@
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import { api, call, type ApiError } from "@/api/client";
+import { keys } from "@/api/keys";
+import type { JobOut, SyncOut, SyncPatchIn } from "@/api/types";
+
+export function useSync(syncId: string): UseQueryResult<SyncOut> {
+  return useQuery({
+    queryKey: keys.sync(syncId),
+    queryFn: () => call(api.GET("/api/syncs/{sync_id}", { params: { path: { sync_id: syncId } } })),
+  });
+}
+
+/** Each caller gets its own mutation state, so an error shows next to the control that caused it. */
+export function usePatchSync(syncId: string): UseMutationResult<SyncOut, ApiError, SyncPatchIn> {
+  const queryClient = useQueryClient();
+  return useMutation<SyncOut, ApiError, SyncPatchIn>({
+    mutationFn: (body) =>
+      call(api.PATCH("/api/syncs/{sync_id}", { params: { path: { sync_id: syncId } }, body })),
+    onSuccess: (sync) => {
+      queryClient.setQueryData(keys.sync(syncId), sync);
+      void queryClient.invalidateQueries({ queryKey: keys.syncs });
+    },
+  });
+}
+
+export function useRunSync(syncId: string): UseMutationResult<JobOut, ApiError, boolean> {
+  const queryClient = useQueryClient();
+  return useMutation<JobOut, ApiError, boolean>({
+    mutationFn: (dryRun) =>
+      call(
+        api.POST("/api/syncs/{sync_id}/run", {
+          params: { path: { sync_id: syncId } },
+          body: { dry_run: dryRun },
+        }),
+      ),
+    onSuccess: (job) => {
+      queryClient.setQueryData(keys.job(job.job_id), job);
+      void queryClient.invalidateQueries({ queryKey: keys.sync(syncId) });
+    },
+  });
+}
+
+export function useDeleteSync(syncId: string): UseMutationResult<unknown, ApiError, void> {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, ApiError, void>({
+    mutationFn: () =>
+      call(api.DELETE("/api/syncs/{sync_id}", { params: { path: { sync_id: syncId } } })),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: keys.sync(syncId) });
+      void queryClient.invalidateQueries({ queryKey: keys.syncs });
+    },
+  });
+}
