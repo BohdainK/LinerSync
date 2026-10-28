@@ -1,0 +1,7 @@
+{
+	email admin@example.com
+}
+
+music.example.com {
+	reverse_proxy linersync:8000
+}

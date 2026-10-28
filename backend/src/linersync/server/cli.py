@@ -8,7 +8,7 @@ from collections.abc import Sequence
 import uvicorn
 
 from linersync.server.app import create_app
-from linersync.server.config import ConfigError, ServerConfig
+from linersync.server.config import ConfigError, ServerConfig, check_data_dir
 
 # Open event streams would otherwise hold shutdown forever: after this, uvicorn
 # cancels them and runs the lifespan shutdown.
@@ -25,6 +25,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.parse_args(argv)
     try:
         config = ServerConfig.from_env(os.environ)
+        check_data_dir(config.data_dir)
     except ConfigError as exc:
         print(f"linersync: {exc}", file=sys.stderr)
         return 2

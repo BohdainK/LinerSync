@@ -99,5 +99,5 @@ worker. Each run starts from an empty data folder. On a failure, the trace is ke
 
 ## Serving the built app
 
-For now the app runs only through Vite. Serving the built app from the LinerSync server
-(and the Docker image) comes in a later release.
+The LinerSync server can serve a built app, and the Docker image does. See
+[The web app](server.md#the-web-app) in the server guide.

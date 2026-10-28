@@ -46,6 +46,7 @@ from linersync.server.connections import ConnectionManager, ConnectionStatus
 from linersync.server.environment import ServerJobEnvironment
 from linersync.server.events import EventHub
 from linersync.server.state import AppServices
+from linersync.server.web import mount_web
 
 
 def create_app(
@@ -193,5 +194,8 @@ def create_app(
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "version": version("linersync")}
+
+    if config.web_dir is not None:
+        mount_web(app, config.web_dir)
 
     return app

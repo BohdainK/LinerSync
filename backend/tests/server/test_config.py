@@ -1,10 +1,11 @@
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 from cryptography.fernet import Fernet
 
-from linersync.server.config import ConfigError, ServerConfig
+from linersync.server.config import ConfigError, ServerConfig, check_data_dir
 
 
 def test_from_env_requires_password() -> None:
@@ -83,3 +84,38 @@ def test_repr_hides_secrets(app_factory: Any) -> None:
     text = repr(app.state.services)
     assert "hunter2-distinct" not in text
     assert key not in text
+
+
+def test_web_dir_from_env(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<html></html>")
+    config = ServerConfig.from_env(
+        {"LINERSYNC_ADMIN_PASSWORD": "pw", "LINERSYNC_WEB_DIR": str(tmp_path)}
+    )
+    assert config.web_dir == Path(tmp_path)
+
+
+def test_web_dir_without_index_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="^LINERSYNC_WEB_DIR has no index.html"):
+        ServerConfig.from_env(
+            {"LINERSYNC_ADMIN_PASSWORD": "pw", "LINERSYNC_WEB_DIR": str(tmp_path)}
+        )
+
+
+def test_check_data_dir_creates_folder(tmp_path: Path) -> None:
+    target = tmp_path / "a" / "b"
+    check_data_dir(target)
+    assert target.is_dir()
+    assert not (target / ".write-test").exists()
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root ignores folder modes")
+def test_check_data_dir_unwritable(tmp_path: Path) -> None:
+    target = tmp_path / "ro"
+    target.mkdir(mode=0o500)
+    try:
+        with pytest.raises(ConfigError) as info:
+            check_data_dir(target)
+    finally:
+        target.chmod(0o700)
+    assert str(target) in str(info.value)
+    assert "can't write to the data folder" in str(info.value)

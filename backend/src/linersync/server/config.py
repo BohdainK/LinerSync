@@ -1,5 +1,6 @@
 """Server configuration read from the environment."""
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,7 @@ class ServerConfig:
     timezone: str = "UTC"
     host: str = "127.0.0.1"
     port: int = 8000
+    web_dir: Path | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "ServerConfig":
@@ -47,6 +49,10 @@ class ServerConfig:
                 raise ConfigError(
                     f"LINERSYNC_PORT must be an integer, got {raw_port!r}"
                 ) from exc
+        raw_web = env.get("LINERSYNC_WEB_DIR")
+        web_dir = Path(raw_web) if raw_web else None
+        if web_dir is not None and not (web_dir / "index.html").is_file():
+            raise ConfigError(f"LINERSYNC_WEB_DIR has no index.html: {raw_web}")
         return cls(
             admin_password=password,
             data_dir=Path(env.get("LINERSYNC_DATA_DIR", str(defaults.data_dir))),
@@ -55,6 +61,7 @@ class ServerConfig:
             timezone=timezone,
             host=env.get("LINERSYNC_HOST", defaults.host),
             port=port,
+            web_dir=web_dir,
         )
 
     @property
@@ -83,3 +90,18 @@ def _check_public_url(url: str) -> None:
         raise ConfigError(
             f"LINERSYNC_PUBLIC_URL must be an http(s) URL without a path, got {url!r}"
         )
+
+
+def check_data_dir(path: Path) -> None:
+    """Create the data folder if needed and make sure this process can write in it."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write-test"
+        probe.write_text("")
+        probe.unlink()
+    except OSError as exc:
+        uid = os.getuid() if hasattr(os, "getuid") else "?"
+        raise ConfigError(
+            f"can't write to the data folder {path} (running as user {uid}). "
+            "Give that user write access, or set LINERSYNC_DATA_DIR."
+        ) from exc

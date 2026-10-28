@@ -31,6 +31,7 @@ and a message naming the variable.
 | `LINERSYNC_TIMEZONE` | `UTC` | The timezone schedules are read in, for example `Europe/Amsterdam`. |
 | `LINERSYNC_HOST` | `127.0.0.1` | The address to listen on. Use `0.0.0.0` inside a container or behind a proxy on another machine. |
 | `LINERSYNC_PORT` | `8000` | The port to listen on. |
+| `LINERSYNC_WEB_DIR` | unset | Folder with the built web app (`frontend/dist`). Unset: the server serves only the API. The Docker image sets it. |
 
 Syncs without their own schedule use the default schedule `0 */6 * * *` (every six
 hours). You can change it in the app's settings.
@@ -49,6 +50,9 @@ three setups:
    domain) and let LinerSync listen where the proxy can reach it.
 3. **Your own reverse proxy** (Caddy, Traefik, Nginx, ...). Terminate HTTPS at the proxy,
    forward to LinerSync, and set `LINERSYNC_PUBLIC_URL` to the HTTPS address users type.
+
+[install.md](install.md) covers the installer that sets up any of the three, and
+[reverse-proxy.md](reverse-proxy.md) covers using your own proxy.
 
 **Why `LINERSYNC_PUBLIC_URL` must match how the browser reaches the app:**
 
@@ -105,8 +109,17 @@ The API is described with OpenAPI. Interactive docs are at `/api/docs`, and the 
 
 ## The web app
 
-The web app in `frontend/` talks to this API. To run it during development, start the
-server with `LINERSYNC_PUBLIC_URL=http://127.0.0.1:5173` and run the Vite dev server.
+The web app in `frontend/` talks to this API. To serve a build from the server, run
+`npm run build` in `frontend/`, then from `backend/`:
+
+```sh
+LINERSYNC_WEB_DIR=../frontend/dist uv run linersync serve
+```
+
+The server then answers every non-API address with the app, so links such as
+`/syncs/abc` work after a refresh. With `LINERSYNC_WEB_DIR` set but no `index.html` in
+it, the server exits with status 2. For development, start the server with
+`LINERSYNC_PUBLIC_URL=http://127.0.0.1:5173` and run the Vite dev server.
 See [frontend.md](frontend.md).
 
 ## What to expect

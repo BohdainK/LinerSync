@@ -1,0 +1,15 @@
+# Traefik dynamic configuration (file provider).
+http:
+  routers:
+    linersync:
+      rule: "Host(`music.example.com`)"
+      entryPoints:
+        - websecure
+      service: linersync
+      tls:
+        certResolver: letsencrypt # use the resolver name from your static configuration
+  services:
+    linersync:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8000"

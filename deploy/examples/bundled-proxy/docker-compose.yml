@@ -1,0 +1,30 @@
+# Written by LinerSync's install.sh. Start it with: docker compose up -d
+services:
+  linersync:
+    image: ghcr.io/bohdaink/linersync:latest
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      LINERSYNC_PUBLIC_URL: "https://music.example.com"
+      LINERSYNC_TIMEZONE: "Europe/Amsterdam"
+    volumes:
+      - "./data:/data"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - linersync
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
