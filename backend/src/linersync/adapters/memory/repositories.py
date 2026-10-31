@@ -49,6 +49,9 @@ class InMemoryRuns:
     def list_all(self) -> list[SyncRun]:
         return sorted(self._data.values(), key=lambda r: self._order[r.run_id])
 
+    def list_since(self, since: datetime) -> list[SyncRun]:
+        return [r for r in self.list_all() if r.started_at >= since]
+
     def list_running(self) -> list[SyncRun]:
         return [r for r in self._data.values() if r.status == RunStatus.RUNNING]
 

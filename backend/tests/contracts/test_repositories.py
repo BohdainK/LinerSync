@@ -231,6 +231,17 @@ def test_runs_list_all_oldest_saved_first(make: Factory) -> None:
     assert repos.runs.list_all() == [later, earlier]
 
 
+def test_runs_list_since_includes_the_boundary(make: Factory) -> None:
+    repos = make()
+    assert repos.runs.list_since(NOW) == []
+    old = _run("r1", "s1", NOW - timedelta(microseconds=1))
+    later = _run("r2", "s1", NOW + timedelta(days=2))
+    boundary = _run("r3", "s2", NOW)
+    for run in (old, later, boundary):
+        repos.runs.save(run)
+    assert repos.runs.list_since(NOW) == [later, boundary]
+
+
 def test_matches_list_all(make: Factory) -> None:
     repos = make()
     assert repos.matches.list_all() == []

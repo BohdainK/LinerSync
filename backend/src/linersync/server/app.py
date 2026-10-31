@@ -37,6 +37,7 @@ from linersync.server.api import home as home_api
 from linersync.server.api import jobs as jobs_api
 from linersync.server.api import runs as runs_api
 from linersync.server.api import settings as settings_api
+from linersync.server.api import stats as stats_api
 from linersync.server.api import syncs as syncs_api
 from linersync.server.api import transfers as transfers_api
 from linersync.server.api.schemas import JobOut
@@ -187,6 +188,7 @@ def create_app(
     app.include_router(attention_api.router)
     app.include_router(home_api.router)
     app.include_router(settings_api.router)
+    app.include_router(stats_api.router)
     app.include_router(backups_api.router)
     app.include_router(export_api.router)
     app.include_router(export_api.import_router)

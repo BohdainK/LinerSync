@@ -14,12 +14,12 @@ import { HomePage } from "@/features/home/HomePage";
 import { NewSyncPage } from "@/features/new-sync/NewSyncPage";
 import { NewTransferPage } from "@/features/transfers/NewTransferPage";
 import { RunPage } from "@/features/runs/RunPage";
+import { StatsPage } from "@/features/stats/StatsPage";
 import { SyncPage } from "@/features/syncs/SyncPage";
 import { SyncsPage } from "@/features/syncs/SyncsPage";
 import { OnboardingPage } from "@/features/connections/OnboardingPage";
 import { AppShell } from "@/layout/AppShell";
 import { NotFoundPage } from "@/layout/NotFoundPage";
-import { StatsPage } from "@/layout/StatsPage";
 
 export function AppRoutes() {
   return (

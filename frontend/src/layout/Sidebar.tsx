@@ -105,7 +105,6 @@ export function Sidebar() {
       </div>
       <NavLink to="/stats" className={linkClass}>
         Stats
-        <Badge variant="outline">Later</Badge>
       </NavLink>
       <div className="mt-auto flex flex-col gap-1">
         <NavLink to="/settings" className={linkClass}>

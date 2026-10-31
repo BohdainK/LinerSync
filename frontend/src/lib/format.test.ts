@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatDuration, formatRelative } from "./format";
+import { formatDateTime, formatDay, formatDuration, formatRelative } from "./format";
 
 describe("formatDuration", () => {
   it("formats m:ss and h:mm:ss", () => {
@@ -23,5 +23,12 @@ describe("formatDateTime", () => {
   it("is empty for null and non-empty for a date", () => {
     expect(formatDateTime(null)).toBe("");
     expect(formatDateTime("2026-01-01T12:00:00Z")).not.toBe("");
+  });
+});
+
+describe("formatDay", () => {
+  it("formats a calendar date without shifting it to UTC", () => {
+    expect(formatDay("2026-03-01", "en")).toBe("Mar 1");
+    expect(formatDay("2026-12-31", "en")).toBe("Dec 31");
   });
 });

@@ -38,6 +38,10 @@ class RunRepository(Protocol):
         """Every run, oldest saved first."""
         ...
 
+    def list_since(self, since: datetime) -> list[SyncRun]:
+        """Runs with started_at >= since, oldest saved first."""
+        ...
+
     def list_running(self) -> list[SyncRun]:
         """Runs with status RUNNING, any order."""
         ...

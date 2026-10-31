@@ -109,6 +109,15 @@ class SqliteRuns:
             ).scalars()
             return [loads(SyncRun, b) for b in rows]
 
+    def list_since(self, since: datetime) -> list[SyncRun]:
+        with self._engine.begin() as conn:
+            rows = conn.execute(
+                sa.select(t.runs.c.body)
+                .where(t.runs.c.started_at >= utc_text(since))
+                .order_by(t.runs.c.saved_seq)
+            ).scalars()
+            return [loads(SyncRun, b) for b in rows]
+
     def list_running(self) -> list[SyncRun]:
         with self._engine.begin() as conn:
             rows = conn.execute(

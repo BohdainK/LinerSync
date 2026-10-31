@@ -1,6 +1,6 @@
 """Response and request models for the JSON API."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -450,6 +450,54 @@ class HomeOut(BaseModel):
     attention_count: int
     warnings: list[WarningOut]
     api_limits: list[LimitOut]
+
+
+class LibraryServiceOut(BaseModel):
+    service: str
+    display_name: str
+    playlists: int
+    songs: int
+    archived: int
+    versions: int
+
+
+class ActivityOut(BaseModel):
+    sync_runs: int
+    transfer_runs: int
+    undo_runs: int
+    succeeded: int
+    partial: int
+    failed: int
+    waiting: int
+    skipped: int
+    songs_added: int
+    songs_removed: int
+    backups: int
+
+
+class DayOut(BaseModel):
+    day: date
+    succeeded: int
+    partial: int
+    failed: int
+
+
+class MatchingOut(BaseModel):
+    remembered: int
+    not_on_service: int
+    open_attention: int
+
+
+class StatsOut(BaseModel):
+    days: int
+    since: datetime
+    library: list[LibraryServiceOut]
+    syncs: int
+    paused_syncs: int
+    activity: ActivityOut
+    daily: list[DayOut]
+    last_backup_at: datetime | None
+    matching: MatchingOut
 
 
 class SettingsIn(BaseModel):

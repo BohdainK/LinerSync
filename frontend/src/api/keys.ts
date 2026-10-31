@@ -17,4 +17,5 @@ export const keys = {
   backupEntry: (id: string) => ["backups", "entry", id],
   backupVersion: (id: string) => ["backups", "version", id],
   backupRuns: ["backups", "runs"],
+  stats: (days: number) => ["stats", days],
 } as const;

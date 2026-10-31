@@ -27,3 +27,9 @@ export function formatRelative(iso: string, now: Date = new Date(), locale?: str
   }
   return rtf.format(Math.round(diff / 1000), "second");
 }
+
+/** A calendar date ("2026-03-01") as "Mar 1", in the browser's zone-free sense. */
+export function formatDay(day: string, locale?: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(y ?? 0, (m ?? 1) - 1, d ?? 1));
+}

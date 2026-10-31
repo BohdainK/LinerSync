@@ -14,6 +14,7 @@ import type {
   RunSummaryOut,
   SettingsOut,
   SetupGuide,
+  StatsOut,
   SyncOut,
   TrackOut,
 } from "@/api/types";
@@ -276,6 +277,33 @@ export function backupServiceOut(o: Partial<BackupServiceOut> = {}): BackupServi
     archived: 1,
     missing: 0,
     last_run: null,
+    ...o,
+  };
+}
+
+export function statsOut(o: Partial<StatsOut> = {}): StatsOut {
+  return {
+    days: 30,
+    since: "2025-12-02T12:00:00Z",
+    library: [],
+    syncs: 0,
+    paused_syncs: 0,
+    activity: {
+      sync_runs: 0,
+      transfer_runs: 0,
+      undo_runs: 0,
+      succeeded: 0,
+      partial: 0,
+      failed: 0,
+      waiting: 0,
+      skipped: 0,
+      songs_added: 0,
+      songs_removed: 0,
+      backups: 0,
+    },
+    daily: [],
+    last_backup_at: null,
+    matching: { remembered: 0, not_on_service: 0, open_attention: 0 },
     ...o,
   };
 }

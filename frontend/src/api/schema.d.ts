@@ -745,6 +745,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stats */
+        get: operations["get_stats_api_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/syncs": {
         parameters: {
             query?: never;
@@ -908,6 +925,31 @@ export interface components {
         /** ActionOut */
         ActionOut: {
             job: components["schemas"]["JobOut"] | null;
+        };
+        /** ActivityOut */
+        ActivityOut: {
+            /** Backups */
+            backups: number;
+            /** Failed */
+            failed: number;
+            /** Partial */
+            partial: number;
+            /** Skipped */
+            skipped: number;
+            /** Songs Added */
+            songs_added: number;
+            /** Songs Removed */
+            songs_removed: number;
+            /** Succeeded */
+            succeeded: number;
+            /** Sync Runs */
+            sync_runs: number;
+            /** Transfer Runs */
+            transfer_runs: number;
+            /** Undo Runs */
+            undo_runs: number;
+            /** Waiting */
+            waiting: number;
         };
         /**
          * Annotation
@@ -1235,6 +1277,20 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** DayOut */
+        DayOut: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Failed */
+            failed: number;
+            /** Partial */
+            partial: number;
+            /** Succeeded */
+            succeeded: number;
+        };
         /** DestinationIn */
         DestinationIn: {
             /** @default full */
@@ -1393,6 +1449,21 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** LibraryServiceOut */
+        LibraryServiceOut: {
+            /** Archived */
+            archived: number;
+            /** Display Name */
+            display_name: string;
+            /** Playlists */
+            playlists: number;
+            /** Service */
+            service: string;
+            /** Songs */
+            songs: number;
+            /** Versions */
+            versions: number;
+        };
         /** LimitOut */
         LimitOut: {
             /** Display Name */
@@ -1427,6 +1498,15 @@ export interface components {
         LoginBody: {
             /** Password */
             password: string;
+        };
+        /** MatchingOut */
+        MatchingOut: {
+            /** Not On Service */
+            not_on_service: number;
+            /** Open Attention */
+            open_attention: number;
+            /** Remembered */
+            remembered: number;
         };
         /** MemberIn */
         MemberIn: {
@@ -1819,6 +1899,28 @@ export interface components {
             playlist_id: string | null;
             /** Service */
             service: string;
+        };
+        /** StatsOut */
+        StatsOut: {
+            activity: components["schemas"]["ActivityOut"];
+            /** Daily */
+            daily: components["schemas"]["DayOut"][];
+            /** Days */
+            days: number;
+            /** Last Backup At */
+            last_backup_at: string | null;
+            /** Library */
+            library: components["schemas"]["LibraryServiceOut"][];
+            matching: components["schemas"]["MatchingOut"];
+            /** Paused Syncs */
+            paused_syncs: number;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Syncs */
+            syncs: number;
         };
         /**
          * StepKind
@@ -3325,6 +3427,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_stats_api_stats_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsOut"];
                 };
             };
             /** @description Validation Error */

@@ -42,6 +42,9 @@ Before you start, know what each service asks of you:
   Your answers are remembered.
 - Backs up every playlist with versions, archives playlists that disappear from a
   service, and exports CSV and JSON. A JSON export can be restored.
+- Shows stats: how many playlists and songs are backed up per service, what the last
+  7, 30 or 90 days of syncs, transfers and backups did, and how much matching has
+  learned.
 
 ## Safety
 

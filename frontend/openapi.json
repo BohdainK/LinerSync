@@ -20,6 +20,69 @@
         "title": "ActionOut",
         "type": "object"
       },
+      "ActivityOut": {
+        "properties": {
+          "backups": {
+            "title": "Backups",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "songs_added": {
+            "title": "Songs Added",
+            "type": "integer"
+          },
+          "songs_removed": {
+            "title": "Songs Removed",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "sync_runs": {
+            "title": "Sync Runs",
+            "type": "integer"
+          },
+          "transfer_runs": {
+            "title": "Transfer Runs",
+            "type": "integer"
+          },
+          "undo_runs": {
+            "title": "Undo Runs",
+            "type": "integer"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sync_runs",
+          "transfer_runs",
+          "undo_runs",
+          "succeeded",
+          "partial",
+          "failed",
+          "waiting",
+          "skipped",
+          "songs_added",
+          "songs_removed",
+          "backups"
+        ],
+        "title": "ActivityOut",
+        "type": "object"
+      },
       "Annotation": {
         "description": "A highlighted region, as fractions (0..1) of the image.",
         "properties": {
@@ -997,6 +1060,35 @@
         "title": "CredentialsIn",
         "type": "object"
       },
+      "DayOut": {
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "succeeded",
+          "partial",
+          "failed"
+        ],
+        "title": "DayOut",
+        "type": "object"
+      },
       "DestinationIn": {
         "properties": {
           "mode": {
@@ -1468,6 +1560,44 @@
         "title": "JobProgressOut",
         "type": "object"
       },
+      "LibraryServiceOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "songs": {
+            "title": "Songs",
+            "type": "integer"
+          },
+          "versions": {
+            "title": "Versions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "service",
+          "display_name",
+          "playlists",
+          "songs",
+          "archived",
+          "versions"
+        ],
+        "title": "LibraryServiceOut",
+        "type": "object"
+      },
       "LimitOut": {
         "properties": {
           "display_name": {
@@ -1556,6 +1686,29 @@
           "password"
         ],
         "title": "LoginBody",
+        "type": "object"
+      },
+      "MatchingOut": {
+        "properties": {
+          "not_on_service": {
+            "title": "Not On Service",
+            "type": "integer"
+          },
+          "open_attention": {
+            "title": "Open Attention",
+            "type": "integer"
+          },
+          "remembered": {
+            "title": "Remembered",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "remembered",
+          "not_on_service",
+          "open_attention"
+        ],
+        "title": "MatchingOut",
         "type": "object"
       },
       "MemberIn": {
@@ -2603,6 +2756,72 @@
           "playlist_id"
         ],
         "title": "SourceOut",
+        "type": "object"
+      },
+      "StatsOut": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/ActivityOut"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/DayOut"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "last_backup_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Backup At"
+          },
+          "library": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryServiceOut"
+            },
+            "title": "Library",
+            "type": "array"
+          },
+          "matching": {
+            "$ref": "#/components/schemas/MatchingOut"
+          },
+          "paused_syncs": {
+            "title": "Paused Syncs",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "syncs": {
+            "title": "Syncs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days",
+          "since",
+          "library",
+          "syncs",
+          "paused_syncs",
+          "activity",
+          "daily",
+          "last_backup_at",
+          "matching"
+        ],
+        "title": "StatsOut",
         "type": "object"
       },
       "StepKind": {
@@ -4860,6 +5079,48 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "operationId": "get_stats_api_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stats"
       }
     },
     "/api/syncs": {

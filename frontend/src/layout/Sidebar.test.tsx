@@ -48,7 +48,7 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("link", { name: /Tidal/ })).not.toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /Gym/ })).toHaveTextContent("Paused");
     expect(screen.getByRole("link", { name: /Road trip/ })).not.toHaveTextContent("Paused");
-    expect(screen.getByRole("link", { name: /Stats/ })).toHaveTextContent("Later");
+    expect(screen.getByRole("link", { name: "Stats" })).toHaveAttribute("href", "/stats");
   });
 
   it("chevron toggles without navigating; label navigates", async () => {

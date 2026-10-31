@@ -9,7 +9,6 @@ export const INSECURE_CONTEXT =
   "Sign-in needs a secure address: open LinerSync over HTTPS or at http://127.0.0.1";
 export const SHOW_TEXT = "Show all steps as text";
 export const HIDE_TEXT = "Hide the text version";
-export const STATS_LATER = "Stats are coming in a later version.";
 export const IMPORT_TOO_LARGE = "This file is larger than 256 MB";
 export const CANT_READ = "Can't read: {reason}";
 export const CANT_READ_FALLBACK = "LinerSync can't read this playlist";
