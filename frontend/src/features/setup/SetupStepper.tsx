@@ -15,12 +15,13 @@ import { cn } from "@/lib/utils";
 import { StepsAsText } from "./StepsAsText";
 import { stepStates, type StepState } from "./stepStates";
 import { BrowserSignInStep } from "./steps/BrowserSignInStep";
+import { DeviceCodeStep } from "./steps/DeviceCodeStep";
 import { FormStep } from "./steps/FormStep";
 import { InfoStep } from "./steps/InfoStep";
 import { OAuthStep } from "./steps/OAuthStep";
 import { TestStep } from "./steps/TestStep";
 
-const SIGN_IN_KINDS = new Set<SetupStep["kind"]>(["oauth", "browser_sign_in"]);
+const SIGN_IN_KINDS = new Set<SetupStep["kind"]>(["oauth", "browser_sign_in", "device_code"]);
 
 function StepItem({
   index,
@@ -164,6 +165,8 @@ function Steps({
         return <OAuthStep service={service} name={name} step={step} signInError={signInError} />;
       case "browser_sign_in":
         return <BrowserSignInStep service={service} name={name} step={step} onSignedIn={afterBrowserSignIn} />;
+      case "device_code":
+        return <DeviceCodeStep service={service} name={name} step={step} onSignedIn={afterBrowserSignIn} />;
       case "test":
         return (
           <TestStep

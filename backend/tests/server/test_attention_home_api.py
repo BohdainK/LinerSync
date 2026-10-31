@@ -31,9 +31,11 @@ class TunedPlugin(FakePlugin):
         expires: datetime | None = None,
         policy: QuotaPolicy | None = None,
         test_message: str | None = None,
+        estimated: bool = False,
     ) -> None:
         super().__init__(connector)
         self.expires = expires
+        self.login_expiry_estimated = estimated
         self.quota_policy = policy or QuotaPolicy()
         self.test_message = test_message
 
@@ -248,6 +250,23 @@ def test_home_panels(app_factory: AppFactory, clock: FixedClock) -> None:
     ats = [datetime.fromisoformat(n["at"]) for n in many["next_up"]]
     assert len(ats) == 10
     assert ats == sorted(ats)
+
+
+def test_estimated_login_expiry_reads_as_a_reminder(app_factory: AppFactory) -> None:
+    def make(connector: FakeConnector) -> FakePlugin:
+        expires = START + timedelta(days=10)
+        return TunedPlugin(connector, expires=expires, estimated=True)
+
+    with world(app_factory, make_plugin=make) as w:
+        warnings = w.client.get("/api/home").json()["warnings"]
+        info = w.client.get("/api/connections/fake_a").json()
+    assert warnings[0] == {
+        "service": "fake_a",
+        "kind": "login_expiring",
+        "message": "Fake A may sign you out around 11 Jan 2026; "
+        "sign in again before then to be safe",
+    }
+    assert info["login_expiry_estimated"] is True
 
 
 def test_home_warnings(app_factory: AppFactory) -> None:

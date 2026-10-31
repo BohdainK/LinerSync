@@ -339,6 +339,101 @@ describe("SetupStepper", () => {
     expect(configure).toHaveBeenCalledWith({ developerToken: "dev", app: { name: "LinerSync", build: "1.0" } });
   });
 
+  describe("device code", () => {
+    const deviceGuide = setupGuide({
+      service: "youtube_music",
+      display_name: "YouTube Music",
+      steps: [step({ step_id: "signin", kind: "device_code", title: "Sign in", body: "Enter the code." }), testStep],
+    });
+
+    function deviceServer(polls: string[]) {
+      let starts = 0;
+      server.use(
+        http.post("/api/connections/youtube_music/device-code/start", () => {
+          starts += 1;
+          return HttpResponse.json({
+            user_code: `ABCD-EFG${starts}`,
+            verification_url: "https://www.google.com/device",
+            interval_s: 0,
+            expires_in_s: 600,
+          });
+        }),
+        http.post("/api/connections/youtube_music/device-code/poll", () => {
+          const status = polls.length > 1 ? polls.shift() : polls[0];
+          const message = status === "expired" ? "This code expired. Get a new one." : "";
+          return HttpResponse.json({ status, message });
+        }),
+      );
+    }
+
+    it("shows the code and link, then runs the test once approved", async () => {
+      deviceServer(["pending", "pending", "done"]);
+      renderStepper({ service: "youtube_music", guide: deviceGuide });
+      await userEvent.click(await screen.findByRole("button", { name: "Get a code" }));
+      expect(await screen.findByText("ABCD-EFG1")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /google\.com\/device/ })).toHaveAttribute(
+        "href",
+        "https://www.google.com/device",
+      );
+      await waitFor(() => expect(tests).toBe(1));
+    });
+
+    it("an expired code shows the message and offers a new one", async () => {
+      deviceServer(["expired"]);
+      renderStepper({ service: "youtube_music", guide: deviceGuide });
+      await userEvent.click(await screen.findByRole("button", { name: "Get a code" }));
+      expect(await screen.findByText("This code expired. Get a new one.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Get a code" })).toBeEnabled();
+      expect(tests).toBe(0);
+    });
+
+    it("a failed poll doesn't end the flow", async () => {
+      deviceServer(["pending", "done"]);
+      let failures = 1;
+      server.use(
+        http.post("/api/connections/youtube_music/device-code/poll", () => {
+          if (failures > 0) {
+            failures -= 1;
+            return HttpResponse.json({ detail: "Bad gateway" }, { status: 502 });
+          }
+          return undefined;
+        }),
+      );
+      renderStepper({ service: "youtube_music", guide: deviceGuide });
+      await userEvent.click(await screen.findByRole("button", { name: "Get a code" }));
+      await waitFor(() => expect(tests).toBe(1));
+    });
+
+    it("polls that keep failing end the flow", async () => {
+      deviceServer(["pending"]);
+      server.use(
+        http.post("/api/connections/youtube_music/device-code/poll", () =>
+          HttpResponse.json({ detail: "Bad gateway" }, { status: 502 }),
+        ),
+      );
+      renderStepper({ service: "youtube_music", guide: deviceGuide });
+      await userEvent.click(await screen.findByRole("button", { name: "Get a code" }));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Get a code" })).toBeEnabled();
+    });
+
+    it("slows down when the server asks", async () => {
+      deviceServer(["pending"]);
+      let polls = 0;
+      server.use(
+        http.post("/api/connections/youtube_music/device-code/poll", () => {
+          polls += 1;
+          return HttpResponse.json({ status: "pending", message: "", interval_s: 3600 });
+        }),
+      );
+      renderStepper({ service: "youtube_music", guide: deviceGuide });
+      await userEvent.click(await screen.findByRole("button", { name: "Get a code" }));
+      await waitFor(() => expect(polls).toBe(1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(polls).toBe(1);
+    });
+  });
+
   it("text version lists every step and has no inputs", async () => {
     renderStepper();
     await userEvent.click(await screen.findByRole("button", { name: SHOW_TEXT }));

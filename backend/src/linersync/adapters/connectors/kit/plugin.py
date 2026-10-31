@@ -79,6 +79,20 @@ class ConnectorPlugin(Protocol):
     def create(self, ctx: ConnectorContext) -> Connector: ...
 
 
+def is_experimental(plugin: ConnectorPlugin) -> bool:
+    """A plugin may set ``experimental = True`` (optional; absent means False)
+    when it relies on unofficial access that can break at any time. The app
+    labels such services so their failures don't read as LinerSync's."""
+    return bool(getattr(plugin, "experimental", False))
+
+
+def is_login_expiry_estimated(plugin: ConnectorPlugin) -> bool:
+    """A plugin may set ``login_expiry_estimated = True`` (optional; absent
+    means False) when ``login_expires_at`` is a guess rather than a deadline
+    the service announced, so the app words it as a reminder."""
+    return bool(getattr(plugin, "login_expiry_estimated", False))
+
+
 @runtime_checkable
 class OAuthSetup(Protocol):
     def authorize(
@@ -92,6 +106,40 @@ class OAuthSetup(Protocol):
         code: str,
         keep: Mapping[str, str],
     ) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceCodeStart:
+    user_code: str  # shown to the user, who types it at verification_url
+    verification_url: str
+    interval_s: int  # how often to poll
+    expires_in_s: int
+    keep: dict[str, str]  # stored by the server until the flow ends
+
+
+DevicePollStatus = Literal["pending", "done", "denied", "expired"]
+
+
+@dataclass(frozen=True, slots=True)
+class DevicePoll:
+    status: DevicePollStatus
+    message: str = ""
+    # A new polling interval, when asked to slow down. The server keeps it and
+    # passes it back in ``keep`` as "interval_s".
+    interval_s: int | None = None
+
+
+@runtime_checkable
+class DeviceCodeSetup(Protocol):
+    """Sign-in by a code the user enters on another page (OAuth device flow)."""
+
+    async def start_device_code(self, ctx: ConnectorContext) -> DeviceCodeStart: ...
+
+    async def poll_device_code(
+        self, ctx: ConnectorContext, keep: Mapping[str, str]
+    ) -> DevicePoll:
+        """Saves the credentials itself when the status is "done"."""
+        ...
 
 
 @runtime_checkable

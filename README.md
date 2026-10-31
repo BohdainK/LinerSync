@@ -19,10 +19,22 @@ Before you start, know what each service asks of you:
 - **Spotify:** a Spotify Premium account owns the developer app you register.
 - **Apple Music:** needs a MusicKit key, and that needs the paid Apple Developer Program
   membership.
+- **Tidal:** a Tidal subscription, and a free app you register on the Tidal developer
+  dashboard.
+- **YouTube Music:** a signed-in browser to copy a cookie from, or (with
+  `LINERSYNC_YTMUSIC_AUTH=oauth`) a free Google Cloud OAuth client. YouTube Music has no
+  public API, so this connection can break when YouTube changes its site.
+- **Qobuz (experimental):** a Qobuz subscription and a signed-in web player to copy two
+  values from. Qobuz has no API for apps like LinerSync, so this uses the unofficial one
+  behind its web player: it can break when Qobuz updates the player, and using it is
+  against Qobuz's terms.
+- **Jellyfin:** an API key from your server's dashboard (read-only: Jellyfin can be a
+  source, not a destination).
 
 ## What it does
 
-- Connects Spotify and Apple Music, with step-by-step setup in the app.
+- Connects Spotify, Apple Music, Tidal, YouTube Music and (experimental) Qobuz, and
+  reads playlists from Jellyfin, with step-by-step setup in the app.
 - Syncs playlists one way, from a source to one or more destinations, in full or
   add-only mode. Preview and dry run show what would change first.
 - Transfers playlists between services once.
@@ -78,6 +90,21 @@ in LinerSync.
 **Apple Music.** Follow the setup steps in the app. They need the MusicKit key from your
 Apple Developer Program membership.
 
+**Tidal.** On the Tidal developer dashboard, create an app with the scopes the setup
+steps list, and add the same redirect URI as for Spotify. Then enter the app's client ID
+in LinerSync and sign in.
+
+**YouTube Music.** Follow the setup steps in the app: paste the Cookie header from a
+signed-in music.youtube.com tab, or, in OAuth mode, enter your Google OAuth client and
+the code Google shows.
+
+**Qobuz.** Follow the setup steps in the app: copy the `X-App-Id` and
+`X-User-Auth-Token` request headers from a signed-in play.qobuz.com tab. Qobuz can't
+reorder songs through LinerSync.
+
+**Jellyfin.** In Jellyfin, open Dashboard → API Keys and create a key. In LinerSync enter
+your server's address, the key and the username whose playlists to read.
+
 ## Backups
 
 Your data lives in the data folder (`./data` next to the Compose file by default). Back
@@ -108,5 +135,3 @@ nothing re-runs by itself. See [what to expect](docs/server.md#what-to-expect).
 
 LinerSync is licensed under PolyForm Noncommercial 1.0.0: free to use, modify and share;
 no commercial use or sale. See [LICENSE](LICENSE).
-
-LinerSync was written from scratch. See [docs/PROVENANCE.md](docs/PROVENANCE.md).

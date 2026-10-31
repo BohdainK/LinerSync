@@ -1,0 +1,59 @@
+{
+  "query": "GBUM71029604",
+  "tracks": {
+    "limit": 10,
+    "offset": 0,
+    "total": 1,
+    "items": [
+      {
+        "id": 64868955,
+        "title": "Alpha",
+        "version": null,
+        "duration": 214,
+        "isrc": "GBUM71029604",
+        "track_number": 3,
+        "media_number": 1,
+        "maximum_bit_depth": 24,
+        "maximum_sampling_rate": 96,
+        "parental_warning": false,
+        "streamable": true,
+        "hires": true,
+        "hires_streamable": true,
+        "copyright": "2011 Label",
+        "performer": {
+          "id": 11111,
+          "name": "Alpha Band"
+        },
+        "performers": "Alpha Band, MainArtist - Jane Writer, Composer, Lyricist",
+        "composer": {
+          "id": 22222,
+          "name": "Jane Writer"
+        },
+        "album": {
+          "id": "abc123def",
+          "title": "First",
+          "version": null,
+          "image": {
+            "small": "https://static.qobuz.com/images/covers/ab/c1/abc123def_230.jpg",
+            "thumbnail": "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg",
+            "large": "https://static.qobuz.com/images/covers/ab/c1/abc123def_600.jpg"
+          },
+          "artist": {
+            "id": 11111,
+            "name": "Alpha Band"
+          },
+          "label": {
+            "id": 33333,
+            "name": "Label"
+          },
+          "genre": {
+            "id": 112,
+            "name": "Pop"
+          },
+          "released_at": 1300000000,
+          "tracks_count": 12
+        }
+      }
+    ]
+  }
+}

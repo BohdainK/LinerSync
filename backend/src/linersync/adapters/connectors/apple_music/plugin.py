@@ -1,8 +1,19 @@
-"""The Apple Music plugin: setup guide, MusicKit browser sign-in, connection test."""
+"""The Apple Music plugin: setup guide, sign-in, connection test.
+
+Two ways to authenticate, chosen with LINERSYNC_APPLE_MUSIC_AUTH:
+
+- ``web`` (default): the token Apple's web player uses, read from
+  music.apple.com, plus the ``media-user-token`` cookie the user pastes.
+  Unofficial, but needs no Apple Developer Program membership.
+- ``developer``: a developer token signed with the user's own MusicKit key,
+  plus a Music-User-Token from MusicKit JS sign-in in the browser.
+"""
 
 import importlib.metadata
+import os
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 
 from linersync.adapters.connectors.apple_music.connector import (
     CAPABILITIES,
@@ -14,6 +25,11 @@ from linersync.adapters.connectors.apple_music.token import (
     DeveloperTokens,
     check_private_key,
     make_developer_token,
+)
+from linersync.adapters.connectors.apple_music.web_token import (
+    WEB_HEADERS,
+    WEB_PLAYER,
+    WebTokens,
 )
 from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
 from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
@@ -42,15 +58,41 @@ _POLICY = QuotaPolicy()
 _ID_PATTERN = "[A-Z0-9]{10}"
 _BAD_KEY = "Check Team ID, Key ID and key file"
 _SIGN_IN_AGAIN = "Sign in to Apple Music again"
+_PASTE_AGAIN = "Copy the media-user-token cookie from music.apple.com again"
+_WEB_TOKEN_REJECTED = (
+    "Apple rejected the web player's token. Apple may have changed its web player."
+)
+AUTH_MODE_ENV = "LINERSYNC_APPLE_MUSIC_AUTH"
+
+
+class AuthMode(StrEnum):
+    WEB = "web"
+    DEVELOPER = "developer"
+
+
+def auth_mode_from_env() -> AuthMode:
+    raw = os.environ.get(AUTH_MODE_ENV, AuthMode.WEB).strip().lower()
+    try:
+        return AuthMode(raw)
+    except ValueError:
+        raise ValueError(
+            f"{AUTH_MODE_ENV} must be 'web' or 'developer', got {raw!r}"
+        ) from None
 
 
 class AppleMusicAuth:
     """AuthProvider: the developer token (renewed near expiry) plus the
-    Music-User-Token, both read from the credential store on each request."""
+    Music-User-Token, both read from the credential store on each request.
 
-    def __init__(self, credentials: CredentialStore, clock: Clock) -> None:
+    With ``web``, the developer token is the web player's, sent with the
+    web player's Origin; otherwise it is signed with the user's MusicKit key."""
+
+    def __init__(
+        self, credentials: CredentialStore, clock: Clock, web: WebTokens | None = None
+    ) -> None:
         self._credentials = credentials
         self._clock = clock
+        self._web = web
         self._tokens: DeveloperTokens | None = None
         self._key: tuple[str, str, str] | None = None
 
@@ -79,14 +121,21 @@ class AppleMusicAuth:
             ) from None
 
     async def headers(self) -> Mapping[str, str]:
-        headers = {"Authorization": f"Bearer {self._sign(renew=False)}"}
+        if self._web is not None:
+            token = await self._web.current()
+            headers = {"Authorization": f"Bearer {token}", **WEB_HEADERS}
+        else:
+            headers = {"Authorization": f"Bearer {self._sign(renew=False)}"}
         user_token = self._credentials.get(APPLE).get("music_user_token")
         if user_token:
             headers["Music-User-Token"] = user_token
         return headers
 
     async def refresh(self) -> bool:
-        self._sign(renew=True)
+        if self._web is not None:
+            await self._web.force_renew()
+        else:
+            self._sign(renew=True)
         return True
 
 
@@ -104,9 +153,9 @@ def _api_client(ctx: ConnectorContext, auth: AppleMusicAuth) -> HttpClient:
     )
 
 
-def _artwork_client(ctx: ConnectorContext) -> HttpClient:
-    """Unauthenticated: artwork lives on CDN hosts that must never see the
-    developer token or the Music-User-Token."""
+def _plain_client(ctx: ConnectorContext) -> HttpClient:
+    """Unauthenticated: artwork CDN hosts and the web player page must never
+    see the developer token or the Music-User-Token."""
     return HttpClient(
         APPLE,
         "",
@@ -162,7 +211,62 @@ class AppleMusicPlugin:
     limits = LIMITS
     quota_policy = _POLICY
 
+    def __init__(self, mode: AuthMode = AuthMode.WEB) -> None:
+        self.mode = mode
+
+    def _auth(self, ctx: ConnectorContext) -> AppleMusicAuth:
+        web = None
+        if self.mode is AuthMode.WEB:
+            web = WebTokens(ctx.credentials, ctx.clock, _plain_client(ctx))
+        return AppleMusicAuth(ctx.credentials, ctx.clock, web)
+
     def setup_guide(self) -> SetupGuide:
+        if self.mode is AuthMode.WEB:
+            return self._web_guide()
+        return self._developer_guide()
+
+    def _web_guide(self) -> SetupGuide:
+        return SetupGuide(
+            self.service,
+            self.display_name,
+            self.category,
+            ("An Apple Music subscription on the account you sign in with",),
+            (
+                SetupStep(
+                    "web_sign_in",
+                    "Sign in on music.apple.com",
+                    StepKind.INFO,
+                    body=(
+                        "Open Apple Music on the web and sign in with your Apple "
+                        "ID. LinerSync talks to Apple the way that web player "
+                        "does. This is unofficial: it can stop working when "
+                        "Apple changes the web player."
+                    ),
+                    links=(Link("Apple Music on the web", WEB_PLAYER),),
+                ),
+                SetupStep(
+                    "user_token",
+                    "Copy your media-user-token",
+                    StepKind.FORM,
+                    body=(
+                        "In the same browser, open the developer tools. Under "
+                        "Application (Chrome, Edge) or Storage (Firefox, Safari), "
+                        "open Cookies for https://music.apple.com and copy the "
+                        "value of the media-user-token cookie."
+                    ),
+                    fields=(
+                        SetupField(
+                            "music_user_token",
+                            "media-user-token",
+                            kind=FieldKind.SECRET,
+                        ),
+                    ),
+                ),
+                SetupStep("test", "Test the connection", StepKind.TEST),
+            ),
+        )
+
+    def _developer_guide(self) -> SetupGuide:
         return SetupGuide(
             self.service,
             self.display_name,
@@ -251,7 +355,7 @@ class AppleMusicPlugin:
 
     def validate(self, values: Mapping[str, str]) -> dict[str, str]:
         problems = validate_values(self.setup_guide(), values)
-        if "private_key" not in problems:
+        if self.mode is AuthMode.DEVELOPER and "private_key" not in problems:
             message = check_private_key(values["private_key"].strip())
             if message is not None:
                 problems["private_key"] = message
@@ -285,17 +389,22 @@ class AppleMusicPlugin:
         )
 
     async def test_connection(self, ctx: ConnectorContext) -> ConnectionTest:
-        api = _api_client(ctx, AppleMusicAuth(ctx.credentials, ctx.clock))
+        web = self.mode is AuthMode.WEB
+        api = _api_client(ctx, self._auth(ctx))
         try:
             try:
                 await api.request(
                     "GET", f"{API_BASE}/v1/storefronts/us", idempotent=True
                 )
             except HttpFailure as e:
-                if e.auth_required:
+                if web and e.status == 401:
+                    return ConnectionTest(False, _WEB_TOKEN_REJECTED)
+                if e.auth_required and not web:
                     return ConnectionTest(False, _BAD_KEY)
                 return ConnectionTest(False, e.message)
             if not ctx.credentials.get(APPLE).get("music_user_token"):
+                if web:
+                    return ConnectionTest(False, "Paste your media-user-token")
                 return ConnectionTest(
                     False, "Your key works. Sign in to Apple Music to finish."
                 )
@@ -303,7 +412,9 @@ class AppleMusicPlugin:
                 storefront = await _fetch_storefront(api)
             except HttpFailure as e:
                 if e.auth_required or e.status == 403:
-                    return ConnectionTest(False, _SIGN_IN_AGAIN)
+                    return ConnectionTest(
+                        False, _PASTE_AGAIN if web else _SIGN_IN_AGAIN
+                    )
                 return ConnectionTest(False, e.message)
         finally:
             await api.aclose()
@@ -320,9 +431,9 @@ class AppleMusicPlugin:
             return None
 
     def create(self, ctx: ConnectorContext) -> Connector:
-        api = _api_client(ctx, AppleMusicAuth(ctx.credentials, ctx.clock))
+        api = _api_client(ctx, self._auth(ctx))
         artwork = (
-            ArtworkHasher(http_fetcher(_artwork_client(ctx)))
+            ArtworkHasher(http_fetcher(_plain_client(ctx)))
             if ctx.settings.hash_artwork
             else None
         )
@@ -335,5 +446,5 @@ class AppleMusicPlugin:
         )
 
 
-APPLE_MUSIC_PLUGIN = AppleMusicPlugin()
+APPLE_MUSIC_PLUGIN = AppleMusicPlugin(auth_mode_from_env())
 PLUGIN = APPLE_MUSIC_PLUGIN

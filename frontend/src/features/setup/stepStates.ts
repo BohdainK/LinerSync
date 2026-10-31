@@ -14,6 +14,7 @@ function isDone(step: SetupStep, conn: ConnectionOut, local: LocalProgress): boo
         .every((f) => Boolean(conn.values[f.key]) || conn.secrets_set.includes(f.key));
     case "oauth":
     case "browser_sign_in":
+    case "device_code":
       return local.signedIn;
     case "test":
       return false;

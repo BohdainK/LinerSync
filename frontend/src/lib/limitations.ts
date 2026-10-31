@@ -7,6 +7,9 @@ export function limitations(serviceName: string, caps: readonly string[], mode: 
   const name = serviceName;
   const full = mode === "full";
   const has = (c: string) => caps.includes(c);
+  if (!has("add")) {
+    return [`${name} is read-only, so it can't be a destination`];
+  }
   const out: string[] = [];
   if (!has("remove")) {
     if (!has("reorder")) {

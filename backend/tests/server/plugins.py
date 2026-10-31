@@ -8,6 +8,9 @@ from linersync.adapters.connectors.kit.plugin import (
     AuthorizeRequest,
     ConnectorContext,
     ConnectorPlugin,
+    DeviceCodeStart,
+    DevicePoll,
+    DevicePollStatus,
 )
 from linersync.adapters.fake.connector import FakeConnector
 from linersync.adapters.fake.plugin import FakePlugin
@@ -113,6 +116,50 @@ class OAuthFakePlugin(FakePlugin):
         if code == "bad":
             raise ReadFailed(self.service, "bad code", auth_required=True)
         ctx.credentials.save(self.service, {"refresh_token": "r"})
+
+
+class DeviceFakePlugin(FakePlugin):
+    """Device-code sign-in; `outcome` is what the next poll reports."""
+
+    def __init__(self) -> None:
+        super().__init__(_connector("device_fake", "Device Fake"))
+        self.outcome: DevicePollStatus = "pending"
+        self.slow_down_to: int | None = None
+        self.started = 0
+        self.polled: list[dict[str, str]] = []
+
+    def setup_guide(self) -> SetupGuide:
+        return _guide(
+            self,
+            SetupStep(
+                "client",
+                "Client",
+                StepKind.FORM,
+                fields=(SetupField("client_id", "Client ID"),),
+            ),
+            SetupStep("sign_in", "Sign in", StepKind.DEVICE_CODE),
+        )
+
+    async def start_device_code(self, ctx: ConnectorContext) -> DeviceCodeStart:
+        self.started += 1
+        return DeviceCodeStart(
+            "ABCD-EFGH",
+            "https://device.example/activate",
+            5,
+            600,
+            {"device_code": f"dc{self.started}"},
+        )
+
+    async def poll_device_code(
+        self, ctx: ConnectorContext, keep: Mapping[str, str]
+    ) -> DevicePoll:
+        self.polled.append(dict(keep))
+        if self.outcome == "done":
+            ctx.credentials.save(self.service, {"refresh_token": "r"})
+            return DevicePoll("done")
+        if self.outcome == "denied":
+            return DevicePoll("denied", "You declined the sign-in")
+        return DevicePoll(self.outcome, interval_s=self.slow_down_to)
 
 
 class BrowserFakePlugin(FakePlugin):

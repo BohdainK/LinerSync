@@ -1,0 +1,39 @@
+{
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "playlists",
+    "attributes": {
+      "name": "Road trip",
+      "description": "Songs for the car",
+      "accessType": "UNLISTED",
+      "bounded": true,
+      "createdAt": "2026-10-01T08:00:00Z",
+      "lastModifiedAt": "2026-10-29T17:45:12.123Z",
+      "numberOfItems": 3,
+      "numberOfFollowers": 0,
+      "playlistType": "USER",
+      "externalLinks": []
+    },
+    "relationships": {
+      "coverArt": {
+        "data": [{"id": "art-pl-1", "type": "artworks"}],
+        "links": {"self": "/playlists/550e8400-e29b-41d4-a716-446655440000/relationships/coverArt"}
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "art-pl-1",
+      "type": "artworks",
+      "attributes": {
+        "mediaType": "IMAGE",
+        "files": [
+          {"href": "https://resources.tidal.com/images/pl1/160x160.jpg", "meta": {"width": 160, "height": 160}},
+          {"href": "https://resources.tidal.com/images/pl1/1080x1080.jpg", "meta": {"width": 1080, "height": 1080}},
+          {"href": "https://resources.tidal.com/images/pl1/480x480.jpg", "meta": {"width": 480, "height": 480}}
+        ]
+      }
+    }
+  ],
+  "links": {"self": "/playlists/550e8400-e29b-41d4-a716-446655440000"}
+}

@@ -1,0 +1,480 @@
+{
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "secondaryContents": {
+    "sectionListRenderer": {
+     "contents": [
+      {
+       "musicPlaylistShelfRenderer": {
+        "playlistId": "RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I",
+        "contents": [
+         {
+          "musicResponsiveListItemRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://i.ytimg.com/vi/CGj85pVzRJs/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3lvqSRpoefpRW4cG7gawPo5HRtJhg",
+                "width": 400,
+                "height": 225
+               }
+              ]
+             },
+             "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+             "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "The Beatles - Let It Be (Official Music Video)",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "CGj85pVzRJs",
+                   "playlistId": "RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I",
+                   "params": "8gECGAM%3D",
+                   "watchEndpointMusicSupportedConfigs": {
+                    "watchEndpointMusicConfig": {
+                     "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "The Beatles",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UC2XdaAVUannpujzv32jcouQ",
+                   "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                     "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {},
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "4:03"
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+              "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+             }
+            }
+           ],
+           "playlistItemData": {
+            "playlistSetVideoId": "56B44F6D10557CC6",
+            "videoId": "CGj85pVzRJs"
+           }
+          }
+         },
+         {
+          "musicResponsiveListItemRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://yt3.googleusercontent.com/DSzJ4yB0HvDMzAUp5_XCo0Jo79GywHqZFJayAVfpoy6Yv-p7DVN-lJxuuYzAYAoDqmxGBDn5kJXaagKR=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+               }
+              ]
+             },
+             "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+             "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Pepperland (Remastered 2009)",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "BXTKH1Pti34",
+                   "playlistId": "RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I",
+                   "params": "8gECGAM%3D",
+                   "watchEndpointMusicSupportedConfigs": {
+                    "watchEndpointMusicConfig": {
+                     "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "George Martin",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UCbPJj3KraqUFeQ-zdSuCcrg",
+                   "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                     "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "Yellow Submarine (Remastered 2009)",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "MPREb_nn3MWHNM0jS",
+                   "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                     "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "2:21"
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+              "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+             }
+            }
+           ],
+           "playlistItemData": {
+            "playlistSetVideoId": "289F4A46DF0A30D2",
+            "videoId": "BXTKH1Pti34"
+           }
+          }
+         },
+         {
+          "musicResponsiveListItemRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://i.ytimg.com/vi/KQetemT1sWc/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3k0UJq7U9uSo-_Gq61E1OwbaG4ebQ",
+                "width": 400,
+                "height": 225
+               }
+              ]
+             },
+             "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+             "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_ASPECT_FIT"
+            }
+           },
+           "flexColumns": [
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "The Beatles - Here Comes The Sun (Official Music Video) [2019 Mix]",
+                 "navigationEndpoint": {
+                  "watchEndpoint": {
+                   "videoId": "KQetemT1sWc",
+                   "playlistId": "RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I",
+                   "params": "8gECGAM%3D",
+                   "playerParams": "0gcJCTUC0OBS9m0t",
+                   "watchEndpointMusicSupportedConfigs": {
+                    "watchEndpointMusicConfig": {
+                     "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "The Beatles",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UC2XdaAVUannpujzv32jcouQ",
+                   "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                     "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+             }
+            },
+            {
+             "musicResponsiveListItemFlexColumnRenderer": {
+              "text": {},
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_MEDIUM"
+             }
+            }
+           ],
+           "fixedColumns": [
+            {
+             "musicResponsiveListItemFixedColumnRenderer": {
+              "text": {
+               "runs": [
+                {
+                 "text": "3:12"
+                }
+               ]
+              },
+              "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH",
+              "size": "MUSIC_RESPONSIVE_LIST_ITEM_FIXED_COLUMN_SIZE_SMALL"
+             }
+            }
+           ],
+           "playlistItemData": {
+            "playlistSetVideoId": "017208FAA85233F9",
+            "videoId": "KQetemT1sWc"
+           }
+          }
+         },
+         {
+          "continuationItemRenderer": {
+           "trigger": "CONTINUATION_TRIGGER_ON_ITEM_PRESCAN_VISIBLE",
+           "continuationEndpoint": {
+            "continuationCommand": {
+             "token": "4qmFsgKNARItVkxSRENMQUs1dXlfbEhJaUNFZWtuUGtwSk9vd3l5a3BmQnUtRUNKQjlRMzJJGi5laFZRVkRwRlozUk9VVlJXUldFeWJGZFRNVTV6VkZHU0FRTUl1Z1R3QVFBJTNEmgIrUkRDTEFLNXV5X2xISWlDRWVrblBrcEpPb3d5eWtwZkJ1LUVDSkI5UTMySQ%3D%3D",
+             "request": "CONTINUATION_REQUEST_TYPE_BROWSE"
+            }
+           }
+          }
+         }
+        ],
+        "collapsedItemCount": 100,
+        "contentsMultiSelectable": true,
+        "targetId": "RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I"
+       }
+      }
+     ],
+     "continuations": [
+      {
+       "nextContinuationData": {
+        "continuation": "4qmFsgI9Ei1WTFJEQ0xBSzV1eV9sSElpQ0Vla25Qa3BKT293eXlrcGZCdS1FQ0pCOVEzMkkaDGtnRURDTTBHOEFFQQ%3D%3D"
+       }
+      }
+     ],
+     "targetId": "VLRDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I"
+    }
+   },
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "musicResponsiveHeaderRenderer": {
+           "thumbnail": {
+            "musicThumbnailRenderer": {
+             "thumbnail": {
+              "thumbnails": [
+               {
+                "url": "https://yt3.googleusercontent.com/Sc6_hFRZfgjOvyTBA1N71YkqV1W2hUhFB2AFn8YAIevj58tKZoeuDHU9eH32DYQz6qTUNnLRgZB4onOX=w60-h60-l90-rj",
+                "width": 60,
+                "height": 60
+               }
+              ]
+             },
+             "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+             "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_UNSPECIFIED"
+            }
+           },
+           "title": {
+            "runs": [
+             {
+              "text": "The Beatles Jukebox"
+             }
+            ]
+           },
+           "subtitle": {
+            "runs": [
+             {
+              "text": "Playlist"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "2026"
+             }
+            ]
+           },
+           "description": {
+            "musicDescriptionShelfRenderer": {
+             "description": {
+              "runs": [
+               {
+                "text": "Every Beatles track ever. Just press play."
+               }
+              ]
+             },
+             "moreButton": {
+              "toggleButtonRenderer": {
+               "isToggled": false,
+               "isDisabled": false,
+               "defaultIcon": {
+                "iconType": "EXPAND"
+               },
+               "defaultText": {
+                "runs": [
+                 {
+                  "text": "More"
+                 }
+                ]
+               },
+               "toggledIcon": {
+                "iconType": "COLLAPSE"
+               },
+               "toggledText": {
+                "runs": [
+                 {
+                  "text": "Less"
+                 }
+                ]
+               }
+              }
+             },
+             "shelfStyle": "MUSIC_SHELF_STYLE_OPEN_DIALOG_ON_CLICK"
+            }
+           },
+           "secondSubtitle": {
+            "runs": [
+             {
+              "text": "218 songs"
+             },
+             {
+              "text": " • "
+             },
+             {
+              "text": "4+ hours"
+             }
+            ]
+           }
+          }
+         }
+        ],
+        "targetId": "VLRDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I_header"
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "microformat": {
+  "microformatDataRenderer": {
+   "urlCanonical": "https://music.youtube.com/playlist?list=RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I",
+   "title": "The Beatles Jukebox",
+   "description": "Playlist • YouTube Music",
+   "thumbnail": {
+    "thumbnails": [
+     {
+      "url": "https://yt3.googleusercontent.com/Sc6_hFRZfgjOvyTBA1N71YkqV1W2hUhFB2AFn8YAIevj58tKZoeuDHU9eH32DYQz6qTUNnLRgZB4onOX=w544-h544-l90-rj",
+      "width": 544,
+      "height": 544
+     }
+    ]
+   },
+   "siteName": "YouTube Music",
+   "appName": "YouTube Music",
+   "androidPackage": "com.google.android.apps.youtube.music",
+   "iosAppStoreId": "1017492454",
+   "ogType": "music.playlist",
+   "urlApplinksWeb": "https://music.youtube.com/playlist?list=RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I&feature=applinks",
+   "urlApplinksIos": "vnd.youtube.music://music.youtube.com/playlist?list=RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I&feature=applinks",
+   "urlApplinksAndroid": "vnd.youtube.music://music.youtube.com/playlist?list=RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I&feature=applinks",
+   "urlTwitterIos": "vnd.youtube.music://music.youtube.com/playlist?list=RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I&feature=twitter-deep-link",
+   "urlTwitterAndroid": "vnd.youtube.music://music.youtube.com/playlist?list=RDCLAK5uy_lHIiCEeknPkpJOowyykpfBu-ECJB9Q32I&feature=twitter-deep-link",
+   "twitterCardType": "summary",
+   "twitterSiteHandle": "@youtubemusic"
+  }
+ },
+ "background": {
+  "musicThumbnailRenderer": {
+   "thumbnail": {
+    "thumbnails": [
+     {
+      "url": "https://yt3.googleusercontent.com/Sc6_hFRZfgjOvyTBA1N71YkqV1W2hUhFB2AFn8YAIevj58tKZoeuDHU9eH32DYQz6qTUNnLRgZB4onOX=w60-h60-l90-rj",
+      "width": 60,
+      "height": 60
+     }
+    ]
+   },
+   "thumbnailCrop": "MUSIC_THUMBNAIL_CROP_UNSPECIFIED",
+   "thumbnailScale": "MUSIC_THUMBNAIL_SCALE_UNSPECIFIED"
+  }
+ }
+}

@@ -150,9 +150,7 @@ async def test_read_raises_when_playlist_changed_during_read() -> None:
         await connector.read_playlist(pid)
 
 
-@pytest.mark.parametrize(
-    "strip", [{1}, {2}, {1, 2}], ids=["first", "recheck", "both"]
-)
+@pytest.mark.parametrize("strip", [{1}, {2}, {1, 2}], ids=["first", "recheck", "both"])
 async def test_read_without_snapshot_id_is_read_failed(strip: set[int]) -> None:
     sim = SpotifySim(catalog=CATALOG)
     pid = sim.add_playlist("Mine", [X, Y])

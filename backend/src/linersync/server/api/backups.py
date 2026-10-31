@@ -33,6 +33,7 @@ from linersync.server.api.schemas import (
 from linersync.server.api.syncs import (
     UNKNOWN_BACKUP,
     backup_unlocked,
+    check_destinations,
     check_services,
 )
 from linersync.server.auth import require_session
@@ -237,7 +238,7 @@ async def restore_version(
     entry = _entry(services, version.entry_id)
     request = body if body is not None else RestoreIn()
     destination = ServiceId(request.destination or entry.service)
-    check_services(services, [destination])
+    check_destinations(services, [destination])
     name = version.snapshot.meta.name
     label = f"Restore “{name}” to {_display_name(services, destination)}"
     transfer = TransferJob(BACKUP_SERVICE, version_id, destination, request.dry_run)

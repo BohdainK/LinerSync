@@ -110,6 +110,12 @@ def test_authorize_url_has_pkce_and_scopes() -> None:
     assert q["client_id"] == "c" * 32
 
 
+def test_scopes_cover_search_market_from_token() -> None:
+    # search sends market=from_token; without user-read-private Spotify answers
+    # 403 "Insufficient client scope" (seen live).
+    assert "user-read-private" in SCOPES
+
+
 def test_redirect_uri_rules() -> None:
     check_redirect_uri("https://linersync.example/cb")
     check_redirect_uri("http://127.0.0.1:8000/cb")

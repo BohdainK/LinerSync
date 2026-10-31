@@ -32,6 +32,8 @@ and a message naming the variable.
 | `LINERSYNC_HOST` | `127.0.0.1` | The address to listen on. Use `0.0.0.0` inside a container or behind a proxy on another machine. |
 | `LINERSYNC_PORT` | `8000` | The port to listen on. |
 | `LINERSYNC_WEB_DIR` | unset | Folder with the built web app (`frontend/dist`). Unset: the server serves only the API. The Docker image sets it. |
+| `LINERSYNC_YTMUSIC_AUTH` | `headers` | How YouTube Music signs in. `headers`: the Cookie header of a signed-in music.youtube.com tab, pasted in the setup steps. `oauth`: your own Google Cloud OAuth client ("TVs and Limited Input devices"), signed in with a code. Both are unofficial: YouTube Music has no public API. After switching, set YouTube Music up again. |
+| `LINERSYNC_APPLE_MUSIC_AUTH` | `web` | How Apple Music signs in. `web`: the token Apple's web player uses plus your `media-user-token` cookie. Unofficial, and it can break when Apple changes music.apple.com, but needs no developer membership. `developer`: your own MusicKit key and MusicKit sign-in. After switching, set Apple Music up again: the two modes' user tokens are not interchangeable. |
 
 Syncs without their own schedule use the default schedule `0 */6 * * *` (every six
 hours). You can change it in the app's settings.
@@ -50,6 +52,15 @@ three setups:
    domain) and let LinerSync listen where the proxy can reach it.
 3. **Your own reverse proxy** (Caddy, Traefik, Nginx, ...). Terminate HTTPS at the proxy,
    forward to LinerSync, and set `LINERSYNC_PUBLIC_URL` to the HTTPS address users type.
+
+Tidal sign-in works the same way as Spotify's: register the redirect URI
+`<public URL>/api/connections/oauth/callback` in your Tidal developer app. LinerSync
+accepts an HTTPS address or a loopback address (`127.0.0.1` or `localhost`) for it.
+
+Jellyfin needs none of this: LinerSync calls your Jellyfin server, never the other way
+round, so Jellyfin needs no public URL. Enter an address the LinerSync container can
+reach, such as `http://jellyfin:8096` when both run on the same Docker network, or the
+server's LAN address.
 
 [install.md](install.md) covers the installer that sets up any of the three, and
 [reverse-proxy.md](reverse-proxy.md) covers using your own proxy.

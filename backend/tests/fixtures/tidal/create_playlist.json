@@ -1,0 +1,19 @@
+{
+  "data": {
+    "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "type": "playlists",
+    "attributes": {
+      "name": "New one",
+      "description": "",
+      "accessType": "UNLISTED",
+      "bounded": true,
+      "createdAt": "2026-10-30T12:00:00Z",
+      "lastModifiedAt": "2026-10-30T12:00:00Z",
+      "numberOfItems": 0,
+      "numberOfFollowers": 0,
+      "playlistType": "USER",
+      "externalLinks": []
+    }
+  },
+  "links": {"self": "/playlists/7c9e6679-7425-40de-944b-e07fc1f90ae7"}
+}

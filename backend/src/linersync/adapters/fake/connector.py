@@ -49,7 +49,7 @@ class FakeConnector:
         self._read_failures_auth: dict[str, bool] = {}
         self._list_failures = 0
         self._list_failures_auth = False
-        self._truncated: set[str] = set()
+        self._truncated: dict[str, str | None] = {}
         self._write_failures: dict[type, list[bool]] = {}
         self._dropped: set[str] = set()
         self._search_failures = 0
@@ -73,8 +73,8 @@ class FakeConnector:
         self._read_failures[playlist_id] = times
         self._read_failures_auth[playlist_id] = auth_required
 
-    def truncate_reads(self, playlist_id: str) -> None:
-        self._truncated.add(playlist_id)
+    def truncate_reads(self, playlist_id: str, reason: str | None = None) -> None:
+        self._truncated[playlist_id] = reason
 
     def fail_writes(self, op_type: type, times: int = 1, applied: bool = False) -> None:
         self._write_failures.setdefault(op_type, []).extend([applied] * times)
@@ -108,7 +108,11 @@ class FakeConnector:
             )
         snap = self._get(playlist_id)
         if playlist_id in self._truncated:
-            return replace(snap, expected_total=len(snap.entries) + 1)
+            return replace(
+                snap,
+                expected_total=len(snap.entries) + 1,
+                missing_reason=self._truncated[playlist_id],
+            )
         return replace(snap, expected_total=len(snap.entries))
 
     async def search(self, query: TrackQuery) -> list[Track]:

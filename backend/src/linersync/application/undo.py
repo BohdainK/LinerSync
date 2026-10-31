@@ -142,8 +142,7 @@ class UndoService:
         if not current.is_complete:
             return _unreadable(
                 mid,
-                f"this playlist was only partly read "
-                f"({len(current.entries)} of {current.expected_total} songs)",
+                f"this playlist was only partly read {current.shortfall()}",
             )
         if verified_after is not None and current.track_ids != verified_after:
             return _changed(mid)

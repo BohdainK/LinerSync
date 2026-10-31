@@ -1,0 +1,65 @@
+{
+  "user": {
+    "id": 1111111,
+    "login": "sam"
+  },
+  "playlists": {
+    "offset": 0,
+    "limit": 500,
+    "total": 2,
+    "items": [
+      {
+        "id": 8501234,
+        "name": "Road Trip",
+        "description": "Songs for the road",
+        "tracks_count": 3,
+        "users_count": 0,
+        "duration": 642,
+        "public_at": false,
+        "created_at": 1700000000,
+        "updated_at": 1730000000,
+        "is_public": false,
+        "is_collaborative": false,
+        "owner": {
+          "id": 1111111,
+          "name": "sam"
+        },
+        "images": [
+          "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg"
+        ],
+        "images150": [
+          "https://static.qobuz.com/images/covers/ab/c1/abc123def_150.jpg"
+        ],
+        "images300": [
+          "https://static.qobuz.com/images/covers/ab/c1/abc123def_300.jpg"
+        ]
+      },
+      {
+        "id": 4400001,
+        "name": "Qobuz Essentials",
+        "description": "Songs for the road",
+        "tracks_count": 40,
+        "users_count": 0,
+        "duration": 8560,
+        "public_at": false,
+        "created_at": 1700000000,
+        "updated_at": 1730000000,
+        "is_public": false,
+        "is_collaborative": false,
+        "owner": {
+          "id": 2222222,
+          "name": "Qobuz"
+        },
+        "images": [
+          "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg"
+        ],
+        "images150": [
+          "https://static.qobuz.com/images/covers/ab/c1/abc123def_150.jpg"
+        ],
+        "images300": [
+          "https://static.qobuz.com/images/covers/ab/c1/abc123def_300.jpg"
+        ]
+      }
+    ]
+  }
+}

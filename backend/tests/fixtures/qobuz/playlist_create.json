@@ -1,0 +1,26 @@
+{
+  "id": 8509999,
+  "name": "New list",
+  "description": "Songs for the road",
+  "tracks_count": 0,
+  "users_count": 0,
+  "duration": 0,
+  "public_at": false,
+  "created_at": 1700000000,
+  "updated_at": 1730000000,
+  "is_public": false,
+  "is_collaborative": false,
+  "owner": {
+    "id": 1111111,
+    "name": "sam"
+  },
+  "images": [
+    "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg"
+  ],
+  "images150": [
+    "https://static.qobuz.com/images/covers/ab/c1/abc123def_150.jpg"
+  ],
+  "images300": [
+    "https://static.qobuz.com/images/covers/ab/c1/abc123def_300.jpg"
+  ]
+}

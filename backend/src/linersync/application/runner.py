@@ -213,7 +213,7 @@ class SyncRunner:
         if not snap.is_complete:
             partial = (
                 f"the source playlist {src.playlist_id} was only partly read "
-                f"({len(snap.entries)} of {snap.expected_total} songs)"
+                f"{snap.shortfall()}"
             )
             w.errors[src.service] = partial
             raise _SourceUnavailable(RunStatus.ABORTED, partial)
@@ -253,10 +253,7 @@ class SyncRunner:
             self._skip(w, mid, f"couldn't read this playlist: {e}")
             return
         if not snap.is_complete:
-            partial = (
-                f"this playlist was only partly read "
-                f"({len(snap.entries)} of {snap.expected_total} songs)"
-            )
+            partial = f"this playlist was only partly read {snap.shortfall()}"
             w.errors[dest.service] = partial
             self._skip(w, mid, partial)
             return
@@ -532,8 +529,7 @@ class SyncRunner:
         if not snap.is_complete:
             raise ReadFailed(
                 connector.service,
-                f"{playlist_id} was only partly read "
-                f"({len(snap.entries)} of {snap.expected_total} songs)",
+                f"{playlist_id} was only partly read {snap.shortfall()}",
             )
         return snap
 

@@ -23,6 +23,8 @@ def limitations(
 
     name = service_name
     full = mode is SyncMode.FULL
+    if Capability.ADD not in caps:
+        return (f"{name} is read-only, so it can't be a destination",)
     out: list[str] = []
     if Capability.REMOVE not in caps:
         if Capability.REORDER not in caps:

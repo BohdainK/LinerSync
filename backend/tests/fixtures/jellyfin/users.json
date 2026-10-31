@@ -1,0 +1,9 @@
+[
+  {
+    "Name": "Sam",
+    "ServerId": "5f1c0a6f2e8b4c4b9a1d3e7f6a2b8c9d",
+    "Id": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu",
+    "HasPassword": true,
+    "Policy": {"IsAdministrator": true, "IsDisabled": false}
+  }
+]

@@ -1,5 +1,5 @@
-"""End-to-end runs: the Plan 1 engine with the real Spotify and Apple Music
-connectors, each talking to its simulator."""
+"""End-to-end runs: the Plan 1 engine with the real Spotify, Apple Music and
+Jellyfin connectors, each talking to its simulator."""
 
 import re
 from collections import Counter
@@ -12,9 +12,16 @@ import httpx
 from linersync.adapters.connectors.apple_music.plugin import (
     PLUGIN as APPLE_PLUGIN,
 )
+from linersync.adapters.connectors.jellyfin.plugin import JELLYFIN_PLUGIN
 from linersync.adapters.connectors.kit.discovery import discover_plugins
 from linersync.adapters.connectors.kit.plugin import ConnectorContext, ConnectorSettings
+from linersync.adapters.connectors.qobuz.plugin import QOBUZ_PLUGIN
 from linersync.adapters.connectors.spotify.plugin import PLUGIN as SPOTIFY_PLUGIN
+from linersync.adapters.connectors.tidal.plugin import TIDAL_PLUGIN
+from linersync.adapters.connectors.youtube_music.plugin import (
+    YouTubeMusicPlugin,
+    YTAuthMode,
+)
 from linersync.adapters.memory.credentials import InMemoryCredentials
 from linersync.adapters.memory.quota import InMemoryQuota
 from linersync.adapters.memory.repositories import in_memory_repositories
@@ -29,11 +36,19 @@ from linersync.domain.sync import SyncMode
 from linersync.domain.tracks import ServiceId, Track
 from linersync.ports.repositories import Repositories
 from tests.adapters.connectors.apple_music.sim import AppleMusicSim
+from tests.adapters.connectors.jellyfin.sim import JellyfinSim
+from tests.adapters.connectors.qobuz.sim import QobuzSim
 from tests.adapters.connectors.spotify.sim import ART_PREFIX, SpotifySim
+from tests.adapters.connectors.tidal.sim import TidalSim
+from tests.adapters.connectors.youtube_music.sim import YouTubeMusicSim
 from tests.factories import group, track
 
 SP = ServiceId("spotify")
 AM = ServiceId("apple_music")
+JF = ServiceId("jellyfin")
+TD = ServiceId("tidal")
+YT = ServiceId("youtube_music")
+QB = ServiceId("qobuz")
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
 APPLE_TRACKS = r"/v1/me/library/playlists/[^/]+/tracks"
 SPOTIFY_ITEMS = r"/playlists/[^/]+/items"
@@ -185,9 +200,7 @@ class FailingFrom:
         self.healthy = True
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
-        if request.method == self._method and self._pattern.fullmatch(
-            request.url.path
-        ):
+        if request.method == self._method and self._pattern.fullmatch(request.url.path):
             self._seen += 1
             if self._seen >= self._n and not self.healthy:
                 self.failed += 1
@@ -201,7 +214,7 @@ class FailingFrom:
 def test_builtin_plugins_discovered() -> None:
     registry = discover_plugins()
     assert registry.errors == ()
-    assert {SP, AM} <= set(registry.plugins)
+    assert {SP, AM, JF, TD, YT, QB} <= set(registry.plugins)
 
 
 # -- Spotify → Apple Music ---------------------------------------------------
@@ -406,3 +419,344 @@ async def test_empty_source_creates_apple_playlist_only_once_it_has_songs() -> N
     second = await r.run(sync_id)
     assert second.status is RunStatus.SUCCEEDED, second
     assert r.apple.ids(r.apple_playlist(sync_id)) == apple_ids(am_catalog)
+
+
+# -- Jellyfin → Spotify ------------------------------------------------------
+
+
+async def test_jellyfin_to_spotify_sync_matches_without_isrc() -> None:
+    """Jellyfin has no ISRCs: songs are matched on title, artist and length."""
+    songs = [("Alpha", "Alpha Band"), ("Bravo", "Bravo Band"), ("Charlie", "C Band")]
+    jf_catalog = tuple(
+        track("jellyfin", f"{i + 1:032x}", title=t, artists=(a,))
+        for i, (t, a) in enumerate(songs)
+    )
+    sp_catalog = tuple(
+        track(
+            "spotify",
+            f"spotify:track:{i:022d}",
+            title=t,
+            artists=(a,),
+            isrc=f"USJF0{i:07d}",
+        )
+        for i, (t, a) in enumerate(songs)
+    )
+    jellyfin, spotify = JellyfinSim(catalog=jf_catalog), SpotifySim(catalog=sp_catalog)
+    source = jellyfin.add_playlist("Mix", [t.track_id for t in jf_catalog])
+    creds = InMemoryCredentials()
+    creds.save(JF, jellyfin.credentials())
+    creds.save(
+        SP,
+        {
+            "client_id": "a" * 32,
+            "access_token": spotify.access_token,
+            "refresh_token": "ref",
+            "expires_at": (NOW + timedelta(hours=1)).isoformat(),
+        },
+    )
+    clock = FixedClock(NOW)
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    def ctx(transport: httpx.AsyncBaseTransport) -> ConnectorContext:
+        return ConnectorContext(
+            creds,
+            InMemoryQuota(),
+            clock,
+            settings=ConnectorSettings(hash_artwork=False),
+            transport=transport,
+            sleep=no_sleep,
+        )
+
+    repos = in_memory_repositories()
+    runner = SyncRunner(
+        Deps(
+            connectors={
+                JF: JELLYFIN_PLUGIN.create(ctx(jellyfin.transport)),
+                SP: SPOTIFY_PLUGIN.create(ctx(spotify.transport)),
+            },
+            repos=repos,
+            clock=clock,
+            events=RecordingEvents(),
+            new_id=SequentialIds("id"),
+            breaker=CircuitBreaker(repos.breakers, clock, EngineConfig().breaker),
+        )
+    )
+    g = group(
+        source=("jellyfin", source),
+        destinations=[("spotify", None, SyncMode.FULL)],
+    )
+    repos.syncs.save(g)
+    run = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    assert run.status is RunStatus.SUCCEEDED, run
+    saved = repos.syncs.get(g.sync_id)
+    assert saved is not None
+    target = saved.destinations[0].playlist_id
+    assert target is not None
+    assert spotify.uris(target) == [t.track_id for t in sp_catalog]
+
+
+# -- Spotify → Tidal -----------------------------------------------------------
+
+
+async def test_spotify_to_tidal_full_sync_creates_then_removes() -> None:
+    sp_catalog, _ = catalogs(3)
+    td_catalog = tuple(
+        track(
+            "tidal",
+            str(80_000_000 + i),
+            title=t.title,
+            artists=t.artists,
+            isrc=t.isrc,
+        )
+        for i, t in enumerate(sp_catalog)
+    )
+    a, b, c = (t.track_id for t in sp_catalog)
+    ta, tb, tc = (t.track_id for t in td_catalog)
+    spotify, tidal = SpotifySim(catalog=sp_catalog), TidalSim(catalog=td_catalog)
+    source = spotify.add_playlist("Mix", [a, b, c])
+    creds = InMemoryCredentials()
+    creds.save(TD, tidal.credentials())
+    creds.save(
+        SP,
+        {
+            "client_id": "a" * 32,
+            "access_token": spotify.access_token,
+            "refresh_token": "ref",
+            "expires_at": (NOW + timedelta(hours=1)).isoformat(),
+        },
+    )
+    clock = FixedClock(NOW)
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    def ctx(transport: httpx.AsyncBaseTransport) -> ConnectorContext:
+        return ConnectorContext(
+            creds,
+            InMemoryQuota(),
+            clock,
+            settings=ConnectorSettings(hash_artwork=False),
+            transport=transport,
+            sleep=no_sleep,
+        )
+
+    repos = in_memory_repositories()
+    runner = SyncRunner(
+        Deps(
+            connectors={
+                SP: SPOTIFY_PLUGIN.create(ctx(spotify.transport)),
+                TD: TIDAL_PLUGIN.create(ctx(tidal.transport)),
+            },
+            repos=repos,
+            clock=clock,
+            events=RecordingEvents(),
+            new_id=SequentialIds("id"),
+            breaker=CircuitBreaker(repos.breakers, clock, EngineConfig().breaker),
+        )
+    )
+    g = group(
+        source=("spotify", source),
+        destinations=[("tidal", None, SyncMode.FULL)],
+    )
+    repos.syncs.save(g)
+
+    first = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    assert first.status is RunStatus.SUCCEEDED, first
+    saved = repos.syncs.get(g.sync_id)
+    assert saved is not None
+    target = saved.destinations[0].playlist_id
+    assert target is not None
+    assert tidal.track_ids(target) == [ta, tb, tc]
+    assert tidal.playlists[target].access == "UNLISTED"
+
+    spotify.playlists[source].uris.remove(b)
+    held = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    if held.status is RunStatus.AWAITING_APPROVAL:
+        (brake,) = [
+            i for i in repos.attention.list_open() if i.kind is AttentionKind.BRAKE
+        ]
+        AttentionService(repos, clock).approve(brake.item_id)
+        held = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    assert held.status is RunStatus.SUCCEEDED, held
+    assert tidal.track_ids(target) == [ta, tc]
+
+
+# -- Spotify → Qobuz -----------------------------------------------------------
+
+
+async def test_spotify_to_qobuz_full_sync_creates_removes_and_skips_reorder() -> None:
+    sp_catalog, _ = catalogs(3)
+    qb_catalog = tuple(
+        track(
+            "qobuz",
+            str(64_000_000 + i),
+            title=t.title,
+            artists=t.artists,
+            isrc=t.isrc,
+        )
+        for i, t in enumerate(sp_catalog)
+    )
+    a, b, c = (t.track_id for t in sp_catalog)
+    qa, _, qc = (t.track_id for t in qb_catalog)
+    spotify, qobuz = SpotifySim(catalog=sp_catalog), QobuzSim(catalog=qb_catalog)
+    source = spotify.add_playlist("Mix", [a, b, c])
+    creds = InMemoryCredentials()
+    creds.save(QB, qobuz.credentials())
+    creds.save(
+        SP,
+        {
+            "client_id": "a" * 32,
+            "access_token": spotify.access_token,
+            "refresh_token": "ref",
+            "expires_at": (NOW + timedelta(hours=1)).isoformat(),
+        },
+    )
+    clock = FixedClock(NOW)
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    def ctx(transport: httpx.AsyncBaseTransport) -> ConnectorContext:
+        return ConnectorContext(
+            creds,
+            InMemoryQuota(),
+            clock,
+            settings=ConnectorSettings(hash_artwork=False),
+            transport=transport,
+            sleep=no_sleep,
+        )
+
+    repos = in_memory_repositories()
+    runner = SyncRunner(
+        Deps(
+            connectors={
+                SP: SPOTIFY_PLUGIN.create(ctx(spotify.transport)),
+                QB: QOBUZ_PLUGIN.create(ctx(qobuz.transport)),
+            },
+            repos=repos,
+            clock=clock,
+            events=RecordingEvents(),
+            new_id=SequentialIds("id"),
+            breaker=CircuitBreaker(repos.breakers, clock, EngineConfig().breaker),
+        )
+    )
+    g = group(
+        source=("spotify", source),
+        destinations=[("qobuz", None, SyncMode.FULL)],
+    )
+    repos.syncs.save(g)
+
+    first = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    assert first.status is RunStatus.SUCCEEDED, first
+    saved = repos.syncs.get(g.sync_id)
+    assert saved is not None
+    target = saved.destinations[0].playlist_id
+    assert target is not None
+    assert qobuz.track_ids(target) == [t.track_id for t in qb_catalog]
+    assert qobuz.playlists[target].is_public is False
+
+    spotify.playlists[source].uris[:] = [c, a]  # b removed, the rest swapped
+    held = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    if held.status is RunStatus.AWAITING_APPROVAL:
+        (brake,) = [
+            i for i in repos.attention.list_open() if i.kind is AttentionKind.BRAKE
+        ]
+        AttentionService(repos, clock).approve(brake.item_id)
+        held = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    assert held.status is RunStatus.SUCCEEDED, held
+    # Qobuz can't reorder: the removal lands, the order stays as it was.
+    assert qobuz.track_ids(target) == [qa, qc]
+
+
+# -- Spotify → YouTube Music ---------------------------------------------------
+
+
+async def test_spotify_to_youtube_music_matches_by_isrc_search() -> None:
+    """YouTube Music returns no ISRCs. Each song here differs from its Spotify
+    original just enough (a typo, one artist fewer) that title and artist
+    scoring alone would ask the user; the ISRC search hit settles it."""
+    sp_catalog = tuple(
+        track(
+            "spotify",
+            f"spotify:track:{i:022d}",
+            title=f"Song Number {i}",
+            artists=(f"Artist {i}", f"Guest {i}"),
+            isrc=f"USYTM{i:07d}",
+        )
+        for i in range(3)
+    )
+    yt_catalog = tuple(
+        track(
+            "youtube_music",
+            f"ytvid{i:06d}",
+            title=f"Song Numbr {i}",
+            artists=(f"Artist {i}",),
+        )
+        for i in range(3)
+    )
+    spotify = SpotifySim(catalog=sp_catalog)
+    youtube = YouTubeMusicSim(
+        catalog=yt_catalog,
+        isrcs={
+            s.isrc or "": y.track_id
+            for s, y in zip(sp_catalog, yt_catalog, strict=True)
+        },
+    )
+    source = spotify.add_playlist("Mix", [t.track_id for t in sp_catalog])
+    creds = InMemoryCredentials()
+    creds.save(YT, {"cookie": youtube.cookie})
+    creds.save(
+        SP,
+        {
+            "client_id": "a" * 32,
+            "access_token": spotify.access_token,
+            "refresh_token": "ref",
+            "expires_at": (NOW + timedelta(hours=1)).isoformat(),
+        },
+    )
+    clock = FixedClock(NOW)
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    def ctx(transport: httpx.AsyncBaseTransport) -> ConnectorContext:
+        return ConnectorContext(
+            creds,
+            InMemoryQuota(),
+            clock,
+            settings=ConnectorSettings(hash_artwork=False),
+            transport=transport,
+            sleep=no_sleep,
+        )
+
+    repos = in_memory_repositories()
+    runner = SyncRunner(
+        Deps(
+            connectors={
+                SP: SPOTIFY_PLUGIN.create(ctx(spotify.transport)),
+                YT: YouTubeMusicPlugin(YTAuthMode.HEADERS).create(
+                    ctx(youtube.transport)
+                ),
+            },
+            repos=repos,
+            clock=clock,
+            events=RecordingEvents(),
+            new_id=SequentialIds("id"),
+            breaker=CircuitBreaker(repos.breakers, clock, EngineConfig().breaker),
+        )
+    )
+    g = group(
+        source=("spotify", source),
+        destinations=[("youtube_music", None, SyncMode.FULL)],
+    )
+    repos.syncs.save(g)
+    run = await runner.run(g.sync_id, trigger=Trigger.MANUAL)
+    assert run.status is RunStatus.SUCCEEDED, run
+    assert repos.attention.list_open() == []
+    saved = repos.syncs.get(g.sync_id)
+    assert saved is not None
+    target = saved.destinations[0].playlist_id
+    assert target is not None
+    assert youtube.track_ids(target) == [t.track_id for t in yt_catalog]

@@ -63,3 +63,13 @@ describe("stepStates", () => {
     expect(stepStates(guide, connectionOut({ ...conn, status: "failing" }), local)[3]).toBe("current");
   });
 });
+
+describe("device code", () => {
+  const dc = setupGuide({ steps: [step({ step_id: "auth", kind: "device_code" }), step({ step_id: "test", kind: "test" })] });
+
+  it("is a sign-in step", () => {
+    const conn = connectionOut({ status: "untested" });
+    expect(stepStates(dc, conn, none)).toEqual(["current", "todo"]);
+    expect(stepStates(dc, conn, { ...none, signedIn: true })).toEqual(["done", "current"]);
+  });
+});

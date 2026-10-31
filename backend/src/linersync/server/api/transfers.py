@@ -18,7 +18,7 @@ from linersync.server.api.schemas import (
     PlaylistOut,
     TransferIn,
 )
-from linersync.server.api.syncs import check_services, check_source
+from linersync.server.api.syncs import check_destinations, check_source
 from linersync.server.auth import require_session
 from linersync.server.state import AppServices, get_services
 
@@ -30,13 +30,13 @@ Services = Annotated[AppServices, Depends(get_services)]
 def _check_items(services: AppServices, items: list[BulkItemIn]) -> None:
     for item in items:
         check_source(services, item.source_service, item.playlist_id)
-        check_services(services, item.destination_services)
+        check_destinations(services, item.destination_services)
 
 
 @router.post("", status_code=202)
 async def transfer(body: TransferIn, services: Services) -> JobOut:
     check_source(services, body.source_service, body.playlist_id)
-    check_services(services, [body.destination])
+    check_destinations(services, [body.destination])
     destination = services.registry.plugins[ServiceId(body.destination)].display_name
     request = TransferJob(
         ServiceId(body.source_service),

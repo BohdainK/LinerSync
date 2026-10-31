@@ -7,7 +7,14 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from linersync.adapters.connectors.apple_music.plugin import APPLE_MUSIC_PLUGIN, PLUGIN
+from linersync.adapters.connectors.apple_music.plugin import (
+    APPLE_MUSIC_PLUGIN,
+    AUTH_MODE_ENV,
+    PLUGIN,
+    AppleMusicPlugin,
+    AuthMode,
+    auth_mode_from_env,
+)
 from linersync.adapters.connectors.kit.plugin import (
     BrowserSignInSetup,
     ConnectorContext,
@@ -23,6 +30,8 @@ from tests.adapters.connectors.apple_music.sim import AppleMusicSim
 
 AM = ServiceId("apple_music")
 NOW = datetime(2026, 10, 26, 12, tzinfo=UTC)
+DEV = AppleMusicPlugin(AuthMode.DEVELOPER)
+WEB = AppleMusicPlugin(AuthMode.WEB)
 
 
 def _pem(key: ec.EllipticCurvePrivateKey | rsa.RSAPrivateKey) -> str:
@@ -65,8 +74,74 @@ def test_plugin_shape() -> None:
     )
 
 
+def test_auth_mode_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert APPLE_MUSIC_PLUGIN.mode is auth_mode_from_env()
+    assert AppleMusicPlugin().mode is AuthMode.WEB
+    monkeypatch.delenv(AUTH_MODE_ENV, raising=False)
+    assert auth_mode_from_env() is AuthMode.WEB
+    monkeypatch.setenv(AUTH_MODE_ENV, " Developer ")
+    assert auth_mode_from_env() is AuthMode.DEVELOPER
+    monkeypatch.setenv(AUTH_MODE_ENV, "musickit")
+    with pytest.raises(ValueError, match=AUTH_MODE_ENV):
+        auth_mode_from_env()
+
+
+def test_web_guide_asks_only_for_the_media_user_token() -> None:
+    guide = WEB.setup_guide()
+    assert check_guide(guide) == []
+    assert guide.prerequisites == (
+        "An Apple Music subscription on the account you sign in with",
+    )
+    assert [s.step_id for s in guide.steps] == ["web_sign_in", "user_token", "test"]
+    assert StepKind.BROWSER_SIGN_IN not in {s.kind for s in guide.steps}
+    (field,) = guide.fields()
+    assert (field.key, field.kind) == ("music_user_token", FieldKind.SECRET)
+    assert WEB.validate({}) == {"music_user_token": "Required"}
+    assert WEB.validate({"music_user_token": "abc"}) == {}
+
+
+async def test_web_test_connection_messages() -> None:
+    sim = AppleMusicSim(catalog=(), storefront="nl")
+    no_cache = {k: v for k, v in sim.credentials().items() if k != "web_token"}
+
+    ctx, store = ctx_for(sim.transport, {"music_user_token": sim.user_token})
+    result = await WEB.test_connection(ctx)
+    assert (result.ok, result.message) == (True, "Connected")
+    assert store.get(AM)["web_token"] == sim.web_token
+    assert store.get(AM)["storefront"] == "nl"
+
+    ctx, _ = ctx_for(sim.transport, {})
+    result = await WEB.test_connection(ctx)
+    assert (result.ok, result.message) == (False, "Paste your media-user-token")
+
+    sim.revoke_user_token()
+    ctx, _ = ctx_for(sim.transport, no_cache)
+    result = await WEB.test_connection(ctx)
+    assert (result.ok, result.message) == (
+        False,
+        "Copy the media-user-token cookie from music.apple.com again",
+    )
+
+    sim.web_page_path = "/elsewhere"
+    ctx, _ = ctx_for(sim.transport, no_cache)
+    result = await WEB.test_connection(ctx)
+    assert result.ok is False
+    assert result.message.startswith("Couldn't find Apple Music's web player token")
+
+
+async def test_web_test_connection_when_apple_rejects_the_web_token() -> None:
+    sim = AppleMusicSim(catalog=())
+    sim.web_tokens_accepted = False
+    ctx, _ = ctx_for(sim.transport, sim.credentials())
+    result = await WEB.test_connection(ctx)
+    assert (result.ok, result.message) == (
+        False,
+        "Apple rejected the web player's token. Apple may have changed its web player.",
+    )
+
+
 def test_guide_is_valid_and_lists_paid_membership_first() -> None:
-    guide = APPLE_MUSIC_PLUGIN.setup_guide()
+    guide = DEV.setup_guide()
     assert check_guide(guide) == []
     assert guide.prerequisites[0] == (
         "A paid Apple Developer Program membership (needed to create a MusicKit key)"
@@ -100,7 +175,7 @@ def test_guide_is_valid_and_lists_paid_membership_first() -> None:
 
 
 def test_validate_fields_and_key() -> None:
-    p = APPLE_MUSIC_PLUGIN
+    p = DEV
     good = {
         "team_id": "ABCDE12345",
         "key_id": "KEY1234567",
@@ -170,7 +245,7 @@ def test_login_expires_at() -> None:
 
 
 async def test_test_connection_messages() -> None:
-    p = APPLE_MUSIC_PLUGIN
+    p = DEV
     sim = AppleMusicSim(catalog=(), storefront="nl")
 
     ctx, store = ctx_for(sim.transport, sim.credentials())

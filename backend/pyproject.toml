@@ -23,6 +23,10 @@ linersync = "linersync.server.cli:main"
 [project.entry-points."linersync.connectors"]
 spotify = "linersync.adapters.connectors.spotify.plugin:PLUGIN"
 apple_music = "linersync.adapters.connectors.apple_music.plugin:PLUGIN"
+jellyfin = "linersync.adapters.connectors.jellyfin.plugin:PLUGIN"
+tidal = "linersync.adapters.connectors.tidal.plugin:PLUGIN"
+youtube_music = "linersync.adapters.connectors.youtube_music.plugin:PLUGIN"
+qobuz = "linersync.adapters.connectors.qobuz.plugin:PLUGIN"
 
 [build-system]
 requires = ["hatchling"]

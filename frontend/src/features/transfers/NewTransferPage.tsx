@@ -33,7 +33,7 @@ export function NewTransferPage() {
   const job = useJob(jobId);
   const cancel = useCancelJob();
   const targets = (connections.data?.services ?? []).filter(
-    (s) => s.status !== "not_set_up" && s.service !== service,
+    (s) => s.status !== "not_set_up" && s.service !== service && s.capabilities.includes("add"),
   );
   const chosen = targets.filter((t) => destinations.includes(t.service)).map((t) => t.service);
 

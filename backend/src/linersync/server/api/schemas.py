@@ -24,11 +24,13 @@ class ConnectionOut(BaseModel):
     display_name: str
     category: str
     capabilities: list[str]
+    experimental: bool
     status: str
     message: str
     account_name: str | None
     checked_at: datetime | None
     login_expires_at: datetime | None
+    login_expiry_estimated: bool  # a reminder date rather than a deadline
     values: dict[str, str]
     secrets_set: list[str]
 
@@ -39,11 +41,13 @@ class ConnectionOut(BaseModel):
             display_name=info.display_name,
             category=info.category,
             capabilities=[c.value for c in info.capabilities],
+            experimental=info.experimental,
             status=info.status.value,
             message=info.message,
             account_name=info.account_name,
             checked_at=info.checked_at,
             login_expires_at=info.login_expires_at,
+            login_expiry_estimated=info.login_expiry_estimated,
             values=dict(info.values),
             secrets_set=list(info.secrets_set),
         )
@@ -71,6 +75,19 @@ class ConnectionTestOut(BaseModel):
 
 class OAuthStartOut(BaseModel):
     url: str
+
+
+class DeviceCodeOut(BaseModel):
+    user_code: str
+    verification_url: str
+    interval_s: int
+    expires_in_s: int
+
+
+class DevicePollOut(BaseModel):
+    status: Literal["pending", "done", "denied", "expired"]
+    message: str
+    interval_s: int | None = None  # poll this often from now on
 
 
 class SignInConfigOut(BaseModel):

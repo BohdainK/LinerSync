@@ -49,4 +49,10 @@ describe("limitations (port of domain/capabilities.py)", () => {
       "Fake B can't create playlists, so the destination playlist must already exist",
     ]);
   });
+
+  it("read-only service", () => {
+    expect(limitations("Jellyfin", ["read_order"], "full")).toEqual([
+      "Jellyfin is read-only, so it can't be a destination",
+    ]);
+  });
 });

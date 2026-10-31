@@ -8,7 +8,11 @@ import httpx
 import pytest
 
 from linersync.adapters.connectors.apple_music.connector import AppleMusicConnector
-from linersync.adapters.connectors.apple_music.plugin import APPLE_MUSIC_PLUGIN
+from linersync.adapters.connectors.apple_music.plugin import (
+    APPLE_MUSIC_PLUGIN,
+    AppleMusicPlugin,
+    AuthMode,
+)
 from linersync.adapters.connectors.kit.http import HttpSettings
 from linersync.adapters.connectors.kit.plugin import ConnectorContext, ConnectorSettings
 from linersync.adapters.memory.credentials import InMemoryCredentials
@@ -49,6 +53,7 @@ def make(
     *,
     hash_artwork: bool = False,
     storefront: str | None = "us",
+    plugin: AppleMusicPlugin = APPLE_MUSIC_PLUGIN,
 ) -> tuple[AppleMusicConnector, list[float], InMemoryCredentials]:
     store = InMemoryCredentials()
     store.save(AM, sim.credentials(storefront=storefront))
@@ -68,7 +73,7 @@ def make(
         transport=sim.transport,
         sleep=sleep,
     )
-    connector = APPLE_MUSIC_PLUGIN.create(ctx)
+    connector = plugin.create(ctx)
     assert isinstance(connector, AppleMusicConnector)
     return connector, sleeps, store
 
@@ -173,12 +178,52 @@ async def test_read_403_on_tracks_is_auth_required() -> None:
 async def test_wrong_developer_token_is_auth_required_after_one_renewal() -> None:
     sim = AppleMusicSim(catalog=CATALOG)
     pid = sim.add_playlist("Mine", [X])
-    connector, _, _ = make(sim)
+    connector, _, _ = make(sim, plugin=AppleMusicPlugin(AuthMode.DEVELOPER))
     sim.key_id = "KEYOTHER01"
     with pytest.raises(ReadFailed) as err:
         await connector.read_playlist(pid)
     assert err.value.auth_required is True
     assert len(sent(sim, "GET", r"/v1/me/library/playlists/p\.sim0001")) == 2
+
+
+async def test_web_mode_sends_web_player_token_and_origin() -> None:
+    sim = AppleMusicSim(catalog=CATALOG)
+    pid = sim.add_playlist("Mine", [X])
+    connector, _, _ = make(sim, plugin=AppleMusicPlugin(AuthMode.WEB))
+    await connector.read_playlist(pid)
+    api = [r for r in sim.requests if r.url.host == "api.music.apple.com"]
+    assert api
+    for request in api:
+        assert request.headers["authorization"] == f"Bearer {sim.web_token}"
+        assert request.headers["origin"] == "https://music.apple.com"
+        assert request.headers["music-user-token"] == sim.user_token
+    assert [r for r in sim.requests if r.url.host == "music.apple.com"] == []
+
+
+async def test_web_mode_fetches_rotated_web_token_once_and_saves_it() -> None:
+    sim = AppleMusicSim(catalog=CATALOG)
+    pid = sim.add_playlist("Mine", [X])
+    connector, _, store = make(sim, plugin=AppleMusicPlugin(AuthMode.WEB))
+    sim.rotate_web_token()
+    snap = await connector.read_playlist(pid)
+    assert list(snap.track_ids) == [X]
+    web = [r.url.path for r in sim.requests if r.url.host == "music.apple.com"]
+    assert web == ["/us/new", "/assets/index~sim0001.js"]
+    assert store.get(AM)["web_token"] == sim.web_token
+    # The read checks the playlist twice; the first try used the old token.
+    assert len(sent(sim, "GET", r"/v1/me/library/playlists/p\.sim0001")) == 3
+
+
+async def test_web_mode_without_a_token_in_the_web_player_is_auth_required() -> None:
+    sim = AppleMusicSim(catalog=CATALOG)
+    pid = sim.add_playlist("Mine", [X])
+    connector, _, _ = make(sim, plugin=AppleMusicPlugin(AuthMode.WEB))
+    sim.rotate_web_token()
+    sim.web_page_path = "/elsewhere"  # the web player page answers 404
+    with pytest.raises(ReadFailed) as err:
+        await connector.read_playlist(pid)
+    assert err.value.auth_required is True
+    assert "web player token" in err.value.message
 
 
 async def test_read_raises_when_playlist_changed_during_read() -> None:

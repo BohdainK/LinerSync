@@ -52,6 +52,27 @@ async function pickSource(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("NewTransferPage", () => {
+  it("read-only services are not offered as destinations", async () => {
+    serve();
+    server.use(
+      http.get("*/api/connections", () =>
+        HttpResponse.json({
+          load_errors: [],
+          services: [
+            connectionOut({ service: "fake_a", display_name: "Fake A", capabilities: FULL }),
+            connectionOut({ service: "fake_b", display_name: "Fake B", capabilities: FULL }),
+            connectionOut({ service: "jellyfin", display_name: "Jellyfin", capabilities: ["read_order"] }),
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await pickSource(user);
+    await screen.findByRole("checkbox", { name: /Fake B/ });
+    expect(screen.queryByRole("checkbox", { name: /Jellyfin/ })).not.toBeInTheDocument();
+  });
+
   it("single transfer posts one item", async () => {
     serve();
     const bodies: unknown[] = [];

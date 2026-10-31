@@ -9,6 +9,10 @@ and the artwork CDN. It models two Apple behaviours that matter for safety:
 
 The developer token must be an ES256 JWT signed with the simulator's own key
 (``private_key_pem``); ``/v1/me/...`` also needs the Music-User-Token.
+
+It also serves the web player (``music.apple.com``): a page linking a bundle
+that embeds ``web_token``. That token is accepted only with the web player's
+Origin, and stops working after ``rotate_web_token``.
 """
 
 import hashlib
@@ -29,6 +33,8 @@ from PIL import Image
 from linersync.domain.tracks import Track
 
 API_HOST = "api.music.apple.com"
+WEB_HOST = "music.apple.com"
+WEB_ORIGIN = "https://music.apple.com"
 ART_HOST = "is1-ssl.mzstatic.com"
 TEAM_ID = "TEAMSIM001"
 KEY_ID = "KEYSIM0001"
@@ -95,6 +101,11 @@ class AppleMusicSim:
             serialization.NoEncryption(),
         ).decode()
         self._public_key = key.public_key()
+        self._web_tokens: list[str] = []
+        self.web_tokens_accepted = True
+        self.web_page_path = "/us/new"
+        self.web_bundle_path = "/assets/index~sim0001.js"
+        self.rotate_web_token()
         self.user_token = "sim-music-user-token"
         self._user_token_valid = True
         self._faults: list[_Fault] = []
@@ -112,6 +123,7 @@ class AppleMusicSim:
             "private_key": self.private_key_pem,
             "music_user_token": self.user_token,
             "music_user_token_saved_at": _iso(_BASE_DATE),
+            "web_token": self.web_token,
         }
         if storefront is not None:
             values["storefront"] = storefront
@@ -138,6 +150,27 @@ class AppleMusicSim:
 
     def ids(self, playlist_id: str) -> list[str]:
         return list(self.playlists[playlist_id].ids)
+
+    @property
+    def web_token(self) -> str:
+        return self._web_tokens[-1]
+
+    def rotate_web_token(self) -> None:
+        """The web player ships a new token; earlier ones are rejected."""
+        n = len(self._web_tokens)
+        claims = {
+            "iss": "AMPWebPlay",
+            "iat": int(_BASE_DATE.timestamp()) + n,
+            "exp": int(datetime(2036, 1, 1, tzinfo=UTC).timestamp()),
+        }
+        self._web_tokens.append(
+            jwt.encode(
+                claims,
+                self.private_key_pem,
+                algorithm="ES256",
+                headers={"kid": "WebPlayKid"},
+            )
+        )
 
     def revoke_user_token(self) -> None:
         self._user_token_valid = False
@@ -211,6 +244,8 @@ class AppleMusicSim:
     def _route(self, request: httpx.Request, path: str) -> httpx.Response:
         if request.url.host == ART_HOST:
             return self._image(request)
+        if request.url.host == WEB_HOST:
+            return self._web_player(path)
         if request.url.host != API_HOST:
             return httpx.Response(404)
         if not self._developer_token_ok(request):
@@ -241,6 +276,13 @@ class AppleMusicSim:
         if not auth.startswith("Bearer "):
             return False
         token = auth.removeprefix("Bearer ")
+        if token in self._web_tokens:
+            origin = request.headers.get("origin")
+            return (
+                self.web_tokens_accepted
+                and token == self.web_token
+                and origin == WEB_ORIGIN
+            )
         try:
             header = jwt.get_unverified_header(token)
             claims = jwt.decode(
@@ -256,6 +298,37 @@ class AppleMusicSim:
     def _user_token_ok(self, request: httpx.Request) -> bool:
         token = request.headers.get("music-user-token")
         return self._user_token_valid and token == self.user_token
+
+    # -- web player ------------------------------------------------------
+
+    def _web_player(self, path: str) -> httpx.Response:
+        if path == self.web_page_path:
+            html = (
+                '<html><head><script type="module" crossorigin '
+                f'src="{self.web_bundle_path}"></script></head></html>'
+            )
+            return httpx.Response(200, text=html)
+        if path == self.web_bundle_path:
+            # Decoys: an expired web player JWT and another app's longer-lived
+            # one, then the real one.
+            expired = jwt.encode(
+                {"exp": int(_BASE_DATE.timestamp())},
+                self.private_key_pem,
+                algorithm="ES256",
+                headers={"kid": "WebPlayKid"},
+            )
+            other = jwt.encode(
+                {"exp": int(datetime(2037, 1, 1, tzinfo=UTC).timestamp())},
+                self.private_key_pem,
+                algorithm="ES256",
+                headers={"kid": "OTHERAPP01"},
+            )
+            js = (
+                f'const a="{expired}";const o="{other}";'
+                f'const t="{self.web_token}";export{{t}}'
+            )
+            return httpx.Response(200, text=js)
+        return httpx.Response(404)
 
     # -- artwork ---------------------------------------------------------
 

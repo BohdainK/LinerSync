@@ -156,4 +156,24 @@ describe("ServiceSelect", () => {
     await userEvent.selectOptions(select, "Archive");
     expect(seen).toEqual(["backup"]);
   });
+
+  it("writableOnly hides services that can't add songs", async () => {
+    server.use(
+      http.get("*/api/connections", () =>
+        HttpResponse.json({
+          load_errors: [],
+          services: [
+            connectionOut({ service: "spotify", display_name: "Spotify", capabilities: ["read_order", "add"] }),
+            connectionOut({ service: "jellyfin", display_name: "Jellyfin", capabilities: ["read_order"] }),
+          ],
+        }),
+      ),
+    );
+    const { unmount } = renderWithProviders(<ServiceSelect label="To" value={null} onChange={() => {}} writableOnly />);
+    await screen.findByRole("option", { name: "Spotify" });
+    expect(screen.queryByRole("option", { name: "Jellyfin" })).not.toBeInTheDocument();
+    unmount();
+    renderWithProviders(<ServiceSelect label="From" value={null} onChange={() => {}} />);
+    await screen.findByRole("option", { name: "Jellyfin" });
+  });
 });

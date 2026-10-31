@@ -11,11 +11,16 @@ export function ServiceSelect(props: {
   onChange(service: string): void;
   exclude?: string[];
   includeArchive?: boolean;
+  /** Only services that can add songs: for destinations. */
+  writableOnly?: boolean;
 }) {
   const id = useId();
   const connections = useConnections();
   const options = (connections.data?.services ?? []).filter(
-    (s) => s.status !== "not_set_up" && !props.exclude?.includes(s.service),
+    (s) =>
+      s.status !== "not_set_up" &&
+      !props.exclude?.includes(s.service) &&
+      (!props.writableOnly || s.capabilities.includes("add")),
   );
   return (
     <div className="flex flex-col gap-1">

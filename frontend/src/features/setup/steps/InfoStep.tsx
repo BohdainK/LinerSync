@@ -37,7 +37,7 @@ export function LinkList({ links }: { links: Link[] }) {
   );
 }
 
-function CopyField({ item }: { item: CopyValue }) {
+export function CopyField({ item }: { item: CopyValue }) {
   const id = useId();
   const copy = () => {
     navigator.clipboard.writeText(item.value).then(

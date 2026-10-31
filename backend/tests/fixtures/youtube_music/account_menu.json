@@ -1,0 +1,30 @@
+{
+ "actions": [
+  {
+   "openPopupAction": {
+    "popup": {
+     "multiPageMenuRenderer": {
+      "header": {
+       "activeAccountHeaderRenderer": {
+        "accountName": {
+         "runs": [
+          {
+           "text": "Sam Example"
+          }
+         ]
+        },
+        "channelHandle": {
+         "runs": [
+          {
+           "text": "@sam"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ ]
+}

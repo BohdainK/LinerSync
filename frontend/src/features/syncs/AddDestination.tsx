@@ -36,6 +36,7 @@ export function AddDestination({ sync, disabled }: { sync: SyncOut; disabled: bo
       <ServiceSelect
         label="Service"
         value={service}
+        writableOnly
         onChange={(s) => {
           setService(s);
           setSelection([]);

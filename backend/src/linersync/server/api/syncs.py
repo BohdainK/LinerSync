@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from linersync.adapters.scheduler import cron_problem
 from linersync.domain.backups import BACKUP_SERVICE
-from linersync.domain.capabilities import limitations
+from linersync.domain.capabilities import Capability, limitations
 from linersync.domain.jobs import PreviewJob, SyncJob
 from linersync.domain.runs import Trigger
 from linersync.domain.sync import (
@@ -62,6 +62,18 @@ def check_services(services: AppServices, names: Iterable[str]) -> None:
             raise _invalid(f"Connect {info.display_name} first")
 
 
+def check_destinations(services: AppServices, names: Iterable[str]) -> None:
+    """Destinations must exist, be set up, and be able to add songs."""
+    names = list(names)
+    check_services(services, names)
+    for name in names:
+        plugin = services.registry.plugins[ServiceId(name)]
+        if Capability.ADD not in plugin.capabilities:
+            raise _invalid(
+                f"{plugin.display_name} is read-only, so it can't be a destination"
+            )
+
+
 def check_source(services: AppServices, service: str, playlist_id: str) -> None:
     """A source may also be a stored backup: an entry id or a version id (D6)."""
     if service != BACKUP_SERVICE:
@@ -102,7 +114,7 @@ def _valid(build: Callable[[], SyncGroup]) -> SyncGroup:
 
 def _new_group(services: AppServices, body: SyncCreateIn, sync_id: str) -> SyncGroup:
     check_source(services, body.source.service, body.source.playlist_id)
-    check_services(services, (d.service for d in body.destinations))
+    check_destinations(services, (d.service for d in body.destinations))
     _check_schedule(services, body.schedule)
     source = SyncMember(
         "src",
@@ -281,7 +293,7 @@ async def patch_sync(sync_id: str, body: SyncPatchIn, services: Services) -> Syn
         raise _invalid(f"Unknown destination {unknown[0]}")
     members = [m for m in members if m.member_id not in removed]
     added = body.add_destinations or []
-    check_services(services, (d.service for d in added))
+    check_destinations(services, (d.service for d in added))
     for d in added:
         members.append(_destination(_free_member_id(members), d))
     changes["members"] = tuple(members)

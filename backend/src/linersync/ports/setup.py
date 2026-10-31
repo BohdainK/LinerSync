@@ -18,6 +18,7 @@ class StepKind(StrEnum):
     FORM = "form"
     OAUTH = "oauth"
     BROWSER_SIGN_IN = "browser_sign_in"
+    DEVICE_CODE = "device_code"
     TEST = "test"
 
 

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from linersync.domain.matching.normalize import (
     IGNORED_VERSIONS,
     normalize_artists,
+    normalize_text,
     parse_title,
 )
 from linersync.domain.matching.types import (
@@ -16,6 +17,12 @@ from linersync.domain.matching.types import (
 from linersync.domain.tracks import Track
 
 _ISRC_FLOOR = 0.97
+# Just under a real ISRC match: the hit is only a candidate until title,
+# artists and duration agree with it.
+_ISRC_SEARCH_FLOOR = 0.95
+_ISRC_SEARCH_TITLE = 0.9
+_ISRC_SEARCH_ARTISTS = 0.5
+_ISRC_SEARCH_REASON = "found by ISRC search"
 
 
 def _artist_similarity(a: frozenset[str], b: frozenset[str]) -> float:
@@ -50,6 +57,15 @@ def _same_isrc(source: Track, candidate: Track) -> bool:
         and candidate.isrc is not None
         and source.isrc.casefold() == candidate.isrc.casefold()
     )
+
+
+def _album_similarity(source: Track, candidate: Track) -> float:
+    """Breaks ties between copies of one recording (same ISRC) on different
+    albums, so a compilation doesn't win over the source's own album."""
+    if not source.album or not candidate.album:
+        return 0.0
+    a, b = normalize_text(source.album), normalize_text(candidate.album)
+    return difflib.SequenceMatcher(None, a, b).ratio()
 
 
 def score_candidate(
@@ -94,6 +110,18 @@ def score_candidate(
             conf -= 0.02
             reasons.append("different artwork")
 
+    if (
+        candidate.found_by_isrc
+        and source.isrc is not None
+        and title_sim >= _ISRC_SEARCH_TITLE
+        and artist_sim >= _ISRC_SEARCH_ARTISTS
+        and delta_s is not None
+        and delta_s <= cfg.duration_full_s
+        and not version
+    ):
+        conf = max(conf, _ISRC_SEARCH_FLOOR)
+        reasons.append(_ISRC_SEARCH_REASON)
+
     if _same_isrc(source, candidate):
         conf = max(conf, _ISRC_FLOOR)
         reasons.insert(0, "ISRC matches")
@@ -108,7 +136,7 @@ def decide_match(
         return NeedsAttention(("no results on this service",), ())
     scored = sorted(
         (score_candidate(source, c, cfg) for c in candidates),
-        key=lambda s: s.confidence,
+        key=lambda s: (s.confidence, _album_similarity(source, s.track)),
         reverse=True,
     )
     top = scored[0]
@@ -116,6 +144,11 @@ def decide_match(
         len(scored) == 1
         or top.confidence - scored[1].confidence >= cfg.min_margin
         or _same_isrc(source, top.track)
+        # One recording on several releases: the album tie-break above chose.
+        or (
+            _ISRC_SEARCH_REASON in top.reasons
+            and _ISRC_SEARCH_REASON in scored[1].reasons
+        )
     ):
         return Matched(
             target_track_id=top.track.track_id,

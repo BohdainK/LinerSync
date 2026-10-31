@@ -1,0 +1,177 @@
+{
+ "contents": {
+  "singleColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "gridRenderer": {
+           "items": [
+            {
+             "musicTwoRowItemRenderer": {
+              "title": {
+               "runs": [
+                {
+                 "text": "New playlist"
+                }
+               ]
+              },
+              "navigationEndpoint": {
+               "createPlaylistEndpoint": {}
+              }
+             }
+            },
+            {
+             "musicTwoRowItemRenderer": {
+              "title": {
+               "runs": [
+                {
+                 "text": "Liked Music",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "VLLM"
+                  }
+                 }
+                }
+               ]
+              },
+              "subtitle": {
+               "runs": [
+                {
+                 "text": "Auto playlist"
+                }
+               ]
+              },
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "browseId": "VLLM"
+               }
+              }
+             }
+            },
+            {
+             "musicTwoRowItemRenderer": {
+              "thumbnailRenderer": {
+               "musicThumbnailRenderer": {
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://yt3.googleusercontent.com/PLsimowned0000000000000000000000=w226-h226",
+                   "width": 226,
+                   "height": 226
+                  }
+                 ]
+                }
+               }
+              },
+              "title": {
+               "runs": [
+                {
+                 "text": "Road trip",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "VLPLsimowned0000000000000000000000",
+                   "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                     "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "subtitle": {
+               "runs": [
+                {
+                 "text": "Sam"
+                },
+                {
+                 "text": " • "
+                },
+                {
+                 "text": "3 songs"
+                }
+               ]
+              },
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "browseId": "VLPLsimowned0000000000000000000000"
+               }
+              }
+             }
+            },
+            {
+             "musicTwoRowItemRenderer": {
+              "thumbnailRenderer": {
+               "musicThumbnailRenderer": {
+                "thumbnail": {
+                 "thumbnails": [
+                  {
+                   "url": "https://yt3.googleusercontent.com/PLsimother000000000000000000000=w226-h226",
+                   "width": 226,
+                   "height": 226
+                  }
+                 ]
+                }
+               }
+              },
+              "title": {
+               "runs": [
+                {
+                 "text": "Gym",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "VLPLsimother000000000000000000000",
+                   "browseEndpointContextSupportedConfigs": {
+                    "browseEndpointContextMusicConfig": {
+                     "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                    }
+                   }
+                  }
+                 }
+                }
+               ]
+              },
+              "subtitle": {
+               "runs": [
+                {
+                 "text": "Sam"
+                },
+                {
+                 "text": " • "
+                },
+                {
+                 "text": "1,024 songs"
+                }
+               ]
+              },
+              "navigationEndpoint": {
+               "browseEndpoint": {
+                "browseId": "VLPLsimother000000000000000000000"
+               }
+              }
+             }
+            }
+           ],
+           "continuations": [
+            {
+             "nextContinuationData": {
+              "continuation": "lib-cont-1"
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

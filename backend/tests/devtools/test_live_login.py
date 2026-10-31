@@ -9,8 +9,10 @@ from linersync.devtools import live_login
 from linersync.devtools.live_login import (
     LoginFailed,
     apple_sign_in_page,
+    oauth_callback,
     spotify_callback,
     spotify_login_url,
+    tidal_login_url,
 )
 from tests.live.conftest import LIVE_ENV, live_skip_reason
 
@@ -30,8 +32,52 @@ def test_spotify_login_url_uses_loopback_and_pkce() -> None:
     assert "client_secret" not in query
 
 
+def test_tidal_login_url_uses_loopback_and_pkce() -> None:
+    _, challenge = pkce_pair()
+    url = tidal_login_url("client", 8767, "st", challenge)
+    parts = urlsplit(url)
+    query = parse_qs(parts.query)
+    assert parts.netloc == "login.tidal.com"
+    assert query["redirect_uri"] == ["http://127.0.0.1:8767/callback"]
+    assert query["code_challenge"] == [challenge]
+    assert query["state"] == ["st"]
+
+
+def test_oauth_callback_names_the_service() -> None:
+    result = oauth_callback(
+        {"state": ["st"], "error": ["access_denied"]}, "st", "Tidal"
+    )
+    assert (result.status, result.finished) == (400, True)
+    assert result.message == "Tidal sign-in failed: access_denied"
+
+
+def test_tidal_subcommand_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[tuple[str, int]] = []
+
+    def fake_login(client_id: str, port: int) -> list[str]:
+        called.append((client_id, port))
+        return ["export TIDAL_CLIENT_ID=client"]
+
+    monkeypatch.setattr(live_login, "_login_tidal", fake_login)
+    assert live_login.main(["tidal", "--client-id", "client"]) == 0
+    assert called == [("client", 8767)]
+
+
+def test_youtube_music_subcommand_parses(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[tuple[str, str]] = []
+
+    def fake_login(client_id: str, client_secret: str) -> list[str]:
+        called.append((client_id, client_secret))
+        return ["export YTMUSIC_CLIENT_ID=c"]
+
+    monkeypatch.setattr(live_login, "_login_youtube_music", fake_login)
+    argv = ["youtube-music", "--client-id", "c", "--client-secret", "s"]
+    assert live_login.main(argv) == 0
+    assert called == [("c", "s")]
+
+
 def test_apple_sign_in_page_embeds_token_safely() -> None:
-    evil = 'a</script><script>alert(1)</script>&"\'b'
+    evil = "a</script><script>alert(1)</script>&\"'b"
     page = apple_sign_in_page(evil, 8766)
     assert MUSICKIT in page
     assert "http://127.0.0.1:8766/token" in page

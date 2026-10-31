@@ -19,6 +19,8 @@ from linersync.server.api.schemas import (
     ConnectionOut,
     ConnectionTestOut,
     CredentialsIn,
+    DeviceCodeOut,
+    DevicePollOut,
     LoadErrorOut,
     OAuthStartOut,
     PlaylistOut,
@@ -137,6 +139,31 @@ async def oauth_start(service: Service, manager: Manager) -> OAuthStartOut:
         return OAuthStartOut(url=manager.start_oauth(service))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
+
+
+@router.post("/{service}/device-code/start")
+async def device_code_start(service: Service, manager: Manager) -> DeviceCodeOut:
+    try:
+        start = await manager.start_device_code(service)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    return DeviceCodeOut(
+        user_code=start.user_code,
+        verification_url=start.verification_url,
+        interval_s=start.interval_s,
+        expires_in_s=start.expires_in_s,
+    )
+
+
+@router.post("/{service}/device-code/poll")
+async def device_code_poll(service: Service, manager: Manager) -> DevicePollOut:
+    try:
+        result = await manager.poll_device_code(service)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    return DevicePollOut(
+        status=result.status, message=result.message, interval_s=result.interval_s
+    )
 
 
 @router.get("/{service}/browser-sign-in")

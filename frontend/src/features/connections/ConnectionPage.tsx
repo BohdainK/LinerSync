@@ -43,7 +43,7 @@ export function ConnectionPage() {
         ) : null}
         {c.login_expires_at ? (
           <>
-            <dt className="text-muted-foreground">Login expires</dt>
+            <dt className="text-muted-foreground">{c.login_expiry_estimated ? "Sign in again by" : "Login expires"}</dt>
             <dd>{formatDateTime(c.login_expires_at)}</dd>
           </>
         ) : null}

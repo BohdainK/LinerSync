@@ -1,0 +1,189 @@
+{
+  "id": 8501234,
+  "name": "Road Trip",
+  "description": "Songs for the road",
+  "tracks_count": 3,
+  "users_count": 0,
+  "duration": 642,
+  "public_at": false,
+  "created_at": 1700000000,
+  "updated_at": 1730000000,
+  "is_public": false,
+  "is_collaborative": false,
+  "owner": {
+    "id": 1111111,
+    "name": "sam"
+  },
+  "images": [
+    "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg"
+  ],
+  "images150": [
+    "https://static.qobuz.com/images/covers/ab/c1/abc123def_150.jpg"
+  ],
+  "images300": [
+    "https://static.qobuz.com/images/covers/ab/c1/abc123def_300.jpg"
+  ],
+  "tracks": {
+    "offset": 0,
+    "limit": 500,
+    "total": 3,
+    "items": [
+      {
+        "id": 64868955,
+        "title": "Alpha",
+        "version": null,
+        "duration": 214,
+        "isrc": "GBUM71029604",
+        "track_number": 3,
+        "media_number": 1,
+        "maximum_bit_depth": 24,
+        "maximum_sampling_rate": 96,
+        "parental_warning": false,
+        "streamable": true,
+        "hires": true,
+        "hires_streamable": true,
+        "copyright": "2011 Label",
+        "performer": {
+          "id": 11111,
+          "name": "Alpha Band"
+        },
+        "performers": "Alpha Band, MainArtist - Jane Writer, Composer, Lyricist",
+        "composer": {
+          "id": 22222,
+          "name": "Jane Writer"
+        },
+        "album": {
+          "id": "abc123def",
+          "title": "First",
+          "version": null,
+          "image": {
+            "small": "https://static.qobuz.com/images/covers/ab/c1/abc123def_230.jpg",
+            "thumbnail": "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg",
+            "large": "https://static.qobuz.com/images/covers/ab/c1/abc123def_600.jpg"
+          },
+          "artist": {
+            "id": 11111,
+            "name": "Alpha Band"
+          },
+          "label": {
+            "id": 33333,
+            "name": "Label"
+          },
+          "genre": {
+            "id": 112,
+            "name": "Pop"
+          },
+          "released_at": 1300000000,
+          "tracks_count": 12
+        },
+        "playlist_track_id": 3775432101,
+        "position": 1,
+        "created_at": 1720000000
+      },
+      {
+        "id": 64868956,
+        "title": "Bravo",
+        "version": "2011 Remaster",
+        "duration": 214,
+        "isrc": "GBUM71029605",
+        "track_number": 3,
+        "media_number": 1,
+        "maximum_bit_depth": 24,
+        "maximum_sampling_rate": 96,
+        "parental_warning": false,
+        "streamable": true,
+        "hires": true,
+        "hires_streamable": true,
+        "copyright": "2011 Label",
+        "performer": {
+          "id": 11111,
+          "name": "Bravo Band"
+        },
+        "performers": "Bravo Band, MainArtist - Guest Singer, FeaturedArtist - Jane Writer, Composer",
+        "composer": {
+          "id": 22222,
+          "name": "Jane Writer"
+        },
+        "album": {
+          "id": "abc123def",
+          "title": "First",
+          "version": null,
+          "image": {
+            "small": "https://static.qobuz.com/images/covers/ab/c1/abc123def_230.jpg",
+            "thumbnail": "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg",
+            "large": "https://static.qobuz.com/images/covers/ab/c1/abc123def_600.jpg"
+          },
+          "artist": {
+            "id": 11111,
+            "name": "Bravo Band"
+          },
+          "label": {
+            "id": 33333,
+            "name": "Label"
+          },
+          "genre": {
+            "id": 112,
+            "name": "Pop"
+          },
+          "released_at": 1300000000,
+          "tracks_count": 12
+        },
+        "playlist_track_id": 3775432102,
+        "position": 2,
+        "created_at": 1720000100
+      },
+      {
+        "id": 64868955,
+        "title": "Alpha",
+        "version": null,
+        "duration": 214,
+        "isrc": "GBUM71029604",
+        "track_number": 3,
+        "media_number": 1,
+        "maximum_bit_depth": 24,
+        "maximum_sampling_rate": 96,
+        "parental_warning": false,
+        "streamable": true,
+        "hires": true,
+        "hires_streamable": true,
+        "copyright": "2011 Label",
+        "performer": {
+          "id": 11111,
+          "name": "Alpha Band"
+        },
+        "performers": "Alpha Band, MainArtist - Jane Writer, Composer, Lyricist",
+        "composer": {
+          "id": 22222,
+          "name": "Jane Writer"
+        },
+        "album": {
+          "id": "abc123def",
+          "title": "First",
+          "version": null,
+          "image": {
+            "small": "https://static.qobuz.com/images/covers/ab/c1/abc123def_230.jpg",
+            "thumbnail": "https://static.qobuz.com/images/covers/ab/c1/abc123def_50.jpg",
+            "large": "https://static.qobuz.com/images/covers/ab/c1/abc123def_600.jpg"
+          },
+          "artist": {
+            "id": 11111,
+            "name": "Alpha Band"
+          },
+          "label": {
+            "id": 33333,
+            "name": "Label"
+          },
+          "genre": {
+            "id": 112,
+            "name": "Pop"
+          },
+          "released_at": 1300000000,
+          "tracks_count": 12
+        },
+        "playlist_track_id": 3775432103,
+        "position": 3,
+        "created_at": 1720000200
+      }
+    ]
+  }
+}

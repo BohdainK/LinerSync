@@ -41,6 +41,18 @@ describe("ConnectionsPage", () => {
     expect(within(hosted).getByRole("button", { name: /Navidrome/ })).toHaveTextContent("Not set up");
   });
 
+  it("labels experimental services", async () => {
+    server.use(
+      listHandler([
+        connectionOut(),
+        connectionOut({ service: "qobuz", display_name: "Qobuz", experimental: true, status: "not_set_up" }),
+      ]),
+    );
+    renderWithProviders(<ConnectionsPage />, { route: "/connections" });
+    expect(await screen.findByRole("button", { name: /Qobuz/ })).toHaveTextContent("Experimental");
+    expect(screen.getByRole("button", { name: /Spotify/ })).not.toHaveTextContent("Experimental");
+  });
+
   it("omits empty sections and navigates on pick", async () => {
     server.use(listHandler([connectionOut()]));
     renderWithProviders(
@@ -172,6 +184,15 @@ describe("ConnectionPage", () => {
     expect(screen.getByText("Sam")).toBeInTheDocument();
     expect(screen.getByText("Read song order")).toBeInTheDocument();
     expect(screen.getByText("Add songs")).toBeInTheDocument();
+  });
+
+  it("labels the login expiry as a deadline or a reminder", async () => {
+    const first = renderPage(connectionOut({ login_expires_at: "2026-01-31T12:00:00Z" }));
+    expect(await screen.findByText("Login expires")).toBeInTheDocument();
+    first.unmount();
+    renderPage(connectionOut({ login_expires_at: "2026-01-31T12:00:00Z", login_expiry_estimated: true }));
+    expect(await screen.findByText("Sign in again by")).toBeInTheDocument();
+    expect(screen.queryByText("Login expires")).not.toBeInTheDocument();
   });
 
   it("hides Disconnect when not set up", async () => {

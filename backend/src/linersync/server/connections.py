@@ -1,10 +1,11 @@
 """Connection setup: form values, OAuth, browser sign-in, status and tests."""
 
 import builtins
+import json
 import logging
 import secrets
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 
@@ -15,7 +16,12 @@ from linersync.adapters.connectors.kit.plugin import (
     ConnectorContext,
     ConnectorPlugin,
     ConnectorSettings,
+    DeviceCodeSetup,
+    DeviceCodeStart,
+    DevicePoll,
     OAuthSetup,
+    is_experimental,
+    is_login_expiry_estimated,
 )
 from linersync.adapters.sqlite.connections import (
     ConnectionRecord,
@@ -37,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 OAUTH_STATE_LIFETIME = timedelta(minutes=10)
 _EXPIRED = "This sign-in link expired. Start again."
+_CODE_EXPIRED = "This code expired. Get a new one."
+# The pending device-code sign-in, kept with the credentials so a restart
+# doesn't lose a code the user is about to enter.
+_DEVICE_KEY = "pending_device_code"
 _SECRET_KINDS = frozenset({FieldKind.SECRET, FieldKind.MULTILINE_SECRET})
 
 
@@ -54,6 +64,7 @@ class ConnectionInfo:
     display_name: str
     category: str
     capabilities: tuple[Capability, ...]
+    experimental: bool
     status: ConnectionStatus
     message: str
     account_name: str | None
@@ -61,6 +72,7 @@ class ConnectionInfo:
     login_expires_at: datetime | None
     values: dict[str, str]  # stored values of TEXT fields only
     secrets_set: tuple[str, ...]  # keys of stored SECRET / MULTILINE_SECRET fields
+    login_expiry_estimated: bool = False  # login_expires_at is a guess
 
 
 class OAuthFailed(Exception):
@@ -79,6 +91,39 @@ class _PendingOAuth:
     service: ServiceId
     keep: dict[str, str]
     expires: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingDevice:
+    start: DeviceCodeStart  # the current interval; keep has it as "interval_s"
+    expires: datetime
+
+    def dump(self) -> str:
+        s = self.start
+        return json.dumps(
+            {
+                "user_code": s.user_code,
+                "verification_url": s.verification_url,
+                "interval_s": s.interval_s,
+                "keep": s.keep,
+                "expires": self.expires.isoformat(),
+            }
+        )
+
+    @staticmethod
+    def load(raw: str) -> "_PendingDevice | None":
+        try:
+            data = json.loads(raw)
+            start = DeviceCodeStart(
+                str(data["user_code"]),
+                str(data["verification_url"]),
+                int(data["interval_s"]),
+                0,
+                {str(k): str(v) for k, v in dict(data["keep"]).items()},
+            )
+            return _PendingDevice(start, datetime.fromisoformat(data["expires"]))
+        except (KeyError, TypeError, ValueError):
+            return None
 
 
 class ConnectionManager:
@@ -102,6 +147,7 @@ class ConnectionManager:
         self._clock = clock
         self._settings = settings
         self._pending: dict[str, _PendingOAuth] = {}
+        self._devices: dict[ServiceId, _PendingDevice] = {}
 
     # -- lookups ----------------------------------------------------------
     def plugin(self, service: ServiceId) -> ConnectorPlugin:
@@ -147,11 +193,13 @@ class ConnectionManager:
             display_name=plugin.display_name,
             category=plugin.category,
             capabilities=tuple(sorted(plugin.capabilities)),
+            experimental=is_experimental(plugin),
             status=status,
             message=message,
             account_name=account_name,
             checked_at=checked_at,
             login_expires_at=expires,
+            login_expiry_estimated=is_login_expiry_estimated(plugin),
             values={
                 f.key: stored[f.key]
                 for f in fields
@@ -261,6 +309,73 @@ class ConnectionManager:
         self._records.save(service, ConnectionRecord(ConnectionStatus.UNTESTED))
         return service
 
+    # -- device code ------------------------------------------------------
+    def _device(self, service: ServiceId) -> DeviceCodeSetup:
+        plugin = self.plugin(service)
+        if not isinstance(plugin, DeviceCodeSetup):
+            raise ValueError(f"{plugin.display_name} doesn't use a device code")
+        return plugin
+
+    def _pending_device(self, service: ServiceId) -> _PendingDevice | None:
+        """The unexpired pending sign-in, from memory or from before a restart."""
+        pending = self._devices.get(service)
+        if pending is None:
+            raw = self._credentials.get(service).get(_DEVICE_KEY, "")
+            pending = _PendingDevice.load(raw) if raw else None
+        if pending is not None and pending.expires <= self._clock.now():
+            pending = None
+        if pending is None:
+            self._set_pending_device(service, None)
+        else:
+            self._devices[service] = pending
+        return pending
+
+    def _set_pending_device(
+        self, service: ServiceId, pending: _PendingDevice | None
+    ) -> None:
+        if pending is None:
+            self._devices.pop(service, None)
+            if self._credentials.get(service).get(_DEVICE_KEY):
+                self._credentials.save(service, {_DEVICE_KEY: ""})
+            return
+        self._devices[service] = pending
+        self._credentials.save(service, {_DEVICE_KEY: pending.dump()})
+
+    async def start_device_code(self, service: ServiceId) -> DeviceCodeStart:
+        plugin = self._device(service)
+        self._require_set_up(service)
+        pending = self._pending_device(service)
+        if pending is not None:
+            # Another tab already has a code: show the same one, so neither
+            # tab's code stops working.
+            left = pending.expires - self._clock.now()
+            return replace(pending.start, expires_in_s=int(left.total_seconds()))
+        start = await plugin.start_device_code(self._ctx())
+        expires = self._clock.now() + timedelta(seconds=start.expires_in_s)
+        self._set_pending_device(
+            service, _PendingDevice(replace(start, keep=dict(start.keep)), expires)
+        )
+        return start
+
+    async def poll_device_code(self, service: ServiceId) -> DevicePoll:
+        plugin = self._device(service)
+        pending = self._pending_device(service)
+        if pending is None:
+            return DevicePoll("expired", _CODE_EXPIRED)
+        result = await plugin.poll_device_code(self._ctx(), pending.start.keep)
+        if result.status == "expired" and not result.message:
+            result = DevicePoll("expired", _CODE_EXPIRED)
+        if result.status != "pending":
+            self._set_pending_device(service, None)
+        elif result.interval_s is not None:
+            interval = result.interval_s
+            keep = {**pending.start.keep, "interval_s": str(interval)}
+            start = replace(pending.start, interval_s=interval, keep=keep)
+            self._set_pending_device(service, replace(pending, start=start))
+        if result.status == "done":
+            self._records.save(service, ConnectionRecord(ConnectionStatus.UNTESTED))
+        return result
+
     # -- browser sign-in --------------------------------------------------
     def _browser(self, service: ServiceId) -> BrowserSignInSetup:
         plugin = self.plugin(service)
@@ -281,6 +396,7 @@ class ConnectionManager:
     # -- lifecycle --------------------------------------------------------
     def disconnect(self, service: ServiceId) -> None:
         self.plugin(service)
+        self._devices.pop(service, None)
         self._credentials.delete(service)
         self._records.delete(service)
 

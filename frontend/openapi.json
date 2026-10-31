@@ -868,6 +868,10 @@
             "title": "Display Name",
             "type": "string"
           },
+          "experimental": {
+            "title": "Experimental",
+            "type": "boolean"
+          },
           "login_expires_at": {
             "anyOf": [
               {
@@ -879,6 +883,10 @@
               }
             ],
             "title": "Login Expires At"
+          },
+          "login_expiry_estimated": {
+            "title": "Login Expiry Estimated",
+            "type": "boolean"
           },
           "message": {
             "title": "Message",
@@ -912,11 +920,13 @@
           "display_name",
           "category",
           "capabilities",
+          "experimental",
           "status",
           "message",
           "account_name",
           "checked_at",
           "login_expires_at",
+          "login_expiry_estimated",
           "values",
           "secrets_set"
         ],
@@ -1077,6 +1087,69 @@
           "missing"
         ],
         "title": "DestinationOut",
+        "type": "object"
+      },
+      "DeviceCodeOut": {
+        "properties": {
+          "expires_in_s": {
+            "title": "Expires In S",
+            "type": "integer"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "integer"
+          },
+          "user_code": {
+            "title": "User Code",
+            "type": "string"
+          },
+          "verification_url": {
+            "title": "Verification Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_code",
+          "verification_url",
+          "interval_s",
+          "expires_in_s"
+        ],
+        "title": "DeviceCodeOut",
+        "type": "object"
+      },
+      "DevicePollOut": {
+        "properties": {
+          "interval_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval S"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "done",
+              "denied",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "DevicePollOut",
         "type": "object"
       },
       "EstimateIn": {
@@ -2538,6 +2611,7 @@
           "form",
           "oauth",
           "browser_sign_in",
+          "device_code",
           "test"
         ],
         "title": "StepKind",
@@ -4094,6 +4168,84 @@
           }
         },
         "summary": "Put Credentials"
+      }
+    },
+    "/api/connections/{service}/device-code/poll": {
+      "post": {
+        "operationId": "device_code_poll_api_connections__service__device_code_poll_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "title": "Service",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicePollOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Device Code Poll"
+      }
+    },
+    "/api/connections/{service}/device-code/start": {
+      "post": {
+        "operationId": "device_code_start_api_connections__service__device_code_start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "title": "Service",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCodeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Device Code Start"
       }
     },
     "/api/connections/{service}/guide": {

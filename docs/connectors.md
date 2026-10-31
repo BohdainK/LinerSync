@@ -52,7 +52,14 @@ adapters/connectors/
     parse.py         JSON -> domain objects, pure functions
     plugin.py        the ConnectorPlugin and the PLUGIN constant
   apple_music/       same shape
+  jellyfin/          same shape; read-only (capabilities {READ_ORDER})
+  tidal/             same shape, plus moves.py (planning for the itemId move endpoint)
+  youtube_music/     same shape, plus moves.py; no official API (youtubei/v1)
+  qobuz/             same shape; experimental, the web player's private API
 ```
+
+PKCE sign-in (`pkce_pair`, `PkceAuth`) lives in `kit/oauth.py`; Spotify and Tidal each
+subclass `PkceAuth` with their token URL and display name.
 
 Layer rules (enforced by `tests/test_layers.py`): `kit` must not import a service
 package, and a service package must not import another service package or
@@ -66,7 +73,14 @@ LinerSync finds connectors through the Python entry-point group `linersync.conne
 [project.entry-points."linersync.connectors"]
 spotify = "linersync.adapters.connectors.spotify.plugin:PLUGIN"
 apple_music = "linersync.adapters.connectors.apple_music.plugin:PLUGIN"
+jellyfin = "linersync.adapters.connectors.jellyfin.plugin:PLUGIN"
+tidal = "linersync.adapters.connectors.tidal.plugin:PLUGIN"
+youtube_music = "linersync.adapters.connectors.youtube_music.plugin:PLUGIN"
 ```
+
+A connector without `Capability.ADD` is a source only: the server refuses it as a
+destination (`check_destinations` in `server/api/syncs.py`) and the destination pickers
+hide it.
 
 A third-party package registers the same way in its own `pyproject.toml`. The value
 points to a plugin instance (or a class that takes no arguments, which is instantiated):
@@ -104,6 +118,7 @@ setup, a connection test and a factory:
 | `test_connection(ctx)` | Returns `ConnectionTest(ok, message, account_name)`. Must not raise for service errors. |
 | `login_expires_at(credentials)` | When the stored login stops working, or `None`. |
 | `create(ctx)` | Builds the `Connector`. |
+| `experimental` | Optional, `False` when absent. `True` for unofficial access that may break at any time; the app shows an "Experimental" badge. Read it with `is_experimental(plugin)`. |
 
 `ConnectorContext` carries what a plugin needs and nothing global: a `CredentialStore`
 (`ports/credentials.py`), a `QuotaRecorder` (`ports/quota.py`), a `Clock`,
@@ -357,11 +372,15 @@ lines and exits:
 
 ```
 uv run python -m linersync.devtools.live_login spotify --client-id ID [--port 8765]
+uv run python -m linersync.devtools.live_login tidal --client-id ID [--port 8767]
+uv run python -m linersync.devtools.live_login youtube-music --client-id ID \
+    --client-secret SECRET
 uv run python -m linersync.devtools.live_login apple-music --team-id T --key-id K \
     --key-file PATH [--port 8766]
 ```
 
-For Spotify, add `http://127.0.0.1:8765/callback` as a Redirect URI of your app first. For
+For Spotify, add `http://127.0.0.1:8765/callback` as a Redirect URI of your app first;
+for Tidal, `http://127.0.0.1:8767/callback`. For
 Apple the sign-in page loads MusicKit JS from `js-cdn.music.apple.com` and posts the Music
 User Token back to the local server. Paste the printed `export` lines into your shell.
 
@@ -369,7 +388,21 @@ User Token back to the local server. Paste the printed `export` lines into your 
 (`tests/live/conftest.py: live_skip_reason`):
 
 - Spotify: `SPOTIFY_CLIENT_ID`, `SPOTIFY_REFRESH_TOKEN`
-- Apple: `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY_PATH`, `APPLE_MUSIC_USER_TOKEN`
+- Apple (`LINERSYNC_APPLE_MUSIC_AUTH=web`, the default): `APPLE_MUSIC_USER_TOKEN`, the
+  `media-user-token` cookie from a signed-in music.apple.com
+- Apple (`LINERSYNC_APPLE_MUSIC_AUTH=developer`): `APPLE_TEAM_ID`, `APPLE_KEY_ID`,
+  `APPLE_PRIVATE_KEY_PATH`, `APPLE_MUSIC_USER_TOKEN` (from the sign-in helper above)
+- Tidal: `TIDAL_CLIENT_ID`, `TIDAL_REFRESH_TOKEN` (from the sign-in helper above)
+- YouTube Music (`LINERSYNC_YTMUSIC_AUTH=headers`, the default): `YTMUSIC_COOKIE`, the
+  Cookie request header of a signed-in music.youtube.com tab
+- YouTube Music (`LINERSYNC_YTMUSIC_AUTH=oauth`): `YTMUSIC_CLIENT_ID`,
+  `YTMUSIC_CLIENT_SECRET`, `YTMUSIC_REFRESH_TOKEN` (from the sign-in helper above)
+- Qobuz: `QOBUZ_APP_ID`, `QOBUZ_USER_AUTH_TOKEN`, the `X-App-Id` and `X-User-Auth-Token`
+  request headers of a signed-in play.qobuz.com tab. No sign-in helper is needed.
+- Jellyfin: `JELLYFIN_URL`, `JELLYFIN_API_KEY` (Dashboard → API Keys), `JELLYFIN_USER`.
+  No sign-in helper is needed. The library needs at least 3 songs; the harness uses the
+  first 3, and creates its playlists through Jellyfin's API directly, because the
+  connector is read-only.
 
 ```
 uv run pytest -m live -q
@@ -377,8 +410,11 @@ uv run pytest -m live -q
 
 `LiveHarness` builds the real connector over a `RecordingTransport`, so every exchange is
 saved with secrets redacted under `tests/fixtures/<service>/recorded/raw/`. It finds three
-well-known songs by search, creates playlists named `LinerSync live test <timestamp>`, and
-runs every law in `LAWS`. It injects no faults, so fault laws are skipped. Review recordings
+well-known songs by search and runs every law in `LAWS`. It injects no faults, so fault laws
+are skipped. To leave few playlists behind, it reuses playlists named
+`LinerSync live test - Contract read-only`, `- Contract appends` and `- Contract scratch`
+(Spotify only) across runs; only `Contract created` is new on every run. The appends
+playlist grows on Apple, which can't remove songs. Review recordings
 before sharing: redaction covers known secret keys, not everything a service might put in a
 body.
 
@@ -407,7 +443,9 @@ body.
 
 **Apple Music**
 
-- [ ] The paid Apple Developer Program membership is active.
+- [ ] Developer mode: the paid Apple Developer Program membership is active.
+- [ ] Web mode: the web player token is still found in music.apple.com's
+      `/assets/index~*.js` bundle (`apple_music/web_token.py`).
 - [ ] **What an empty library playlist's `/tracks` returns.** If emptiness can be told apart
       from an error, revise decision D3 (today a 404 is `ReadFailed`, never empty).
 - [ ] Library lag after create and add, measured against the 10 s settle (polling every 1 s).
@@ -426,7 +464,123 @@ body.
 - [ ] 401 vs 403 semantics: which means a bad developer token, which a missing or expired
       user token.
 
-**Both**
+**Jellyfin**
+
+- [ ] A playlist holding the same song twice reads back with both copies, in order.
+- [ ] `GET /Playlists/{id}/Items` honours `StartIndex`/`Limit` and its
+      `TotalRecordCount` is the playlist length.
+- [ ] A playlist with a video or a song whose file is gone: the snapshot is incomplete
+      (never silently shorter).
+- [ ] A server URL with a trailing slash or a path prefix (`https://host/jellyfin`) works.
+- [ ] A revoked API key: the connection test says "Check your Jellyfin API key" and
+      reads ask for attention.
+- [ ] Image endpoints answer without the API key (artwork hashes are fetched without it).
+
+**Tidal**
+
+The connector is built from the published OpenAPI spec (1.10.218); these checks confirm
+what the spec leaves open.
+
+- [ ] `lastModifiedAt` changes when songs are added, removed and moved, and stays the same
+      across two reads with no edits in between. The changed-during-read check depends on
+      it; if it doesn't hold, that check is blind and must change.
+- [ ] `numberOfItems` is the playlist length, including songs not available in the
+      user's country.
+- [ ] A playlist with a song not available in your country: the snapshot is incomplete
+      (never silently shorter), and a full sync into it asks for attention instead of
+      removing or reordering.
+- [ ] Removing one of two copies of a song removes the copy at that position.
+- [ ] A move with `positionBefore` places the moved songs, in request order, right before
+      that item; without `meta` they go to the end.
+- [ ] A retried POST with the same `Idempotency-Key` replays, not repeats.
+- [ ] `links.next` is a path relative to `/v2` and keeps the query (`countryCode`,
+      `include`).
+- [ ] The include path `items.artists,items.albums.coverArt` is accepted for playlists
+      that hold videos.
+- [ ] A revoked app or refresh token: the connection test says "Sign in to Tidal again"
+      and reads ask for attention.
+
+**YouTube Music**
+
+There is no official API. Search and public playlist pages were recorded from the real
+service (`tests/fixtures/youtube_music/recorded/`); everything that needs a signed-in
+session was ported from ytmusicapi and is unconfirmed until checked here.
+
+- [ ] The library (`FEmusic_liked_playlists`) and its continuation parse as the
+      hand-shaped fixtures assume (`library_playlists.json`, `library_continuation.json`).
+- [ ] An owned playlist has the `musicEditablePlaylistDetailHeaderRenderer` header; a saved
+      one doesn't (it reads as not owned).
+- [ ] A greyed-out song has no `playlistItemData`, and the snapshot reads as incomplete.
+- [ ] An unknown playlist id answers 404 (it must not read as an empty playlist).
+- [ ] `playlist/create`, and `browse/edit_playlist` for add, remove (by `setVideoId`), move
+      (`movedSetVideoIdSuccessor`, none = to the end), name and description, all answer
+      `STATUS_SUCCEEDED`; 50 actions in one request are accepted.
+- [ ] Adding a song that's already in the playlist with `dedupeOption:
+      DEDUPE_OPTION_SKIP` adds a second copy; without it the edit is refused.
+- [ ] Continuation pages of an owned playlist don't overlap. On 2026-10-30, an
+      auto-generated public playlist (`RDCLAK…`) answered its continuation with 99 of
+      page 1's 100 entries shifted by one, whether the token went in the body or as
+      `ctoken`/`continuation` parameters (`recorded/playlist_continuation.json` is that
+      reply). LinerSync fails a read that repeats an entry, so this shows as a read
+      error, never a wrong snapshot; if owned playlists do it too, the paging request
+      must change.
+- [ ] Whether "N songs" counts greyed-out songs, and what an empty playlist shows (LinerSync
+      reads no count, no rows and no continuation as empty).
+- [ ] Searching a real ISRC (songs filter) still returns its Art Track first; a bogus ISRC
+      returns an unrelated song, and matching does *not* floor it (no "found by ISRC
+      search" reason on that match).
+- [ ] Cookie mode: a signed-out cookie fails the connection test with "Sign in to YouTube
+      Music again"; note how long a pasted cookie keeps working (the code nudges after 30
+      days).
+- [ ] Cookie mode, a browser signed in to two Google accounts: setting "Account number"
+      to the second account's `X-Goog-AuthUser` value reads that account's library.
+- [ ] A song by several artists where one has no channel page lists every artist
+      (LinerSync takes the names before the first " • " and skips joiners like " & ").
+- [ ] OAuth mode: the device flow (code, approval, refresh with the client secret) works
+      with a "TVs and Limited Input devices" client, and youtubei accepts the bearer token.
+- [ ] OAuth mode: polling too fast answers `slow_down` (the interval then grows by 5
+      seconds), and polling an already-used code answers `invalid_grant` (shown as "Get a
+      new code").
+- [ ] OAuth mode: with the consent screen "In production" the sign-in outlives 7 days
+      (in "Testing", Google expires the refresh token after 7 days).
+
+**Qobuz**
+
+There is no official API and nothing was recorded yet: every shape in
+`tests/fixtures/qobuz/` is hand-shaped from the community clients (qobuz-dl, streamrip)
+and unconfirmed until checked here.
+
+- [ ] The pasted app ID and token work on their own (no app secret, no request
+      signature) for `playlist/getUserPlaylists`, `playlist/get`, `track/search` and the
+      four writes.
+- [ ] `playlist/getUserPlaylists` names the user (`user.id`, `user.login`); a playlist
+      you follow but don't own reads as not owned. It reports `playlists.total`
+      (without it, LinerSync reads on until an empty page).
+- [ ] A track's `performers` line reads "Name, Role, Role - Name, Role", and a band with
+      a comma in its name ("Earth, Wind & Fire") is followed by a role LinerSync knows
+      (`MainArtist`); note any role names not in `qobuz/parse.py`.
+- [ ] `playlist/get?extra=tracks` pages with `offset`/`limit` up to 500, every item has a
+      `playlist_track_id`, and `tracks.total` is the full length (including songs that
+      are no longer streamable).
+- [ ] An unknown playlist id answers 404 (`99999999999` is the live test's), not 400.
+- [ ] `updated_at` changes when songs are added, removed or moved. Pages overlap by one
+      song, which catches removals and adds during a read; `updated_at` is what's left
+      to catch a reorder during one. If it is reliable, it can become the version token.
+- [ ] A wrong app ID answers 400 with a message naming `app_id` (reads and writes then
+      ask to sign in again).
+- [ ] `playlist/addTracks` with `no_duplicate=false` adds a second copy of a song already
+      in the playlist, keeps the order of `track_ids`, and takes 50 ids at once.
+- [ ] `playlist/deleteTracks` with one `playlist_track_id` removes only that copy;
+      repeating the call removes nothing more and doesn't fail.
+- [ ] `playlist/create` with `is_public=false` makes a private playlist; `playlist/update`
+      changes name and description.
+- [ ] Whether the web player has a working move endpoint (`playlist/updateTracksPosition`
+      is the guess). Until confirmed, Qobuz doesn't declare REORDER.
+- [ ] Searching an ISRC with `track/search` returns that recording.
+- [ ] An expired or signed-out token answers 401 (connection test: "Sign in to Qobuz
+      again"); a wrong app ID answers 400. Note how long a pasted token keeps working.
+
+**All services**
 
 - [ ] Copy each endpoint's recorded response from `recorded/raw/` into
       `tests/fixtures/<service>/recorded/<fixture name>.json`; the shape tests then use it.

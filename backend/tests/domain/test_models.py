@@ -30,6 +30,15 @@ def test_snapshot_complete_only_when_total_matches() -> None:
     assert not snapshot("spotify", "P", ["a"], expected_total=None).is_complete
 
 
+def test_snapshot_shortfall_carries_the_reason() -> None:
+    short = snapshot("spotify", "P", ["a"], expected_total=2)
+    assert short.shortfall() == "(1 of 2 songs)"
+    reason = "1 song is no longer available; remove it"
+    assert replace(short, missing_reason=reason).shortfall() == (
+        "(1 of 2 songs; 1 song is no longer available; remove it)"
+    )
+
+
 def _m(
     mid: str, role: MemberRole, pid: str | None = "X", svc: ServiceId = SP
 ) -> SyncMember:
@@ -132,3 +141,10 @@ def test_attention_dedupe_key_ignores_item_id_and_time() -> None:
     )
     b = replace(a, item_id="i2", created_at=datetime(2026, 2, 2, tzinfo=UTC))
     assert a.dedupe_key == b.dedupe_key == ("unmatched", "s1", "dst0", "spotify:abc")
+
+
+def test_read_only_limitation() -> None:
+    caps = frozenset({Capability.READ_ORDER})
+    assert limitations("Jellyfin", caps, SyncMode.FULL) == (
+        "Jellyfin is read-only, so it can't be a destination",
+    )

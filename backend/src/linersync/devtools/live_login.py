@@ -1,6 +1,9 @@
 """Local sign-in helper for the opt-in live tests.
 
     python -m linersync.devtools.live_login spotify --client-id ID [--port 8765]
+    python -m linersync.devtools.live_login tidal --client-id ID [--port 8767]
+    python -m linersync.devtools.live_login youtube-music --client-id ID \
+        --client-secret SECRET
     python -m linersync.devtools.live_login apple-music --team-id T --key-id K \
         --key-file PATH [--port 8766]
 
@@ -22,12 +25,18 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from linersync.adapters.connectors.apple_music.token import make_developer_token
-from linersync.adapters.connectors.kit.plugin import ConnectorContext
-from linersync.adapters.connectors.spotify.auth import (
-    authorize_url,
-    pkce_pair,
-)
+from linersync.adapters.connectors.kit.oauth import pkce_pair
+from linersync.adapters.connectors.kit.plugin import ConnectorContext, OAuthSetup
+from linersync.adapters.connectors.spotify.auth import authorize_url
 from linersync.adapters.connectors.spotify.plugin import SPOTIFY_PLUGIN
+from linersync.adapters.connectors.tidal.auth import (
+    authorize_url as tidal_authorize_url,
+)
+from linersync.adapters.connectors.tidal.plugin import TIDAL_PLUGIN
+from linersync.adapters.connectors.youtube_music.plugin import (
+    YouTubeMusicPlugin,
+    YTAuthMode,
+)
 from linersync.adapters.memory.credentials import InMemoryCredentials
 from linersync.adapters.memory.quota import InMemoryQuota
 from linersync.domain.tracks import ServiceId
@@ -48,6 +57,10 @@ def spotify_login_url(client_id: str, port: int, state: str, challenge: str) -> 
     return authorize_url(client_id, _redirect_uri(port), state, challenge)
 
 
+def tidal_login_url(client_id: str, port: int, state: str, challenge: str) -> str:
+    return tidal_authorize_url(client_id, _redirect_uri(port), state, challenge)
+
+
 class LoginFailed(Exception):
     """The sign-in ended without credentials; the message says why."""
 
@@ -61,21 +74,27 @@ class CallbackResult:
     error: str | None = None
 
 
-def spotify_callback(query: Mapping[str, list[str]], state: str) -> CallbackResult:
-    """What the local server answers to Spotify's redirect, and whether the
-    sign-in is over. An error from Spotify (e.g. access_denied) ends it."""
+def oauth_callback(
+    query: Mapping[str, list[str]], state: str, display_name: str
+) -> CallbackResult:
+    """What the local server answers to a service's redirect, and whether the
+    sign-in is over. An error from the service (e.g. access_denied) ends it."""
     if query.get("state") != [state]:
         return CallbackResult(400, "Sign-in failed or state mismatch", False)
     if "error" in query:
         error = query["error"][0]
         return CallbackResult(
-            400, f"Spotify sign-in failed: {error}", True, error=error
+            400, f"{display_name} sign-in failed: {error}", True, error=error
         )
     if "code" not in query:
         return CallbackResult(400, "Sign-in failed or state mismatch", False)
     return CallbackResult(
         200, "Signed in. You can close this tab.", True, code=query["code"][0]
     )
+
+
+def spotify_callback(query: Mapping[str, list[str]], state: str) -> CallbackResult:
+    return oauth_callback(query, state, "Spotify")
 
 
 def _js_string(value: str) -> str:
@@ -139,9 +158,17 @@ def _reply(h: BaseHTTPRequestHandler, status: int, body: str, kind: str) -> None
     h.wfile.write(data)
 
 
-def _login_spotify(client_id: str, port: int) -> list[str]:
-    verifier, challenge = pkce_pair()
-    state = secrets.token_urlsafe(16)
+def _loopback_oauth(
+    plugin: OAuthSetup,
+    service: ServiceId,
+    display_name: str,
+    login_url: str,
+    port: int,
+    verifier: str,
+    state: str,
+    client_id: str,
+) -> dict[str, str]:
+    """Run one loopback sign-in; returns the credentials it saved."""
     results: list[CallbackResult] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -150,7 +177,7 @@ def _login_spotify(client_id: str, port: int) -> list[str]:
             if parts.path != "/callback":
                 _reply(self, 404, "Not found", "text/plain")
                 return
-            result = spotify_callback(parse_qs(parts.query), state)
+            result = oauth_callback(parse_qs(parts.query), state, display_name)
             _reply(self, result.status, result.message, "text/plain")
             if result.finished:
                 results.append(result)
@@ -159,26 +186,94 @@ def _login_spotify(client_id: str, port: int) -> list[str]:
         def log_message(self, format: str, *args: object) -> None:
             return None
 
-    url = spotify_login_url(client_id, port, state, challenge)
-    print(f"Opening {url.split('?')[0]} ...")
-    webbrowser.open(url)
+    print(f"Opening {login_url.split('?')[0]} ...")
+    webbrowser.open(login_url)
     _serve(port, Handler)
     result = results[0]
     if result.code is None:
         raise LoginFailed(result.message)
 
     credentials = InMemoryCredentials()
-    credentials.save(ServiceId("spotify"), {"client_id": client_id})
+    credentials.save(service, {"client_id": client_id})
     ctx = ConnectorContext(credentials, InMemoryQuota(), _SystemClock())
     asyncio.run(
-        SPOTIFY_PLUGIN.complete(
+        plugin.complete(
             ctx, _redirect_uri(port), result.code, {"code_verifier": verifier}
         )
     )
-    refresh = credentials.get(ServiceId("spotify"))["refresh_token"]
+    return credentials.get(service)
+
+
+def _login_spotify(client_id: str, port: int) -> list[str]:
+    verifier, challenge = pkce_pair()
+    state = secrets.token_urlsafe(16)
+    url = spotify_login_url(client_id, port, state, challenge)
+    saved = _loopback_oauth(
+        SPOTIFY_PLUGIN,
+        ServiceId("spotify"),
+        "Spotify",
+        url,
+        port,
+        verifier,
+        state,
+        client_id,
+    )
     return [
         f"export SPOTIFY_CLIENT_ID={client_id}",
-        f"export SPOTIFY_REFRESH_TOKEN={refresh}",
+        f"export SPOTIFY_REFRESH_TOKEN={saved['refresh_token']}",
+        "export LINERSYNC_LIVE=1",
+    ]
+
+
+def _login_tidal(client_id: str, port: int) -> list[str]:
+    verifier, challenge = pkce_pair()
+    state = secrets.token_urlsafe(16)
+    url = tidal_login_url(client_id, port, state, challenge)
+    saved = _loopback_oauth(
+        TIDAL_PLUGIN,
+        ServiceId("tidal"),
+        "Tidal",
+        url,
+        port,
+        verifier,
+        state,
+        client_id,
+    )
+    return [
+        f"export TIDAL_CLIENT_ID={client_id}",
+        f"export TIDAL_REFRESH_TOKEN={saved['refresh_token']}",
+        "export LINERSYNC_LIVE=1",
+    ]
+
+
+def _login_youtube_music(client_id: str, client_secret: str) -> list[str]:
+    """Google's device flow: no local server, just a code to enter."""
+    service = ServiceId("youtube_music")
+    plugin = YouTubeMusicPlugin(YTAuthMode.OAUTH)
+    credentials = InMemoryCredentials()
+    credentials.save(service, {"client_id": client_id, "client_secret": client_secret})
+    ctx = ConnectorContext(credentials, InMemoryQuota(), _SystemClock())
+
+    async def flow() -> str:
+        try:
+            start = await plugin.start_device_code(ctx)
+        except ValueError as e:
+            raise LoginFailed(str(e)) from None
+        print(f"Open {start.verification_url} and enter {start.user_code}")
+        while True:
+            await asyncio.sleep(start.interval_s)
+            poll = await plugin.poll_device_code(ctx, start.keep)
+            if poll.status == "done":
+                return credentials.get(service)["refresh_token"]
+            if poll.status != "pending":
+                raise LoginFailed(poll.message or "Sign-in didn't finish")
+
+    refresh = asyncio.run(flow())
+    return [
+        "export LINERSYNC_YTMUSIC_AUTH=oauth",
+        f"export YTMUSIC_CLIENT_ID={client_id}",
+        f"export YTMUSIC_CLIENT_SECRET={client_secret}",
+        f"export YTMUSIC_REFRESH_TOKEN={refresh}",
         "export LINERSYNC_LIVE=1",
     ]
 
@@ -230,6 +325,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     sp = sub.add_parser("spotify")
     sp.add_argument("--client-id", required=True)
     sp.add_argument("--port", type=int, default=8765)
+    td = sub.add_parser("tidal")
+    td.add_argument("--client-id", required=True)
+    td.add_argument("--port", type=int, default=8767)
+    yt = sub.add_parser("youtube-music")
+    yt.add_argument("--client-id", required=True)
+    yt.add_argument("--client-secret", required=True)
     ap = sub.add_parser("apple-music")
     ap.add_argument("--team-id", required=True)
     ap.add_argument("--key-id", required=True)
@@ -239,6 +340,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.service == "spotify":
             lines = _login_spotify(args.client_id, args.port)
+        elif args.service == "tidal":
+            lines = _login_tidal(args.client_id, args.port)
+        elif args.service == "youtube-music":
+            lines = _login_youtube_music(args.client_id, args.client_secret)
         else:
             lines = _login_apple(args.team_id, args.key_id, args.key_file, args.port)
     except LoginFailed as e:

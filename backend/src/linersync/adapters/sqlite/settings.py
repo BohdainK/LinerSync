@@ -26,6 +26,4 @@ class SqliteSettings:
     def save(self, s: AppSettings) -> None:
         with self._engine.begin() as conn:
             conn.execute(delete(settings).where(settings.c.key == _KEY))
-            conn.execute(
-                insert(settings).values(key=_KEY, body=dumps(AppSettings, s))
-            )
+            conn.execute(insert(settings).values(key=_KEY, body=dumps(AppSettings, s)))

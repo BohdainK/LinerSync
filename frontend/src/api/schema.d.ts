@@ -421,6 +421,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/connections/{service}/device-code/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device Code Poll */
+        post: operations["device_code_poll_api_connections__service__device_code_poll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections/{service}/device-code/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device Code Start */
+        post: operations["device_code_start_api_connections__service__device_code_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/connections/{service}/guide": {
         parameters: {
             query?: never;
@@ -1159,8 +1193,12 @@ export interface components {
             checked_at: string | null;
             /** Display Name */
             display_name: string;
+            /** Experimental */
+            experimental: boolean;
             /** Login Expires At */
             login_expires_at: string | null;
+            /** Login Expiry Estimated */
+            login_expiry_estimated: boolean;
             /** Message */
             message: string;
             /** Secrets Set */
@@ -1222,6 +1260,29 @@ export interface components {
             playlist_id: string | null;
             /** Service */
             service: string;
+        };
+        /** DeviceCodeOut */
+        DeviceCodeOut: {
+            /** Expires In S */
+            expires_in_s: number;
+            /** Interval S */
+            interval_s: number;
+            /** User Code */
+            user_code: string;
+            /** Verification Url */
+            verification_url: string;
+        };
+        /** DevicePollOut */
+        DevicePollOut: {
+            /** Interval S */
+            interval_s?: number | null;
+            /** Message */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "done" | "denied" | "expired";
         };
         /** EstimateIn */
         EstimateIn: {
@@ -1763,7 +1824,7 @@ export interface components {
          * StepKind
          * @enum {string}
          */
-        StepKind: "info" | "form" | "oauth" | "browser_sign_in" | "test";
+        StepKind: "info" | "form" | "oauth" | "browser_sign_in" | "device_code" | "test";
         /** SyncBulkIn */
         SyncBulkIn: {
             /** Syncs */
@@ -2698,6 +2759,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_code_poll_api_connections__service__device_code_poll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicePollOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_code_start_api_connections__service__device_code_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceCodeOut"];
                 };
             };
             /** @description Validation Error */

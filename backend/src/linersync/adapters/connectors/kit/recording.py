@@ -18,8 +18,21 @@ DEFAULT_REDACT = frozenset(
         "code",
         "code_verifier",
         "client_secret",
+        "api_key",
         "email",
         "display_name",
+        "firstName",
+        "lastName",
+        "username",
+        "cookie",
+        "device_code",
+        "user_code",
+        "accountName",
+        "channelHandle",
+        "visitorData",
+        "datasyncId",
+        "user_auth_token",
+        "login",
     }
 )
 _REDACTED = "REDACTED"

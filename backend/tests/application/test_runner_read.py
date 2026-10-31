@@ -43,6 +43,13 @@ async def test_truncated_source_aborts(world: World) -> None:
     assert world.repos.syncs.get("s1") == world.group
 
 
+async def test_truncated_source_says_why(world: World) -> None:
+    world.spotify.truncate_reads("P1", reason="1 song is unavailable; remove it")
+    run = await world.runner().run("s1", trigger=MANUAL)
+    assert run.status is RunStatus.ABORTED
+    assert run.error and "1 song is unavailable; remove it" in run.error
+
+
 async def test_source_missing_pauses_sync(world: World) -> None:
     world.spotify.delete_playlist("P1")
     run = await world.runner().run("s1", trigger=MANUAL)

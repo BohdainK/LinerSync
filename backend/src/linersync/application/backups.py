@@ -189,9 +189,10 @@ class BackupService:
                 errors.append(f"{meta.name}: couldn't read it: {_detail(e)}")
                 continue
             if not snap.is_complete:
+                reason = f"; {snap.missing_reason}" if snap.missing_reason else ""
                 errors.append(
                     f"{meta.name}: only {len(snap.entries)} of "
-                    f"{snap.expected_total} songs could be read"
+                    f"{snap.expected_total} songs could be read{reason}"
                 )
                 continue
             digest = content_hash(snap)

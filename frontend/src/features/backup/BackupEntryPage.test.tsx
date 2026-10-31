@@ -100,6 +100,29 @@ describe("BackupEntryPage", () => {
     expect(screen.getByRole("button", { name: "Restore" })).toBeDisabled();
   });
 
+  it("restore never defaults to a read-only service", async () => {
+    serve(detail({ service: "jellyfin" }));
+    server.use(
+      http.get("*/api/connections", () =>
+        HttpResponse.json({
+          load_errors: [],
+          services: [
+            connectionOut({ service: "spotify", display_name: "Spotify" }),
+            connectionOut({ service: "jellyfin", display_name: "Jellyfin", capabilities: ["read_order"] }),
+          ],
+        }),
+      ),
+    );
+    renderEntry();
+    await userEvent.click(await screen.findByRole("button", { name: "Restore…" }));
+    const dest = await screen.findByLabelText("Destination");
+    await within(dest).findByRole("option", { name: "Spotify" });
+    expect(dest).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Restore" })).toBeDisabled();
+    await userEvent.selectOptions(dest, "spotify");
+    expect(screen.getByRole("button", { name: "Restore" })).toBeEnabled();
+  });
+
   it("restore shows Connect X first", async () => {
     serve();
     server.use(

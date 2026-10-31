@@ -70,6 +70,7 @@ function DestinationRow(props: {
           label={`Destination ${n}`}
           value={row.service}
           onChange={(service) => props.onChange({ ...row, service, selection: [""] })}
+          writableOnly
         />
         <div className="flex flex-col gap-1">
           <label htmlFor={modeId} className="text-sm font-medium">

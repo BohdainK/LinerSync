@@ -1,0 +1,24 @@
+{
+  "Items": [
+    {
+      "Name": "Alpha",
+      "ServerId": "5f1c0a6f2e8b4c4b9a1d3e7f6a2b8c9d",
+      "Id": "00000000000000000000000000000001",
+      "PlaylistItemId": "11111111111111111111111111111111",
+      "RunTimeTicks": 2000000000,
+      "Type": "Audio",
+      "MediaType": "Audio",
+      "Artists": ["Alpha Band"],
+      "ArtistItems": [{"Name": "Alpha Band", "Id": "22222222222222222222222222222222"}],
+      "AlbumArtist": "Alpha Band",
+      "Album": "First",
+      "AlbumId": "33333333333333333333333333333333",
+      "AlbumPrimaryImageTag": "44444444444444444444444444444444",
+      "ImageTags": {"Primary": "55555555555555555555555555555555"},
+      "ProviderIds": {"MusicBrainzTrack": "6f9c9b54-8d1f-4c7e-9a0e-2b8f1d3c4e5a"},
+      "MediaSources": [{"Id": "00000000000000000000000000000001", "Path": "/music/alpha.flac"}]
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

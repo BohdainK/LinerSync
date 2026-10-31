@@ -3,7 +3,11 @@ from pathlib import Path
 
 import httpx
 
-from linersync.adapters.connectors.kit.recording import RecordingTransport, redact
+from linersync.adapters.connectors.kit.recording import (
+    DEFAULT_REDACT,
+    RecordingTransport,
+    redact,
+)
 
 SECRET = "tok-SECRET-123"
 CODE = "auth-code-XYZ"
@@ -55,6 +59,30 @@ def test_redact_recurses_case_insensitively() -> None:
         {"client_secret", "email"},
     )
     assert out == {"A": [{"Client_Secret": "REDACTED", "k": 1}], "email": "REDACTED"}
+
+
+def test_default_redact_covers_tidal_profile_names() -> None:
+    # Tidal usernames are often the account's email address.
+    assert {"firstname", "lastname", "username"} <= {k.lower() for k in DEFAULT_REDACT}
+
+
+def test_default_redact_covers_youtube_sign_in() -> None:
+    wanted = {
+        "cookie",
+        "device_code",
+        "user_code",
+        "accountname",
+        "client_secret",
+        "channelhandle",
+        "visitordata",
+        "datasyncid",
+    }
+    assert wanted <= {k.lower() for k in DEFAULT_REDACT}
+
+
+def test_default_redact_covers_qobuz_sign_in() -> None:
+    # A Qobuz login is often the account's email address.
+    assert {"user_auth_token", "login"} <= {k.lower() for k in DEFAULT_REDACT}
 
 
 async def test_recording_scrubs_text_bodies(tmp_path: Path) -> None:

@@ -47,9 +47,7 @@ class DeveloperTokens:
 
     def force_renew(self) -> str:
         now = self._clock.now()
-        self._token = make_developer_token(
-            self._team_id, self._key_id, self._pem, now
-        )
+        self._token = make_developer_token(self._team_id, self._key_id, self._pem, now)
         self._expires = now + TOKEN_LIFETIME
         return self._token
 

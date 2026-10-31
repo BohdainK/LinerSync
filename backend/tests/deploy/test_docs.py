@@ -36,7 +36,6 @@ def test_readme_covers_essentials() -> None:
         "](docs/install.md",
         "](docs/reverse-proxy.md",
         "](docs/connectors.md",
-        "](docs/PROVENANCE.md",
         "](LICENSE",
     ):
         assert text in readme, text

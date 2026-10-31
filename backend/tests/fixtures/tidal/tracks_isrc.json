@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "id": "75413016",
+      "type": "tracks",
+      "attributes": {"title": "Song", "isrc": "GBAYE0601498", "duration": "PT3M5S", "explicit": false, "key": "C", "keyScale": "MAJOR", "mediaTags": [], "popularity": 0.5},
+      "relationships": {
+        "artists": {"data": [{"id": "a1", "type": "artists"}], "links": {"self": "/tracks/75413016/relationships/artists"}},
+        "albums": {"data": [{"id": "al1", "type": "albums"}], "links": {"self": "/tracks/75413016/relationships/albums"}}
+      }
+    }
+  ],
+  "included": [
+    {"id": "a1", "type": "artists", "attributes": {"name": "First Artist", "popularity": 0.4}},
+    {"id": "al1", "type": "albums", "attributes": {"title": "The Album", "albumType": "ALBUM", "barcodeId": "0000000000000", "duration": "PT40M", "explicit": false, "mediaTags": [], "numberOfItems": 10, "numberOfVolumes": 1, "popularity": 0.5}}
+  ],
+  "links": {"self": "/tracks?filter%5Bisrc%5D=GBAYE0601498"}
+}

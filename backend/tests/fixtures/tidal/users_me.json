@@ -1,0 +1,16 @@
+{
+  "data": {
+    "id": "123456789",
+    "type": "users",
+    "attributes": {
+      "username": "sam",
+      "country": "NL",
+      "email": "sam@example.com",
+      "emailVerified": true,
+      "firstName": "Sam",
+      "lastName": "Example",
+      "developerAccessTier": "THIRD_PARTY"
+    }
+  },
+  "links": {"self": "/users/me"}
+}

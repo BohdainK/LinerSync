@@ -5,6 +5,7 @@ third-party connectors can run them from any test runner.
 """
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from enum import StrEnum
 from typing import Protocol
 
@@ -35,12 +36,21 @@ class ContractSkip(Exception):
 
 class ConnectorHarness(Protocol):
     connector: Connector
-    # At least 3 tracks on this service, distinct titles, each with an ISRC;
-    # ids are valid for AddTracks.
+    # At least 3 tracks on this service, distinct titles, each with an ISRC
+    # if the service exposes them; ids are valid for AddTracks.
     catalog: tuple[Track, ...]
+    # A well-formed playlist_id that names no playlist (services may reject
+    # malformed ids with a 400 instead of a 404).
+    missing_playlist_id: str
 
     async def make_playlist(self, name: str, track_ids: Sequence[str]) -> str:
-        """Arrange a playlist out of band; returns its playlist_id."""
+        """Arrange a playlist out of band; returns its playlist_id.
+
+        Two names let a harness reuse playlists instead of creating new ones:
+        laws never write to READ_ONLY (it may be reused while it holds exactly
+        track_ids), and only append to APPENDS, comparing with what it held
+        before (it may be reused whatever it holds; it starts non-empty, since
+        Apple can't read an empty playlist)."""
         ...
 
     def supports(self, fault: Fault) -> bool: ...
@@ -52,6 +62,9 @@ class ConnectorHarness(Protocol):
 
 
 Law = Callable[[ConnectorHarness], Awaitable[None]]
+
+READ_ONLY = "Contract read-only"
+APPENDS = "Contract appends"
 
 _DRAFT = PlaylistDraft("Mix & Match <3>", 'Rock & roll, "quoted"')
 
@@ -78,9 +91,20 @@ async def _read_ids(h: ConnectorHarness, playlist_id: str) -> tuple[str, ...]:
     return snap.track_ids
 
 
+def _read_only_ids(h: ConnectorHarness) -> list[str]:
+    """Spans more than two pages and repeats tracks."""
+    ids = [t.track_id for t in h.catalog]
+    n = max(2 * h.connector.limits.page_size + 1, len(ids) + 1)
+    return [ids[i % len(ids)] for i in range(n)]
+
+
+async def _read_only(h: ConnectorHarness) -> tuple[str, list[str]]:
+    wanted = _read_only_ids(h)
+    return await h.make_playlist(READ_ONLY, wanted), wanted
+
+
 async def list_includes_arranged_playlist(h: ConnectorHarness) -> None:
-    x, _, _ = _ids(h)
-    pid = await h.make_playlist("Contract list", [x])
+    pid, _ = await _read_only(h)
     metas = await h.connector.list_playlists()
     assert pid in {m.playlist_id for m in metas}
     for m in metas:
@@ -88,30 +112,27 @@ async def list_includes_arranged_playlist(h: ConnectorHarness) -> None:
 
 
 async def read_is_complete_ordered_with_repeats(h: ConnectorHarness) -> None:
-    x, y, _ = _ids(h)
-    pid = await h.make_playlist("Contract repeats", [x, y, x])
-    assert await _read_ids(h, pid) == (x, y, x)
+    pid, wanted = await _read_only(h)
+    assert len(set(wanted)) < len(wanted)
+    assert list(await _read_ids(h, pid)) == wanted
 
 
 async def read_paginates_beyond_page_size(h: ConnectorHarness) -> None:
-    ids = [t.track_id for t in h.catalog]
-    n = 2 * h.connector.limits.page_size + 1
-    wanted = [ids[i % len(ids)] for i in range(n)]
-    pid = await h.make_playlist("Contract pages", wanted)
+    pid, wanted = await _read_only(h)
+    assert len(wanted) > 2 * h.connector.limits.page_size
     assert list(await _read_ids(h, pid)) == wanted
 
 
 async def read_unknown_playlist_is_not_found(h: ConnectorHarness) -> None:
     try:
-        await h.connector.read_playlist("contract-no-such-playlist")
+        await h.connector.read_playlist(h.missing_playlist_id)
     except PlaylistNotFound:
         return
     raise AssertionError("expected PlaylistNotFound")
 
 
 async def snapshot_tracks_have_identity(h: ConnectorHarness) -> None:
-    x, y, _ = _ids(h)
-    pid = await h.make_playlist("Contract identity", [x, y])
+    pid, _ = await _read_only(h)
     snap = await h.connector.read_playlist(pid)
     assert snap.entries
     for e in snap.entries:
@@ -122,7 +143,16 @@ async def snapshot_tracks_have_identity(h: ConnectorHarness) -> None:
 
 async def search_by_isrc_finds_track(h: ConnectorHarness) -> None:
     target = h.catalog[0]
+    if target.isrc is None:
+        raise ContractSkip("catalog has no ISRCs")
     found = await h.connector.search(TrackQuery.from_track(target))
+    assert target.track_id in [t.track_id for t in found]
+
+
+async def search_by_metadata_finds_track(h: ConnectorHarness) -> None:
+    target = h.catalog[0]
+    query = replace(TrackQuery.from_track(target), isrc=None)
+    found = await h.connector.search(query)
     assert target.track_id in [t.track_id for t in found]
 
 
@@ -141,9 +171,10 @@ async def create_then_add_then_read(h: ConnectorHarness) -> None:
 async def add_appends_in_order_with_repeats(h: ConnectorHarness) -> None:
     _need(h, Capability.ADD)
     x, y, _ = _ids(h)
-    pid = await h.make_playlist("Contract add", [x])
-    await h.connector.apply(pid, AddTracks("contract-1", (y, x)))
-    assert await _read_ids(h, pid) == (x, y, x)
+    pid = await h.make_playlist(APPENDS, [h.catalog[0].track_id])
+    before = await _read_ids(h, pid)
+    await h.connector.apply(pid, AddTracks("contract-1", (y, x, y)))
+    assert await _read_ids(h, pid) == (*before, y, x, y)
 
 
 async def add_beyond_batch_size_applies_all(h: ConnectorHarness) -> None:
@@ -151,15 +182,16 @@ async def add_beyond_batch_size_applies_all(h: ConnectorHarness) -> None:
     ids = [t.track_id for t in h.catalog]
     n = h.connector.limits.add_batch_size + 1
     wanted = [ids[i % len(ids)] for i in range(n)]
-    pid = await h.make_playlist("Contract batch", [])
+    pid = await h.make_playlist(APPENDS, [h.catalog[0].track_id])
+    before = await _read_ids(h, pid)
     await h.connector.apply(pid, AddTracks("contract-1", tuple(wanted)))
-    assert list(await _read_ids(h, pid)) == wanted
+    assert list(await _read_ids(h, pid)) == [*before, *wanted]
 
 
 async def remove_one_copy_of_repeat_keeps_other(h: ConnectorHarness) -> None:
     _need(h, Capability.REMOVE)
     x, y, z = _ids(h)
-    pid = await h.make_playlist("Contract remove", [x, y, x, z])
+    pid = await h.make_playlist("Contract scratch", [x, y, x, z])
     await h.connector.apply(pid, RemoveTracks("contract-1", (Removal(x, 2),)))
     assert await _read_ids(h, pid) == (x, y, z)
 
@@ -167,7 +199,7 @@ async def remove_one_copy_of_repeat_keeps_other(h: ConnectorHarness) -> None:
 async def reorder_produces_exact_sequence(h: ConnectorHarness) -> None:
     _need(h, Capability.REORDER)
     x, y, z = _ids(h)
-    pid = await h.make_playlist("Contract reorder", [x, y, z, x])
+    pid = await h.make_playlist("Contract scratch", [x, y, z, x])
     await h.connector.apply(pid, Reorder("contract-1", (x, z, x, y)))
     assert await _read_ids(h, pid) == (x, z, x, y)
 
@@ -175,13 +207,18 @@ async def reorder_produces_exact_sequence(h: ConnectorHarness) -> None:
 async def metadata_round_trips(h: ConnectorHarness) -> None:
     _need(h, Capability.EDIT_METADATA)
     x, _, _ = _ids(h)
-    pid = await h.make_playlist("Contract metadata", [x])
+    pid = await h.make_playlist("Contract scratch", [x])
+    before = (await h.connector.read_playlist(pid)).meta
     await h.connector.apply(pid, UpdateMetadata("contract-1", _DRAFT))
     snap = await h.connector.read_playlist(pid)
     assert snap.meta.name == _DRAFT.name
     assert snap.meta.description == _DRAFT.description
     metas = {m.playlist_id: m for m in await h.connector.list_playlists()}
     assert metas[pid].name == _DRAFT.name
+    # Put the name back, so a harness that reuses the playlist finds it again.
+    restore = PlaylistDraft(before.name, before.description)
+    await h.connector.apply(pid, UpdateMetadata("contract-2", restore))
+    assert (await h.connector.read_playlist(pid)).meta.name == before.name
 
 
 async def read_error_is_never_empty(h: ConnectorHarness) -> None:
@@ -246,6 +283,7 @@ LAWS: Mapping[str, Law] = {
         read_unknown_playlist_is_not_found,
         snapshot_tracks_have_identity,
         search_by_isrc_finds_track,
+        search_by_metadata_finds_track,
         create_then_add_then_read,
         add_appends_in_order_with_repeats,
         add_beyond_batch_size_applies_all,

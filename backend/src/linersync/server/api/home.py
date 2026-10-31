@@ -75,14 +75,14 @@ def _warnings(services: AppServices, info: ConnectionInfo) -> list[WarningOut]:
         out.append(WarningOut(service=service, kind="failing", message=info.message))
     expires = info.login_expires_at
     if expires is not None and expires - now <= LOGIN_EXPIRY_WARNING:
-        out.append(
-            WarningOut(
-                service=service,
-                kind="login_expiring",
-                message=f"{name} sign-in expires on "
-                f"{expires.astimezone(zone):%d %b %Y}",
-            )
+        day = f"{expires.astimezone(zone):%d %b %Y}"
+        message = (
+            f"{name} may sign you out around {day}; "
+            "sign in again before then to be safe"
+            if info.login_expiry_estimated
+            else f"{name} sign-in expires on {day}"
         )
+        out.append(WarningOut(service=service, kind="login_expiring", message=message))
     opened_at = services.repos.breakers.get(service).opened_at
     if opened_at is not None:
         cooldown = services.settings_store.get().engine.breaker.cooldown

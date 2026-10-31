@@ -28,6 +28,7 @@ from tests.server.helpers import create, run_now
 from tests.server.plugins import (
     SHOT,
     BrowserFakePlugin,
+    DeviceFakePlugin,
     OAuthFakePlugin,
     ScreenshotPlugin,
     SecretFakePlugin,
@@ -89,6 +90,17 @@ def test_list_shows_not_set_up(app_factory: AppFactory) -> None:
     assert first["display_name"] == "Fake"
     assert first["values"] == {}
     assert first["secrets_set"] == []
+
+
+def test_list_marks_experimental_plugins(app_factory: AppFactory) -> None:
+    risky = SecretFakePlugin()
+    risky.experimental = True  # type: ignore[attr-defined]
+    with signed_in_client(app_factory, risky, FakePlugin()) as client:
+        body = client.get("/api/connections").json()
+        one = client.get("/api/connections/secret_fake").json()
+    flags = {s["service"]: s["experimental"] for s in body["services"]}
+    assert flags == {"fake": False, "secret_fake": True}
+    assert one["experimental"] is True
 
 
 def test_routes_need_a_session(app_factory: AppFactory) -> None:
@@ -350,6 +362,142 @@ def test_browser_sign_in_round_trip_and_bad_input_422(
     assert stored["user_token"] == "ut"
     assert unsupported.status_code == 409
     assert unsupported_post.status_code == 409
+
+
+DEVICE = "/api/connections/device_fake/device-code"
+
+
+def test_device_code_round_trip(app_factory: AppFactory) -> None:
+    plugin = DeviceFakePlugin()
+    with signed_in_client(app_factory, plugin) as client:
+        save(client, "device_fake", client_id="cid")
+        start = client.post(f"{DEVICE}/start", json={})
+        pending = client.post(f"{DEVICE}/poll", json={})
+        plugin.outcome = "done"
+        done = client.post(f"{DEVICE}/poll", json={})
+        after = client.post(f"{DEVICE}/poll", json={})
+        info = client.get("/api/connections/device_fake").json()
+        stored = services(client).credentials.get(ServiceId("device_fake"))
+    assert start.status_code == 200
+    assert start.json() == {
+        "user_code": "ABCD-EFGH",
+        "verification_url": "https://device.example/activate",
+        "interval_s": 5,
+        "expires_in_s": 600,
+    }
+    assert pending.json() == {"status": "pending", "message": "", "interval_s": None}
+    assert done.json() == {"status": "done", "message": "", "interval_s": None}
+    assert plugin.polled[0] == {"device_code": "dc1"}
+    assert info["status"] == "untested"
+    assert stored["refresh_token"] == "r"
+    # The flow is over: a later poll has nothing to wait for.
+    assert after.json()["status"] == "expired"
+
+
+def test_device_code_denied(app_factory: AppFactory) -> None:
+    plugin = DeviceFakePlugin()
+    with signed_in_client(app_factory, plugin) as client:
+        save(client, "device_fake", client_id="cid")
+        client.post(f"{DEVICE}/start", json={})
+        plugin.outcome = "denied"
+        denied = client.post(f"{DEVICE}/poll", json={})
+        again = client.post(f"{DEVICE}/poll", json={})
+    assert denied.json() == {
+        "status": "denied",
+        "message": "You declined the sign-in",
+        "interval_s": None,
+    }
+    assert again.json()["status"] == "expired"
+
+
+def test_device_code_expired(app_factory: AppFactory, clock: FixedClock) -> None:
+    plugin = DeviceFakePlugin()
+    with signed_in_client(app_factory, plugin) as client:
+        save(client, "device_fake", client_id="cid")
+        client.post(f"{DEVICE}/start", json={})
+        clock.advance(timedelta(seconds=601))
+        expired = client.post(f"{DEVICE}/poll", json={})
+        restart = client.post(f"{DEVICE}/start", json={})
+        plugin.outcome = "done"
+        done = client.post(f"{DEVICE}/poll", json={})
+    assert expired.json() == {
+        "status": "expired",
+        "message": "This code expired. Get a new one.",
+        "interval_s": None,
+    }
+    assert plugin.polled == [{"device_code": "dc2"}]
+    assert restart.status_code == 200
+    assert done.json()["status"] == "done"
+
+
+def test_device_code_poll_without_start(app_factory: AppFactory) -> None:
+    with signed_in_client(app_factory, DeviceFakePlugin()) as client:
+        save(client, "device_fake", client_id="cid")
+        response = client.post(f"{DEVICE}/poll", json={})
+    assert response.json() == {
+        "status": "expired",
+        "message": "This code expired. Get a new one.",
+        "interval_s": None,
+    }
+
+
+def test_device_code_second_start_shares_the_pending_code(
+    app_factory: AppFactory, clock: FixedClock
+) -> None:
+    plugin = DeviceFakePlugin()
+    with signed_in_client(app_factory, plugin) as client:
+        save(client, "device_fake", client_id="cid")
+        first = client.post(f"{DEVICE}/start", json={})
+        clock.advance(timedelta(seconds=100))
+        second = client.post(f"{DEVICE}/start", json={})
+        client.post(f"{DEVICE}/poll", json={})
+    assert plugin.started == 1
+    assert second.json()["user_code"] == first.json()["user_code"]
+    assert second.json()["expires_in_s"] == 500
+    assert plugin.polled == [{"device_code": "dc1"}]
+
+
+def test_device_code_survives_a_restart(app_factory: AppFactory) -> None:
+    plugin = DeviceFakePlugin()
+    with signed_in_client(app_factory, plugin) as client:
+        save(client, "device_fake", client_id="cid")
+        client.post(f"{DEVICE}/start", json={})
+    with signed_in_client(app_factory, plugin) as client:
+        plugin.outcome = "done"
+        done = client.post(f"{DEVICE}/poll", json={})
+        after = client.post(f"{DEVICE}/poll", json={})
+    assert done.json()["status"] == "done"
+    assert plugin.polled == [{"device_code": "dc1"}]
+    assert after.json()["status"] == "expired"
+
+
+def test_device_code_slow_down_is_kept(app_factory: AppFactory) -> None:
+    plugin = DeviceFakePlugin()
+    with signed_in_client(app_factory, plugin) as client:
+        save(client, "device_fake", client_id="cid")
+        client.post(f"{DEVICE}/start", json={})
+        plugin.slow_down_to = 10
+        slowed = client.post(f"{DEVICE}/poll", json={})
+        plugin.slow_down_to = None
+        client.post(f"{DEVICE}/poll", json={})
+        again = client.post(f"{DEVICE}/start", json={})
+    assert slowed.json()["interval_s"] == 10
+    assert plugin.polled[1] == {"device_code": "dc1", "interval_s": "10"}
+    assert again.json()["interval_s"] == 10
+
+
+def test_device_code_needs_setup_and_support(app_factory: AppFactory) -> None:
+    with signed_in_client(app_factory, DeviceFakePlugin(), FakePlugin()) as client:
+        not_set_up = client.post(f"{DEVICE}/start", json={})
+        save(client, "fake", account="me")
+        unsupported = client.post("/api/connections/fake/device-code/start", json={})
+        unsupported_poll = client.post(
+            "/api/connections/fake/device-code/poll", json={}
+        )
+    assert not_set_up.status_code == 409
+    assert unsupported.status_code == 409
+    assert unsupported.json() == {"detail": "Fake doesn't use a device code"}
+    assert unsupported_poll.status_code == 409
 
 
 def test_auth_required_marks_needs_sign_in(app_factory: AppFactory) -> None:

@@ -1,4 +1,5 @@
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import type { ConnectionOut } from "@/api/types";
 
 const CAPABILITY_TEXT: [string, string][] = [
@@ -49,7 +50,14 @@ export function ServiceGrid({
                   className="flex items-center justify-between gap-2 rounded-lg border p-4 text-left hover:bg-accent"
                 >
                   <span className="truncate font-medium">{s.display_name}</span>
-                  <StatusBadge kind="connection" status={s.status} />
+                  <span className="flex shrink-0 items-center gap-1">
+                    {s.experimental && (
+                      <Badge variant="outline" title="Unofficial access that may stop working at any time">
+                        Experimental
+                      </Badge>
+                    )}
+                    <StatusBadge kind="connection" status={s.status} />
+                  </span>
                 </button>
               ))}
             </div>

@@ -1,0 +1,57 @@
+{
+  "data": [
+    {"id": "75413016", "type": "tracks", "meta": {"itemId": "item-a", "addedAt": "2026-10-02T09:00:00Z"}},
+    {"id": "1234567", "type": "videos", "meta": {"itemId": "item-b", "addedAt": "2026-10-03T09:00:00Z"}},
+    {"id": "99999999", "type": "tracks", "meta": {"itemId": "item-c", "addedAt": "2026-10-04T09:00:00Z"}}
+  ],
+  "included": [
+    {
+      "id": "75413016",
+      "type": "tracks",
+      "attributes": {
+        "title": "Song",
+        "version": "Remastered",
+        "isrc": "GBAYE0601498",
+        "duration": "PT3M5S",
+        "explicit": false,
+        "key": "C",
+        "keyScale": "MAJOR",
+        "mediaTags": ["LOSSLESS"],
+        "popularity": 0.5
+      },
+      "relationships": {
+        "artists": {"data": [{"id": "a2", "type": "artists"}, {"id": "a1", "type": "artists"}], "links": {"self": "/tracks/75413016/relationships/artists"}},
+        "albums": {"data": [{"id": "al1", "type": "albums"}], "links": {"self": "/tracks/75413016/relationships/albums"}}
+      }
+    },
+    {
+      "id": "1234567",
+      "type": "videos",
+      "attributes": {"title": "Song (Live video)", "isrc": "GBAYE0601999", "duration": "PT4M", "explicit": false},
+      "relationships": {
+        "artists": {"data": [{"id": "a1", "type": "artists"}], "links": {"self": "/videos/1234567/relationships/artists"}},
+        "albums": {"data": [], "links": {"self": "/videos/1234567/relationships/albums"}}
+      }
+    },
+    {"id": "a1", "type": "artists", "attributes": {"name": "First Artist", "popularity": 0.4}},
+    {"id": "a2", "type": "artists", "attributes": {"name": "Second Artist", "popularity": 0.3}},
+    {
+      "id": "al1",
+      "type": "albums",
+      "attributes": {"title": "The Album", "albumType": "ALBUM", "barcodeId": "0000000000000", "duration": "PT40M", "explicit": false, "mediaTags": [], "numberOfItems": 10, "numberOfVolumes": 1, "popularity": 0.5},
+      "relationships": {"coverArt": {"data": [{"id": "art-al1", "type": "artworks"}], "links": {"self": "/albums/al1/relationships/coverArt"}}}
+    },
+    {
+      "id": "art-al1",
+      "type": "artworks",
+      "attributes": {
+        "mediaType": "IMAGE",
+        "files": [
+          {"href": "https://resources.tidal.com/images/al1/640x640.jpg", "meta": {"width": 640, "height": 640}},
+          {"href": "https://resources.tidal.com/images/al1/80x80.jpg", "meta": {"width": 80, "height": 80}}
+        ]
+      }
+    }
+  ],
+  "links": {"self": "/playlists/550e8400-e29b-41d4-a716-446655440000/relationships/items"}
+}

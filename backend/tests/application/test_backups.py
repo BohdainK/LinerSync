@@ -271,6 +271,12 @@ async def test_partial_read_is_not_saved(env: Env) -> None:
     assert run.saved == 1
 
 
+async def test_partial_read_says_why(env: Env) -> None:
+    env.spotify.truncate_reads("P1", reason="1 song is unavailable")
+    run = await env.service().back_up(env.spotify)
+    assert "Mix: only 3 of 4 songs could be read; 1 song is unavailable" in run.errors
+
+
 async def test_partial_read_keeps_existing_entry_present(env: Env) -> None:
     svc = env.service()
     await svc.back_up(env.spotify)
