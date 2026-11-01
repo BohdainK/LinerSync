@@ -3,6 +3,8 @@
 import importlib
 import importlib.resources
 import mimetypes
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import PurePosixPath
 from typing import Annotated
 from urllib.parse import urlencode
@@ -10,10 +12,10 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
-from linersync.adapters.connectors.kit.plugin import BrowserSignInSetup
 from linersync.domain.tracks import ServiceId
 from linersync.ports.errors import ConnectorError
 from linersync.ports.setup import SetupGuide
+from linersync.server.api.common import backup_unlocked, connector_failed
 from linersync.server.api.schemas import (
     ConnectionListOut,
     ConnectionOut,
@@ -27,9 +29,13 @@ from linersync.server.api.schemas import (
     SignInConfigOut,
     SignInResultIn,
 )
-from linersync.server.api.syncs import backup_unlocked
 from linersync.server.auth import require_session
-from linersync.server.connections import ConnectionManager, NotSetUp, OAuthFailed
+from linersync.server.connections import (
+    ConnectionManager,
+    NotSetUp,
+    OAuthFailed,
+    WrongSetup,
+)
 from linersync.server.state import get_services
 
 router = APIRouter(prefix="/api/connections", dependencies=[Depends(require_session)])
@@ -47,6 +53,15 @@ async def _known_service(service: str, request: Request) -> ServiceId:
 
 Manager = Annotated[ConnectionManager, Depends(_manager)]
 Service = Annotated[ServiceId, Depends(_known_service)]
+
+
+@contextmanager
+def _conflicts() -> Iterator[None]:
+    """A sign-in step the service doesn't use, or isn't set up for, is 409."""
+    try:
+        yield
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
 
 
 @router.get("")
@@ -127,65 +142,43 @@ async def put_credentials(
 
 @router.post("/{service}/test")
 async def test_connection(service: Service, manager: Manager) -> ConnectionTestOut:
-    result = await manager.test(service)
-    return ConnectionTestOut(
-        ok=result.ok, message=result.message, account_name=result.account_name
-    )
+    return ConnectionTestOut.of(await manager.test(service))
 
 
 @router.post("/{service}/oauth/start")
 async def oauth_start(service: Service, manager: Manager) -> OAuthStartOut:
-    try:
+    with _conflicts():
         return OAuthStartOut(url=manager.start_oauth(service))
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from None
 
 
 @router.post("/{service}/device-code/start")
 async def device_code_start(service: Service, manager: Manager) -> DeviceCodeOut:
-    try:
+    with _conflicts():
         start = await manager.start_device_code(service)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from None
-    return DeviceCodeOut(
-        user_code=start.user_code,
-        verification_url=start.verification_url,
-        interval_s=start.interval_s,
-        expires_in_s=start.expires_in_s,
-    )
+    return DeviceCodeOut.of(start)
 
 
 @router.post("/{service}/device-code/poll")
 async def device_code_poll(service: Service, manager: Manager) -> DevicePollOut:
-    try:
+    with _conflicts():
         result = await manager.poll_device_code(service)
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from None
-    return DevicePollOut(
-        status=result.status, message=result.message, interval_s=result.interval_s
-    )
+    return DevicePollOut.of(result)
 
 
 @router.get("/{service}/browser-sign-in")
 async def browser_sign_in_config(service: Service, manager: Manager) -> SignInConfigOut:
-    try:
+    with _conflicts():
         return SignInConfigOut(config=manager.sign_in_config(service))
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from None
 
 
 @router.post("/{service}/browser-sign-in")
 async def browser_sign_in_result(
     service: Service, body: SignInResultIn, manager: Manager
 ) -> ConnectionOut:
-    if not isinstance(manager.plugin(service), BrowserSignInSetup):
-        name = manager.plugin(service).display_name
-        raise HTTPException(
-            status_code=409, detail=f"{name} doesn't use a browser sign-in"
-        )
+    # 409 for the wrong setup; the plugin rejecting the result is 422.
     try:
         manager.accept_sign_in(service, body.result)
-    except NotSetUp as e:
+    except (WrongSetup, NotSetUp) as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
@@ -214,8 +207,5 @@ async def list_playlists(service: Service, manager: Manager) -> list[PlaylistOut
     except NotSetUp as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ConnectorError as e:
-        if e.auth_required:
-            manager.on_auth_required(service)
-        detail = e.message or "The service could not be reached"
-        raise HTTPException(status_code=502, detail=detail) from None
+        raise connector_failed(manager, e, service) from None
     return [PlaylistOut.of(meta) for meta in playlists]

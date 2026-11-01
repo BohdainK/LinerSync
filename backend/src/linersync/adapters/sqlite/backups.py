@@ -5,8 +5,14 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
 from linersync.adapters.sqlite import schema as t
-from linersync.adapters.sqlite.codec import dumps, loads
-from linersync.adapters.sqlite.db import utc_text
+from linersync.adapters.sqlite.codec import dumps
+from linersync.adapters.sqlite.db import (
+    load_all,
+    load_one,
+    upsert,
+    utc_text,
+    utc_text_or_none,
+)
 from linersync.domain.backups import (
     BackedUpPlaylist,
     BackupRun,
@@ -24,49 +30,31 @@ class SqliteBackups:
         values = {
             "service": str(entry.service),
             "playlist_id": entry.playlist_id,
-            "archived_at": None
-            if entry.archived_at is None
-            else utc_text(entry.archived_at),
+            "archived_at": utc_text_or_none(entry.archived_at),
             "body": dumps(BackedUpPlaylist, entry),
         }
         try:
             with self._engine.begin() as conn:
-                updated = conn.execute(
-                    sa.update(t.backup_playlists)
-                    .where(t.backup_playlists.c.entry_id == entry.entry_id)
-                    .values(**values)
-                ).rowcount
-                if updated == 0:
-                    conn.execute(
-                        sa.insert(t.backup_playlists).values(
-                            entry_id=entry.entry_id, **values
-                        )
-                    )
+                upsert(conn, t.backup_playlists, {"entry_id": entry.entry_id}, values)
         except IntegrityError as exc:
             raise ValueError(
                 f"{entry.service}/{entry.playlist_id} already has a backup entry"
             ) from exc
 
     def get_entry(self, entry_id: str) -> BackedUpPlaylist | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.backup_playlists.c.body).where(
-                    t.backup_playlists.c.entry_id == entry_id
-                )
-            ).scalar_one_or_none()
-        return None if body is None else loads(BackedUpPlaylist, body)
+        query = sa.select(t.backup_playlists.c.body).where(
+            t.backup_playlists.c.entry_id == entry_id
+        )
+        return load_one(self._engine, BackedUpPlaylist, query)
 
     def find_entry(
         self, service: ServiceId, playlist_id: str
     ) -> BackedUpPlaylist | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.backup_playlists.c.body).where(
-                    t.backup_playlists.c.service == service,
-                    t.backup_playlists.c.playlist_id == playlist_id,
-                )
-            ).scalar_one_or_none()
-        return None if body is None else loads(BackedUpPlaylist, body)
+        query = sa.select(t.backup_playlists.c.body).where(
+            t.backup_playlists.c.service == service,
+            t.backup_playlists.c.playlist_id == playlist_id,
+        )
+        return load_one(self._engine, BackedUpPlaylist, query)
 
     def list_entries(
         self, service: ServiceId | None = None, *, archived: bool | None = None
@@ -78,8 +66,7 @@ class SqliteBackups:
             query = query.where(t.backup_playlists.c.archived_at.is_not(None))
         elif archived is False:
             query = query.where(t.backup_playlists.c.archived_at.is_(None))
-        with self._engine.begin() as conn:
-            found = [loads(BackedUpPlaylist, b) for b in conn.execute(query).scalars()]
+        found = load_all(self._engine, BackedUpPlaylist, query)
         found.sort(key=lambda e: (e.name.casefold(), e.entry_id))
         return found
 
@@ -118,22 +105,18 @@ class SqliteBackups:
             )
 
     def get_version(self, version_id: str) -> PlaylistVersion | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.backup_versions.c.body).where(
-                    t.backup_versions.c.version_id == version_id
-                )
-            ).scalar_one_or_none()
-        return None if body is None else loads(PlaylistVersion, body)
+        query = sa.select(t.backup_versions.c.body).where(
+            t.backup_versions.c.version_id == version_id
+        )
+        return load_one(self._engine, PlaylistVersion, query)
 
     def list_versions(self, entry_id: str) -> list[PlaylistVersion]:
-        with self._engine.begin() as conn:
-            rows = conn.execute(
-                sa.select(t.backup_versions.c.body)
-                .where(t.backup_versions.c.entry_id == entry_id)
-                .order_by(t.backup_versions.c.seq.desc())
-            ).scalars()
-            return [loads(PlaylistVersion, b) for b in rows]
+        query = (
+            sa.select(t.backup_versions.c.body)
+            .where(t.backup_versions.c.entry_id == entry_id)
+            .order_by(t.backup_versions.c.seq.desc())
+        )
+        return load_all(self._engine, PlaylistVersion, query)
 
     def delete_version(self, version_id: str) -> None:
         with self._engine.begin() as conn:
@@ -155,13 +138,10 @@ class SqliteBackups:
             conn.execute(sa.insert(t.backup_runs).prefix_with("OR REPLACE"), values)
 
     def get_run(self, backup_id: str) -> BackupRun | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.backup_runs.c.body).where(
-                    t.backup_runs.c.backup_id == backup_id
-                )
-            ).scalar_one_or_none()
-        return None if body is None else loads(BackupRun, body)
+        query = sa.select(t.backup_runs.c.body).where(
+            t.backup_runs.c.backup_id == backup_id
+        )
+        return load_one(self._engine, BackupRun, query)
 
     def list_runs(
         self, service: ServiceId | None = None, limit: int | None = None
@@ -173,8 +153,7 @@ class SqliteBackups:
             query = query.where(t.backup_runs.c.service == service)
         if limit is not None:
             query = query.limit(limit)
-        with self._engine.begin() as conn:
-            return [loads(BackupRun, b) for b in conn.execute(query).scalars()]
+        return load_all(self._engine, BackupRun, query)
 
     def delete_service(self, service: ServiceId) -> None:
         with self._engine.begin() as conn:

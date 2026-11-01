@@ -9,20 +9,23 @@ Two ways to authenticate, chosen with LINERSYNC_YTMUSIC_AUTH:
   devices"), signed in with a device code.
 """
 
-import hashlib
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
-from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
+from linersync.adapters.connectors.kit.parsing import expires_after
 from linersync.adapters.connectors.kit.plugin import (
     Category,
     ConnectionTest,
     ConnectorContext,
     DeviceCodeStart,
     DevicePoll,
+    artwork_hasher,
+    connection_failed,
+    fingerprint,
+    http_client,
 )
 from linersync.adapters.connectors.youtube_music.auth import (
     CookieAuth,
@@ -56,7 +59,6 @@ from linersync.ports.setup import (
 
 AUTH_MODE_ENV = "LINERSYNC_YTMUSIC_AUTH"
 COOKIE_LIFETIME = timedelta(days=30)
-_POLICY = QuotaPolicy()
 _NO_SAPISID = (
     "The cookie has no SAPISID; copy it from a signed-in music.youtube.com tab"
 )
@@ -81,33 +83,13 @@ def auth_mode_from_env() -> YTAuthMode:
         return YTAuthMode.HEADERS
 
 
-def _client(
-    ctx: ConnectorContext, base: str, auth: CookieAuth | GoogleAuth | None
-) -> HttpClient:
-    return HttpClient(
-        SERVICE,
-        base,
-        settings=ctx.settings.http,
-        quota=ctx.quota,
-        quota_policy=_POLICY,
-        clock=ctx.clock,
-        auth=auth,
-        transport=ctx.transport,
-        sleep=ctx.sleep,
-    )
-
-
-def _fingerprint(cookie: str) -> str:
-    return hashlib.sha256(cookie.strip().encode()).hexdigest()[:16]
-
-
 class YouTubeMusicPlugin:
     service = SERVICE
     display_name = "YouTube Music"
     category: Category = "streaming"
     capabilities = CAPABILITIES
     limits = LIMITS
-    quota_policy = _POLICY
+    quota_policy = QuotaPolicy()
     # A cookie's end isn't announced: the 30 days are a reminder, not a deadline.
     login_expiry_estimated = True
 
@@ -256,30 +238,27 @@ class YouTubeMusicPlugin:
 
     async def start_device_code(self, ctx: ConnectorContext) -> DeviceCodeStart:
         self._require_device_code()
-        client = _client(ctx, "", None)
-        try:
-            client_id = ctx.credentials.get(SERVICE).get("client_id", "")
-            return await start_device(client, client_id)
-        except HttpFailure:
-            raise ValueError(
-                "Google refused the client ID. Check it, and that the client "
-                'type is "TVs and Limited Input devices".'
-            ) from None
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("Google's reply was not understood. Try again.") from None
-        finally:
-            await client.aclose()
+        async with http_client(ctx, SERVICE) as client:
+            try:
+                client_id = ctx.credentials.get(SERVICE).get("client_id", "")
+                return await start_device(client, client_id)
+            except HttpFailure:
+                raise ValueError(
+                    "Google refused the client ID. Check it, and that the client "
+                    'type is "TVs and Limited Input devices".'
+                ) from None
+            except (KeyError, TypeError, ValueError):
+                raise ValueError(
+                    "Google's reply was not understood. Try again."
+                ) from None
 
     async def poll_device_code(
         self, ctx: ConnectorContext, keep: Mapping[str, str]
     ) -> DevicePoll:
         self._require_device_code()
-        client = _client(ctx, "", None)
-        try:
+        async with http_client(ctx, SERVICE) as client:
             auth = GoogleAuth(ctx.credentials, client, ctx.clock)
             return await poll_device(auth, ctx.credentials, keep)
-        finally:
-            await client.aclose()
 
     # -- connection --------------------------------------------------------
 
@@ -287,13 +266,13 @@ class YouTubeMusicPlugin:
         self, ctx: ConnectorContext
     ) -> tuple[CookieAuth | GoogleAuth, HttpClient | None]:
         if self.mode is YTAuthMode.OAUTH:
-            token_client = _client(ctx, "", None)
+            token_client = http_client(ctx, SERVICE)
             return GoogleAuth(ctx.credentials, token_client, ctx.clock), token_client
         return CookieAuth(ctx.credentials, ctx.clock), None
 
     async def test_connection(self, ctx: ConnectorContext) -> ConnectionTest:
         auth, token_client = self._auth(ctx)
-        api = _client(ctx, API_BASE, auth)
+        api = http_client(ctx, SERVICE, API_BASE, auth=auth)
         try:
             response = await api.request(
                 "POST",
@@ -304,9 +283,7 @@ class YouTubeMusicPlugin:
             )
             name = parse_account_name(response.json())
         except HttpFailure as e:
-            if e.auth_required:
-                return ConnectionTest(False, _SIGN_IN_AGAIN)
-            return ConnectionTest(False, e.message)
+            return connection_failed(e, _SIGN_IN_AGAIN)
         except (KeyError, TypeError, ValueError):
             return ConnectionTest(False, "YouTube Music's reply was not understood")
         finally:
@@ -321,12 +298,12 @@ class YouTubeMusicPlugin:
 
     def _remember_cookie(self, ctx: ConnectorContext) -> None:
         creds = ctx.credentials.get(SERVICE)
-        fingerprint = _fingerprint(creds.get("cookie", ""))
-        if creds.get("cookie_fingerprint") != fingerprint:
+        cookie_fingerprint = fingerprint(creds.get("cookie", ""))
+        if creds.get("cookie_fingerprint") != cookie_fingerprint:
             ctx.credentials.save(
                 SERVICE,
                 {
-                    "cookie_fingerprint": fingerprint,
+                    "cookie_fingerprint": cookie_fingerprint,
                     "cookie_seen_at": ctx.clock.now().astimezone(UTC).isoformat(),
                 },
             )
@@ -334,23 +311,19 @@ class YouTubeMusicPlugin:
     def login_expires_at(self, credentials: Mapping[str, str]) -> datetime | None:
         if self.mode is YTAuthMode.OAUTH:
             return None  # a refresh token has no documented lifetime
-        if credentials.get("cookie_fingerprint") != _fingerprint(
+        if credentials.get("cookie_fingerprint") != fingerprint(
             credentials.get("cookie", "")
         ):
             return None  # this cookie hasn't passed a test yet
-        try:
-            seen = datetime.fromisoformat(credentials.get("cookie_seen_at", ""))
-        except ValueError:
-            return None
         # Sessions don't announce their end; ask for a fresh cookie well before.
-        return seen + COOKIE_LIFETIME
+        return expires_after(credentials.get("cookie_seen_at"), COOKIE_LIFETIME)
 
     def create(self, ctx: ConnectorContext) -> Connector:
         auth, _ = self._auth(ctx)
-        fetch_image = http_fetcher(_client(ctx, "", None))
-        artwork = ArtworkHasher(fetch_image) if ctx.settings.hash_artwork else None
         return YouTubeMusicConnector(
-            _client(ctx, API_BASE, auth), artwork, clock=ctx.clock
+            http_client(ctx, SERVICE, API_BASE, auth=auth),
+            artwork_hasher(ctx, SERVICE),
+            clock=ctx.clock,
         )
 
 

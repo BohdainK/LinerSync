@@ -235,8 +235,7 @@ def plan_sync(req: PlanRequest) -> SyncPlan:
     source = req.snapshots[group.source.member_id]
     if source is None:
         raise ValueError("one-way planning needs a source snapshot")
-    meta = source.meta
-    draft = PlaylistDraft(meta.name, meta.description, meta.cover_url)
+    draft = source.meta.draft()
 
     plans: list[MemberPlan] = []
     unresolved: list[UnresolvedEntry] = []

@@ -1,8 +1,9 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
+from linersync.application.attention import open_items
 from linersync.application.breaker import CircuitBreaker
 from linersync.application.config import EngineConfig
 from linersync.application.matching_service import MatchingFailed, MatchService
@@ -17,12 +18,13 @@ from linersync.domain.operations import (
 )
 from linersync.domain.planning.brake import BrakeTrip, check_brake, fingerprint
 from linersync.domain.planning.planner import PlanRequest, plan_sync
-from linersync.domain.playlists import PlaylistDraft, PlaylistSnapshot
+from linersync.domain.playlists import PlaylistSnapshot
 from linersync.domain.runs import (
     MemberResult,
     MemberStatus,
     RunEvent,
     RunKind,
+    RunPhase,
     RunStatus,
     SyncRun,
     Trigger,
@@ -38,10 +40,8 @@ from linersync.domain.sync import (
 from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.connector import Connector
 from linersync.ports.errors import ConnectorError, PlaylistNotFound, ReadFailed
-from linersync.ports.repositories import Repositories
+from linersync.ports.repositories import Repositories, SnapshotRepository
 from linersync.ports.runtime import Clock, EventPublisher, IdFactory
-
-Phase = Literal["read", "match", "plan", "apply", "verify", "done"]
 
 # Re-plans one member from a fresh read of its target (playlist id given).
 Replanner = Callable[[PlaylistSnapshot, str], MemberPlan]
@@ -62,7 +62,6 @@ class _SourceUnavailable(Exception):
     def __init__(self, status: RunStatus, error: str) -> None:
         super().__init__(error)
         self.status = status
-        self.error = error
 
 
 @dataclass(slots=True)
@@ -100,6 +99,15 @@ class _Outcome:
     plan: MemberPlan  # the plan last worked on (a re-plan replaces the original)
     playlist_id: str | None  # the target after applying (the new id if created)
     state: MemberState | None = None  # new last_synced; None = leave unchanged
+
+
+@dataclass(slots=True)
+class _Applying:
+    """One member's writes so far, kept across its re-plans."""
+
+    playlist_id: str | None  # the target; None until a CreatePlaylist makes it
+    created: str | None = None
+    applied: list[str] = field(default_factory=list)
 
 
 class _OpFailed(Exception):
@@ -177,8 +185,8 @@ class SyncRunner:
             w.source = await self._read_source(w)
         except _SourceUnavailable as e:
             if e.status is RunStatus.PAUSED_SOURCE_MISSING and not dry_run:
-                w.group = self._pause(w.group, e.error, persist)
-            return self._finish(w, e.status, error=e.error), w.group
+                w.group = self._pause(w.group, str(e), persist)
+            return self._finish(w, e.status, error=str(e)), w.group
 
         await self._read_destinations(w)
         await self._match(w)
@@ -210,11 +218,8 @@ class SyncRunner:
             raise _SourceUnavailable(
                 RunStatus.ABORTED, f"couldn't read the source playlist: {e}"
             ) from e
-        if not snap.is_complete:
-            partial = (
-                f"the source playlist {src.playlist_id} was only partly read "
-                f"{snap.shortfall()}"
-            )
+        partial = partly_read(snap, f"the source playlist {src.playlist_id}")
+        if partial is not None:
             w.errors[src.service] = partial
             raise _SourceUnavailable(RunStatus.ABORTED, partial)
         self._event(w, "read", 1, total, "read the source playlist")
@@ -252,8 +257,8 @@ class SyncRunner:
             w.errors[dest.service] = str(e)
             self._skip(w, mid, f"couldn't read this playlist: {e}")
             return
-        if not snap.is_complete:
-            partial = f"this playlist was only partly read {snap.shortfall()}"
+        partial = partly_read(snap, "this playlist")
+        if partial is not None:
             w.errors[dest.service] = partial
             self._skip(w, mid, partial)
             return
@@ -287,23 +292,33 @@ class SyncRunner:
     def _plan(self, w: _Work) -> None:
         """Plan over a copy of the group holding only the destinations still in
         play. With none left there is nothing to plan and `w.plan` stays None."""
-        assert w.source is not None
-        src = w.group.source
         planned = tuple(d for d in w.group.destinations if d.member_id in w.snapshots)
         if not planned:
             return
-        members = (src, *planned)
+        w.plan = self._plan_members(w, planned, w.snapshots)
+        self._event(w, "plan", 1, 1, "planned the changes")
+
+    def _plan_members(
+        self,
+        w: _Work,
+        destinations: tuple[SyncMember, ...],
+        snapshots: Mapping[str, PlaylistSnapshot | None],
+    ) -> SyncPlan:
+        """Plan the source into `destinations` over a copy of the group holding
+        just those, with the run's match decisions."""
+        assert w.source is not None
+        src = w.group.source
+        members = (src, *destinations)
         req = PlanRequest(
             group=replace(w.group, members=members),
-            snapshots={src.member_id: w.source, **w.snapshots},
+            snapshots={src.member_id: w.source, **snapshots},
             capabilities={
                 m.member_id: self._deps.connectors[m.service].capabilities
                 for m in members
             },
             matches=w.matches,
         )
-        w.plan = plan_sync(req)
-        self._event(w, "plan", 1, 1, "planned the changes")
+        return plan_sync(req)
 
     # -- apply ------------------------------------------------------------
     async def _apply(self, w: _Work) -> tuple[MemberResult, ...]:
@@ -367,14 +382,7 @@ class SyncRunner:
 
         w.called.add(dest.service)
         outcome = await self._apply_member(
-            w.run_id,
-            w.group,
-            dest,
-            plan,
-            current,
-            replan=replan,
-            brake=True,
-            errors=w.errors,
+            w.run_id, w.group, dest, plan, current, replan=replan, errors=w.errors
         )
         return replace(outcome, result=replace(outcome.result, rebuilt=rebuilt))
 
@@ -389,7 +397,7 @@ class SyncRunner:
         """Execute and verify one member's plan. No brake, no pre-write snapshot
         and no re-plan: the caller decides those."""
         outcome = await self._apply_member(
-            run_id, group, member, plan, current, replan=None, brake=False
+            run_id, group, member, plan, current, replan=None
         )
         return outcome.result
 
@@ -402,85 +410,116 @@ class SyncRunner:
         current: PlaylistSnapshot | None,
         *,
         replan: Replanner | None,
-        brake: bool,
         errors: dict[ServiceId, str] | None = None,
     ) -> _Outcome:
         """Run the plan's ops in order. On a failed write the member's remaining
         ops are dropped (so removals never follow it); with a re-plan left, the
-        target is re-read and re-planned, else the member fails. A failed
-        CreatePlaylist is never re-planned: a playlist may exist already."""
+        target is re-read, re-planned and the brake checked again, else the
+        member fails. A failed CreatePlaylist is never re-planned: a playlist
+        may exist already."""
         connector = self._deps.connectors[member.service]
         sink = errors if errors is not None else {}
-        mid = member.member_id
-        playlist_id = None if current is None else member.playlist_id
-        created: str | None = None
-        applied: list[str] = []
+        a = _Applying(None if current is None else member.playlist_id)
         replans = self._deps.config.max_replans if replan is not None else 0
         attempt = 0  # re-plans so far; their op ids are namespaced to stay unique
 
         def failed(error: str) -> _Outcome:
             result = MemberResult(
-                mid,
+                member.member_id,
                 MemberStatus.FAILED,
-                applied_op_ids=tuple(applied),
+                applied_op_ids=tuple(a.applied),
                 not_made=plan.not_made,
-                created_playlist_id=created,
+                created_playlist_id=a.created,
                 error=error,
             )
-            return _Outcome(result, plan, created or member.playlist_id)
+            return _Outcome(result, plan, a.created or member.playlist_id)
 
         while True:
             try:
-                for done, op in enumerate(plan.operations, start=1):
-                    try:
-                        if isinstance(op, CreatePlaylist):
-                            meta = await connector.create_playlist(op.draft)
-                            playlist_id = created = meta.playlist_id
-                        else:
-                            assert playlist_id is not None
-                            await connector.apply(playlist_id, op)
-                    except ConnectorError as e:
-                        sink[member.service] = str(e)
-                        raise _OpFailed(op, e) from e
-                    prefix = f"{run_id}:r{attempt}" if attempt else run_id
-                    applied.append(f"{prefix}:{op.op_id}")
-                    self._publish(
-                        run_id,
-                        group.sync_id,
-                        "apply",
-                        done,
-                        len(plan.operations),
-                        f"{mid}: {type(op).__name__}",
-                    )
+                await self._run_ops(run_id, group, member, plan, a, attempt, sink)
                 break
             except _OpFailed as f:
                 error = f"couldn't apply {type(f.op).__name__}: {f.error}"
                 if isinstance(f.op, CreatePlaylist) or replans <= 0:
                     return failed(error)
-                assert replan is not None and playlist_id is not None
+                assert replan is not None and a.playlist_id is not None
                 replans -= 1
                 attempt += 1
                 try:
-                    fresh = await self._read_complete(connector, playlist_id)
+                    fresh = await _read_complete(connector, a.playlist_id)
                 except ConnectorError as e:
                     sink[member.service] = str(e)
                     return failed(f"{error}; then couldn't re-read the playlist: {e}")
-                plan = replan(fresh, playlist_id)
-                trip = self._brake(group.sync_id, plan, fresh) if brake else None
+                plan = replan(fresh, a.playlist_id)
+                trip = self._brake(group.sync_id, plan, fresh)
                 if trip is not None:
                     return self._hold(
-                        group, member, plan, trip, playlist_id, tuple(applied), created
+                        group,
+                        member,
+                        plan,
+                        trip,
+                        a.playlist_id,
+                        tuple(a.applied),
+                        a.created,
                     )
 
-        assert playlist_id is not None
-        mismatch, verified, verify_error = await self._verify(
-            connector, mid, playlist_id, plan
-        )
-        verified_after: tuple[str, ...] | None = None
-        if verified is not None:
-            verified_after = verified.track_ids
-        elif mismatch is not None and verify_error is None:
-            verified_after = mismatch.actual  # read fine, list differs
+        return await self._verified_outcome(run_id, group, member, plan, a, sink)
+
+    async def _run_ops(
+        self,
+        run_id: str,
+        group: SyncGroup,
+        member: SyncMember,
+        plan: MemberPlan,
+        a: _Applying,
+        attempt: int,
+        sink: dict[ServiceId, str],
+    ) -> None:
+        """Apply the plan's ops in order, noting each on `a`. Raises _OpFailed
+        at the first failed write."""
+        connector = self._deps.connectors[member.service]
+        prefix = f"{run_id}:r{attempt}" if attempt else run_id
+        for done, op in enumerate(plan.operations, start=1):
+            try:
+                if isinstance(op, CreatePlaylist):
+                    meta = await connector.create_playlist(op.draft)
+                    a.playlist_id = a.created = meta.playlist_id
+                else:
+                    assert a.playlist_id is not None
+                    await connector.apply(a.playlist_id, op)
+            except ConnectorError as e:
+                sink[member.service] = str(e)
+                raise _OpFailed(op, e) from e
+            a.applied.append(f"{prefix}:{op.op_id}")
+            self._publish(
+                run_id,
+                group.sync_id,
+                "apply",
+                done,
+                len(plan.operations),
+                f"{member.member_id}: {type(op).__name__}",
+            )
+
+    async def _verified_outcome(
+        self,
+        run_id: str,
+        group: SyncGroup,
+        member: SyncMember,
+        plan: MemberPlan,
+        a: _Applying,
+        sink: dict[ServiceId, str],
+    ) -> _Outcome:
+        """Re-read the target and compare it with what the plan expects. A failed
+        read is a mismatch with `actual=()`, never an empty playlist."""
+        connector = self._deps.connectors[member.service]
+        mid = member.member_id
+        assert a.playlist_id is not None
+        snap, verify_error = await self._verify(connector, a.playlist_id)
+        expected = plan.expected_after
+        actual = None if snap is None else snap.track_ids
+        mismatch = None
+        if actual != expected:
+            mismatch = VerificationMismatch(mid, expected, actual or ())
         self._publish(run_id, group.sync_id, "verify", 1, 1, f"verified {mid}")
         if verify_error is not None:
             sink[member.service] = verify_error
@@ -497,59 +536,33 @@ class SyncRunner:
         result = MemberResult(
             mid,
             MemberStatus.APPLIED,
-            applied_op_ids=tuple(applied),
+            applied_op_ids=tuple(a.applied),
             not_made=plan.not_made,
             mismatch=mismatch,
-            created_playlist_id=created,
+            created_playlist_id=a.created,
             error=verify_error,
-            verified_after=verified_after,
+            verified_after=actual,
         )
-        state = None if verified is None else self._state(plan, verified)
-        return _Outcome(result, plan, playlist_id, state)
+        state = None
+        if snap is not None and mismatch is None:
+            state = self._state(plan, snap)
+        return _Outcome(result, plan, a.playlist_id, state)
 
     async def _verify(
-        self, connector: Connector, member_id: str, playlist_id: str, plan: MemberPlan
-    ) -> tuple[VerificationMismatch | None, PlaylistSnapshot | None, str | None]:
-        """(mismatch, the matching snapshot, error). A failed verify read is a
-        mismatch with `actual=()`, never an empty playlist."""
-        expected = plan.expected_after
-        try:
-            snap = await self._read_complete(connector, playlist_id)
-        except ConnectorError as e:
-            mismatch = VerificationMismatch(member_id, expected, ())
-            return mismatch, None, f"couldn't verify the changes: {e}"
-        if snap.track_ids != expected:
-            return VerificationMismatch(member_id, expected, snap.track_ids), None, None
-        return None, snap, None
-
-    async def _read_complete(
         self, connector: Connector, playlist_id: str
-    ) -> PlaylistSnapshot:
-        snap = await connector.read_playlist(playlist_id)
-        if not snap.is_complete:
-            raise ReadFailed(
-                connector.service,
-                f"{playlist_id} was only partly read {snap.shortfall()}",
-            )
-        return snap
+    ) -> tuple[PlaylistSnapshot | None, str | None]:
+        """(the target as read, error): exactly one is None."""
+        try:
+            return await _read_complete(connector, playlist_id), None
+        except ConnectorError as e:
+            return None, f"couldn't verify the changes: {e}"
 
     def _replan(
         self, w: _Work, member: SyncMember, fresh: PlaylistSnapshot
     ) -> MemberPlan:
         """Plan just this member again from a fresh read, same match decisions."""
-        assert w.source is not None
-        src = w.group.source
-        members = (src, member)
-        req = PlanRequest(
-            group=replace(w.group, members=members),
-            snapshots={src.member_id: w.source, member.member_id: fresh},
-            capabilities={
-                m.member_id: self._deps.connectors[m.service].capabilities
-                for m in members
-            },
-            matches=w.matches,
-        )
-        return plan_sync(req).for_member(member.member_id)
+        plan = self._plan_members(w, (member,), {member.member_id: fresh})
+        return plan.for_member(member.member_id)
 
     def _brake(
         self, sync_id: str, plan: MemberPlan, current: PlaylistSnapshot | None
@@ -568,13 +581,11 @@ class SyncRunner:
     def _supersede_brake(self, sync_id: str, member_id: str) -> None:
         """This member's plan no longer trips: its open BRAKE item is moot."""
         repo = self._deps.repos.attention
-        for item in repo.list_open():
-            if (
-                item.kind is AttentionKind.BRAKE
-                and item.sync_id == sync_id
-                and item.member_id == member_id
-            ):
-                repo.resolve(item.item_id, "superseded", self._deps.clock.now())
+        brakes = open_items(
+            repo, AttentionKind.BRAKE, sync_id=sync_id, member_id=member_id
+        )
+        for item in brakes:
+            repo.resolve(item.item_id, "superseded", self._deps.clock.now())
 
     def _hold(
         self,
@@ -612,7 +623,7 @@ class SyncRunner:
         meta = source.meta
         return MemberState(
             tuple(SyncedEntry(e.track.key, e.track.track_id) for e in source.entries),
-            PlaylistDraft(meta.name, meta.description, meta.cover_url),
+            meta.draft(),
             meta.version_token,
             self._deps.clock.now(),
         )
@@ -648,15 +659,13 @@ class SyncRunner:
     ) -> tuple[ChangeNotMade, ...]:
         """The open item's changes first, then this run's new ones, de-duplicated
         by (kind, track_id)."""
-        existing: tuple[ChangeNotMade, ...] = ()
-        for item in self._deps.repos.attention.list_open():
-            if (
-                item.kind is AttentionKind.CHANGES_NOT_MADE
-                and item.sync_id == sync_id
-                and item.member_id == r.member_id
-            ):
-                existing = item.not_made
-                break
+        items = open_items(
+            self._deps.repos.attention,
+            AttentionKind.CHANGES_NOT_MADE,
+            sync_id=sync_id,
+            member_id=r.member_id,
+        )
+        existing = items[0].not_made if items else ()
         merged: dict[tuple[str, str | None], ChangeNotMade] = {}
         for c in (*existing, *r.not_made):
             merged.setdefault((c.kind, c.track_id), c)
@@ -728,15 +737,15 @@ class SyncRunner:
     def _abort(self, w: _Work, e: Exception) -> SyncRun:
         """Save the run ABORTED with the error. Members written to without a
         result yet are recorded FAILED, so the run can still be undone."""
-        members = list(w.results)
-        done = {r.member_id for r in members}
-        snapshots = self._deps.repos.snapshots
         error = f"{type(e).__name__}: {e}"
-        for dest in w.group.destinations:
-            mid = dest.member_id
-            if mid not in done and snapshots.has_pre_write(w.run_id, mid):
-                members.append(MemberResult(mid, MemberStatus.FAILED, error=error))
-        return self._finish(w, RunStatus.ABORTED, members=tuple(members), error=error)
+        members = fail_unwritten(
+            self._deps.repos.snapshots,
+            w.run_id,
+            w.results,
+            (d.member_id for d in w.group.destinations),
+            error,
+        )
+        return self._finish(w, RunStatus.ABORTED, members=members, error=error)
 
     def _settle_breaker(self, w: _Work) -> None:
         """One verdict per contacted service: a failure (the last error) if any
@@ -750,21 +759,12 @@ class SyncRunner:
                 if breaker.record_success(service):
                     self._recovered(service)
             elif breaker.record_failure(service, error):
-                self._deps.repos.attention.upsert(
-                    AttentionItem(
-                        item_id=self._deps.new_id(),
-                        kind=AttentionKind.SERVICE_FAILING,
-                        created_at=self._deps.clock.now(),
-                        detail=error,
-                        service=service,
-                    )
-                )
+                self._upsert_item(AttentionKind.SERVICE_FAILING, error, service=service)
 
     def _recovered(self, service: ServiceId) -> None:
         repo = self._deps.repos.attention
-        for item in repo.list_open():
-            if item.kind is AttentionKind.SERVICE_FAILING and item.service == service:
-                repo.resolve(item.item_id, "recovered", self._deps.clock.now())
+        for item in open_items(repo, AttentionKind.SERVICE_FAILING, service=service):
+            repo.resolve(item.item_id, "recovered", self._deps.clock.now())
 
     # -- helpers ----------------------------------------------------------
     def _pause(self, group: SyncGroup, reason: str, persist: bool) -> SyncGroup:
@@ -774,18 +774,7 @@ class SyncRunner:
         if not persist:
             return paused
         self._deps.repos.syncs.save(paused)
-        src = group.source
-        self._deps.repos.attention.upsert(
-            AttentionItem(
-                item_id=self._deps.new_id(),
-                kind=AttentionKind.SOURCE_MISSING,
-                created_at=self._deps.clock.now(),
-                detail=reason,
-                sync_id=group.sync_id,
-                member_id=src.member_id,
-                service=src.service,
-            )
-        )
+        self._attention(AttentionKind.SOURCE_MISSING, group, group.source, reason)
         return paused
 
     def _skip(
@@ -807,16 +796,23 @@ class SyncRunner:
         detail: str,
         **extra: Any,
     ) -> None:
+        self._upsert_item(
+            kind,
+            detail,
+            sync_id=group.sync_id,
+            member_id=member.member_id,
+            service=member.service,
+            **extra,
+        )
+
+    def _upsert_item(self, kind: AttentionKind, detail: str, **fields: Any) -> None:
         self._deps.repos.attention.upsert(
             AttentionItem(
                 item_id=self._deps.new_id(),
                 kind=kind,
                 created_at=self._deps.clock.now(),
                 detail=detail,
-                sync_id=group.sync_id,
-                member_id=member.member_id,
-                service=member.service,
-                **extra,
+                **fields,
             )
         )
 
@@ -824,13 +820,55 @@ class SyncRunner:
     def _member(group: SyncGroup, member_id: str) -> SyncMember:
         return next(m for m in group.members if m.member_id == member_id)
 
-    def _event(self, w: _Work, phase: Phase, done: int, total: int, msg: str) -> None:
+    def _event(
+        self, w: _Work, phase: RunPhase, done: int, total: int, msg: str
+    ) -> None:
         self._publish(w.run_id, w.group.sync_id, phase, done, total, msg)
 
     def _publish(
-        self, run_id: str, sync_id: str, phase: Phase, done: int, total: int, msg: str
+        self,
+        run_id: str,
+        sync_id: str,
+        phase: RunPhase,
+        done: int,
+        total: int,
+        msg: str,
     ) -> None:
         self._deps.events.publish(RunEvent(run_id, sync_id, phase, done, total, msg))
+
+
+def partly_read(snap: PlaylistSnapshot, what: str) -> str | None:
+    """Why `snap` (of `what`, e.g. "this playlist") is unusable when only part
+    of it was read; None when it is complete."""
+    if snap.is_complete:
+        return None
+    return f"{what} was only partly read {snap.shortfall()}"
+
+
+async def _read_complete(connector: Connector, playlist_id: str) -> PlaylistSnapshot:
+    """Read the playlist; a partial read raises ReadFailed."""
+    snap = await connector.read_playlist(playlist_id)
+    partial = partly_read(snap, playlist_id)
+    if partial is not None:
+        raise ReadFailed(connector.service, partial)
+    return snap
+
+
+def fail_unwritten(
+    snapshots: SnapshotRepository,
+    run_id: str,
+    results: Iterable[MemberResult],
+    member_ids: Iterable[str],
+    error: str,
+) -> tuple[MemberResult, ...]:
+    """`results`, plus a FAILED result for each member the run took a
+    pre-write snapshot of but has no result for, so the run can be undone."""
+    members = list(results)
+    done = {r.member_id for r in members}
+    for mid in member_ids:
+        if mid not in done and snapshots.has_pre_write(run_id, mid):
+            members.append(MemberResult(mid, MemberStatus.FAILED, error=error))
+    return tuple(members)
 
 
 def _settled(r: MemberResult) -> bool:

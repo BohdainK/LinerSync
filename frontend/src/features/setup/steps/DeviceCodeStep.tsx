@@ -12,6 +12,8 @@ type Started = { user_code: string; verification_url: string; interval_s: number
 /** Polls that may fail in a row (a network blip, a restart) before the flow ends. */
 const MAX_POLL_FAILURES = 3;
 
+const servicePath = (service: string) => ({ params: { path: { service } } });
+
 /** OAuth device flow: show a code to enter on the service's page, and poll until the
  * user approves, declines or the code expires. */
 export function DeviceCodeStep({
@@ -25,7 +27,6 @@ export function DeviceCodeStep({
   step: SetupStep;
   onSignedIn: () => void;
 }) {
-  const path = { params: { path: { service } } };
   // The parent passes a new callback on every render; polling must not restart.
   const signedIn = useRef(onSignedIn);
   useEffect(() => {
@@ -34,7 +35,7 @@ export function DeviceCodeStep({
   const [code, setCode] = useState<Started | null>(null);
   const [ended, setEnded] = useState<string | null>(null);
   const start = useMutation({
-    mutationFn: () => call(api.POST("/api/connections/{service}/device-code/start", path)),
+    mutationFn: () => call(api.POST("/api/connections/{service}/device-code/start", servicePath(service))),
     onSuccess: (started) => {
       setEnded(null);
       setCode(started);
@@ -47,10 +48,9 @@ export function DeviceCodeStep({
     let timer: ReturnType<typeof setTimeout>;
     let interval = code.interval_s;
     let failures = 0;
-    const pollPath = { params: { path: { service } } };
     const poll = async () => {
       try {
-        const result = await call(api.POST("/api/connections/{service}/device-code/poll", pollPath));
+        const result = await call(api.POST("/api/connections/{service}/device-code/poll", servicePath(service)));
         if (cancelled) return;
         failures = 0;
         if (result.status === "pending") {

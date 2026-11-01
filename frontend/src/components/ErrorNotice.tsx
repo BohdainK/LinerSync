@@ -16,3 +16,8 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
     </div>
   );
 }
+
+/** A failed query's error with a retry button; nothing while the query is fine. */
+export function QueryError({ query }: { query: { isError: boolean; error: unknown; refetch: () => unknown } }) {
+  return query.isError ? <ErrorNotice error={query.error} onRetry={() => void query.refetch()} /> : null;
+}

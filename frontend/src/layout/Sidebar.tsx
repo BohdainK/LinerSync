@@ -1,14 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { api, call, errorMessage } from "@/api/client";
-import { keys } from "@/api/keys";
+import { errorMessage } from "@/api/client";
 import { useSignOut } from "@/auth/session";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useConnections } from "@/features/connections/useConnections";
+import { isSetUp, useConnections } from "@/features/connections/useConnections";
+import { useSyncs } from "@/features/syncs/useSync";
 import { DONATE_URL } from "@/config";
 import { CONNECTION_STATUS_LABELS } from "@/copy";
 import { readFlag, writeFlag } from "@/lib/storage";
@@ -61,9 +60,9 @@ export function Sidebar() {
   const navigate = useNavigate();
   const signOut = useSignOut();
   const connections = useConnections();
-  const syncs = useQuery({ queryKey: keys.syncs, queryFn: () => call(api.GET("/api/syncs")) });
+  const syncs = useSyncs();
 
-  const services = (connections.data?.services ?? []).filter((c) => c.status !== "not_set_up");
+  const services = (connections.data?.services ?? []).filter(isSetUp);
 
   return (
     <nav aria-label="Main" className="flex h-full flex-col gap-2 p-3">

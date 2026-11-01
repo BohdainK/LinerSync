@@ -4,7 +4,6 @@ import (merge restore)."""
 import json
 from importlib.metadata import version
 from typing import Annotated
-from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -26,42 +25,31 @@ from linersync.application.export_json import (
     check_header,
 )
 from linersync.domain.backups import BackedUpPlaylist
-from linersync.server.api.schemas import ExportOut, RestoreReportOut
-from linersync.server.api.syncs import (
+from linersync.server.api.common import (
     UNKNOWN_BACKUP,
+    Services,
+    attachment,
     backup_unlocked,
+    csv_response,
+    found,
+    invalid,
     reconcile_schedule,
 )
+from linersync.server.api.schemas import ExportOut, RestoreReportOut
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/export", dependencies=[Depends(require_session)])
 import_router = APIRouter(dependencies=[Depends(require_session)])
 
-Services = Annotated[AppServices, Depends(get_services)]
-
 NOTHING_BACKED_UP = "Nothing has been backed up yet"
-CSV_TYPE = "text/csv; charset=utf-8"
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
 TOO_LARGE = "The file is too large"
 
 
-def attachment(filename: str) -> str:
-    """A Content-Disposition value with an ASCII fallback and the UTF-8 name."""
-    fallback = "".join(c if c.isascii() and c.isprintable() else "_" for c in filename)
-    fallback = fallback.replace("\\", "_").replace('"', "_")
-    return (
-        f'attachment; filename="{fallback}"; '
-        f"filename*=UTF-8''{quote(filename, safe='')}"
-    )
-
-
-def csv_response(body: str, filename: str) -> Response:
-    return Response(
-        content=body.encode("utf-8-sig"),
-        media_type=CSV_TYPE,
-        headers={"Content-Disposition": attachment(filename)},
-    )
+def _local_stamp(services: AppServices) -> str:
+    now = services.clock.now().astimezone(ZoneInfo(services.config.timezone))
+    return zip_stamp(now)
 
 
 @router.get(
@@ -77,35 +65,32 @@ async def export_csv(
     services: Services, entry_id: Annotated[list[str] | None, Query()] = None
 ) -> Response:
     store = services.backups
-    if entry_id:
-        entries: list[BackedUpPlaylist] = []
-        for eid in dict.fromkeys(entry_id):
-            found = store.get_entry(eid)
-            if found is None:
-                raise HTTPException(status_code=404, detail=UNKNOWN_BACKUP)
-            entries.append(found)
-    else:
-        entries = store.list_entries()
+    entries: list[BackedUpPlaylist] = (
+        [found(store.get_entry(eid), UNKNOWN_BACKUP) for eid in dict.fromkeys(entry_id)]
+        if entry_id
+        else store.list_entries()
+    )
     if not entries:
         raise HTTPException(status_code=404, detail=NOTHING_BACKED_UP)
     ids = known_ids(services.repos.syncs.list(), services.repos.matches.list_all())
-    files: list[tuple[str, str]] = []
+    files: list[tuple[bool, str, str]] = []  # (archived, file name, csv)
     for entry in entries:
         version = store.get_version(entry.latest_version_id)
         if version is None:
             continue
         name = csv_filename(version.snapshot.meta.name, entry.service)
         text = playlist_csv(version.snapshot, entry.service, ids)
-        files.append((f"archive/{name}" if entry.archived else name, text))
+        files.append((entry.archived, name, text))
     if not files:
         raise HTTPException(status_code=404, detail=NOTHING_BACKED_UP)
     if len(files) == 1:
-        path, text = files[0]
-        return csv_response(text, path.removeprefix("archive/"))
-    now = services.clock.now().astimezone(ZoneInfo(services.config.timezone))
-    name = f"linersync-csv-{zip_stamp(now)}.zip"
+        _, name, text = files[0]
+        return csv_response(text, name)
+    files.sort(key=lambda f: f[0])  # archived playlists last
+    paths = [(f"archive/{n}" if archived else n, text) for archived, n, text in files]
+    name = f"linersync-csv-{_local_stamp(services)}.zip"
     return Response(
-        content=csv_zip(sorted(files, key=lambda f: f[0].startswith("archive/"))),
+        content=csv_zip(paths),
         media_type="application/zip",
         headers={"Content-Disposition": attachment(name)},
     )
@@ -120,11 +105,6 @@ def _export_service(services: AppServices) -> ExportService:
         services.settings_store,
         services.clock,
     )
-
-
-def _local_stamp(services: AppServices) -> str:
-    now = services.clock.now().astimezone(ZoneInfo(services.config.timezone))
-    return zip_stamp(now)
 
 
 @router.get("", response_model=ExportOut)
@@ -156,10 +136,6 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
-def _unprocessable(detail: str) -> HTTPException:
-    return HTTPException(status_code=422, detail=detail)
-
-
 @import_router.post(
     "/api/import",
     openapi_extra={
@@ -174,24 +150,20 @@ async def import_json(request: Request, services: Services) -> RestoreReportOut:
     try:
         data = json.loads(body)
     except ValueError:  # JSONDecodeError and UnicodeDecodeError
-        raise _unprocessable(NOT_AN_EXPORT) from None
+        raise invalid(NOT_AN_EXPORT) from None
     try:
         check_header(data)
     except ValueError as e:
-        raise _unprocessable(str(e)) from None
+        raise invalid(str(e)) from None
     try:
         doc: ExportDocument = decode(ExportDocument, data, strict=True)
         check_covers(doc)
     except ValueError as e:  # strict decode turns every failure into ValueError
-        raise _unprocessable(DAMAGED_EXPORT.format(detail=str(e))) from None
+        raise invalid(DAMAGED_EXPORT.format(detail=str(e))) from None
     backup_unlocked(services)
     try:
         report = _export_service(services).restore(doc)
     except ValueError as e:  # cover data that isn't base64; nothing written
-        raise _unprocessable(DAMAGED_EXPORT.format(detail=str(e))) from None
+        raise invalid(DAMAGED_EXPORT.format(detail=str(e))) from None
     reconcile_schedule(services)
-    return RestoreReportOut(
-        added=report.added,
-        skipped=report.skipped,
-        settings_applied=report.settings_applied,
-    )
+    return RestoreReportOut.of(report)

@@ -32,11 +32,13 @@ from linersync.adapters.connectors.apple_music.web_token import (
     WebTokens,
 )
 from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
-from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
+from linersync.adapters.connectors.kit.parsing import expires_after
 from linersync.adapters.connectors.kit.plugin import (
     Category,
     ConnectionTest,
     ConnectorContext,
+    artwork_hasher,
+    http_client,
 )
 from linersync.ports.connector import Connector
 from linersync.ports.credentials import CredentialStore
@@ -54,7 +56,6 @@ from linersync.ports.setup import (
 
 # An estimate: Apple documents no fixed lifetime for a Music-User-Token.
 USER_TOKEN_LIFETIME = timedelta(days=180)
-_POLICY = QuotaPolicy()
 _ID_PATTERN = "[A-Z0-9]{10}"
 _BAD_KEY = "Check Team ID, Key ID and key file"
 _SIGN_IN_AGAIN = "Sign in to Apple Music again"
@@ -139,35 +140,6 @@ class AppleMusicAuth:
         return True
 
 
-def _api_client(ctx: ConnectorContext, auth: AppleMusicAuth) -> HttpClient:
-    return HttpClient(
-        APPLE,
-        API_BASE,
-        settings=ctx.settings.http,
-        quota=ctx.quota,
-        quota_policy=_POLICY,
-        clock=ctx.clock,
-        auth=auth,
-        transport=ctx.transport,
-        sleep=ctx.sleep,
-    )
-
-
-def _plain_client(ctx: ConnectorContext) -> HttpClient:
-    """Unauthenticated: artwork CDN hosts and the web player page must never
-    see the developer token or the Music-User-Token."""
-    return HttpClient(
-        APPLE,
-        "",
-        settings=ctx.settings.http,
-        quota=ctx.quota,
-        quota_policy=QuotaPolicy(),
-        clock=ctx.clock,
-        transport=ctx.transport,
-        sleep=ctx.sleep,
-    )
-
-
 async def _fetch_storefront(api: HttpClient) -> str:
     response = await api.request("GET", f"{API_BASE}/v1/me/storefront", idempotent=True)
     try:
@@ -209,16 +181,19 @@ class AppleMusicPlugin:
     category: Category = "streaming"
     capabilities = CAPABILITIES
     limits = LIMITS
-    quota_policy = _POLICY
+    quota_policy = QuotaPolicy()
 
     def __init__(self, mode: AuthMode = AuthMode.WEB) -> None:
         self.mode = mode
 
-    def _auth(self, ctx: ConnectorContext) -> AppleMusicAuth:
+    def _api(self, ctx: ConnectorContext) -> HttpClient:
         web = None
         if self.mode is AuthMode.WEB:
-            web = WebTokens(ctx.credentials, ctx.clock, _plain_client(ctx))
-        return AppleMusicAuth(ctx.credentials, ctx.clock, web)
+            # Unauthenticated: the web player page must never see the
+            # developer token or the Music-User-Token.
+            web = WebTokens(ctx.credentials, ctx.clock, http_client(ctx, APPLE))
+        auth = AppleMusicAuth(ctx.credentials, ctx.clock, web)
+        return http_client(ctx, APPLE, API_BASE, auth=auth)
 
     def setup_guide(self) -> SetupGuide:
         if self.mode is AuthMode.WEB:
@@ -390,8 +365,7 @@ class AppleMusicPlugin:
 
     async def test_connection(self, ctx: ConnectorContext) -> ConnectionTest:
         web = self.mode is AuthMode.WEB
-        api = _api_client(ctx, self._auth(ctx))
-        try:
+        async with self._api(ctx) as api:
             try:
                 await api.request(
                     "GET", f"{API_BASE}/v1/storefronts/us", idempotent=True
@@ -416,31 +390,20 @@ class AppleMusicPlugin:
                         False, _PASTE_AGAIN if web else _SIGN_IN_AGAIN
                     )
                 return ConnectionTest(False, e.message)
-        finally:
-            await api.aclose()
         ctx.credentials.save(APPLE, {"storefront": storefront})
         return ConnectionTest(True, "Connected")
 
     def login_expires_at(self, credentials: Mapping[str, str]) -> datetime | None:
-        raw = credentials.get("music_user_token_saved_at")
-        if not raw:
-            return None
-        try:
-            return datetime.fromisoformat(raw) + USER_TOKEN_LIFETIME
-        except ValueError:
-            return None
+        return expires_after(
+            credentials.get("music_user_token_saved_at"), USER_TOKEN_LIFETIME
+        )
 
     def create(self, ctx: ConnectorContext) -> Connector:
-        api = _api_client(ctx, self._auth(ctx))
-        artwork = (
-            ArtworkHasher(http_fetcher(_plain_client(ctx)))
-            if ctx.settings.hash_artwork
-            else None
-        )
+        api = self._api(ctx)
         return AppleMusicConnector(
             api,
             _storefront_source(ctx, api),
-            artwork,
+            artwork_hasher(ctx, APPLE),
             ctx.sleep,
             clock=ctx.clock,
         )

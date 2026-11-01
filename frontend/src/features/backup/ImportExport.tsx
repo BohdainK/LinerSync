@@ -4,6 +4,7 @@ import { postFile, type ApiError } from "@/api/client";
 import type { RestoreReportOut } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorNotice } from "@/components/ErrorNotice";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MAX_IMPORT_BYTES } from "@/config";
@@ -61,10 +62,7 @@ export function ImportExport() {
   }
 
   return (
-    <section aria-labelledby="import-export" className="space-y-3">
-      <h2 id="import-export" className="text-lg font-semibold">
-        Export and import
-      </h2>
+    <Section title="Export and import">
       <div className="flex flex-wrap items-center gap-3">
         <Button asChild variant="outline" size="sm">
           <a href="/api/export" download>
@@ -110,6 +108,6 @@ export function ImportExport() {
           setFile(null);
         }}
       />
-    </section>
+    </Section>
   );
 }

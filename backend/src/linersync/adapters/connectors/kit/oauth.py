@@ -6,11 +6,14 @@ import base64
 import hashlib
 import re
 import secrets
-from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, timedelta
 from typing import Any
+from urllib.parse import urlencode, urlsplit
 
 from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
+from linersync.adapters.connectors.kit.parsing import iso_datetime
+from linersync.adapters.connectors.kit.plugin import AuthorizeRequest
 from linersync.domain.tracks import ServiceId
 from linersync.ports.credentials import CredentialStore
 from linersync.ports.runtime import Clock
@@ -47,6 +50,62 @@ def pkce_pair(verifier: str | None = None) -> tuple[str, str]:
         raise ValueError("A PKCE verifier is 43 to 128 unreserved characters")
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return verifier, base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def authorize_url(
+    endpoint: str,
+    scopes: Sequence[str],
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    challenge: str,
+) -> str:
+    query = urlencode(
+        {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(scopes),
+            "state": state,
+            "code_challenge_method": "S256",
+            "code_challenge": challenge,
+        }
+    )
+    return f"{endpoint}?{query}"
+
+
+def check_redirect_uri(uri: str, name: str, *, allow_localhost: bool) -> None:
+    """Any https:// address, or plain http on the loopback address; ``name``
+    is the service in the error. Some services refuse http://localhost."""
+    parts = urlsplit(uri)
+    if parts.scheme == "https" and parts.hostname:
+        return
+    if parts.scheme == "http" and parts.hostname == "127.0.0.1":
+        return
+    if parts.scheme == "http" and parts.hostname == "localhost":
+        if allow_localhost:
+            return
+        raise ValueError(
+            f"{name} doesn't accept http://localhost; use http://127.0.0.1 instead"
+        )
+    raise ValueError(
+        f"{name} needs an https:// address, or http://127.0.0.1 for local use"
+    )
+
+
+def pkce_authorize(
+    credentials: Mapping[str, str],
+    redirect_uri: str,
+    state: str,
+    *,
+    check_redirect_uri: Callable[[str], None],
+    authorize_url: Callable[[str, str, str, str], str],
+) -> AuthorizeRequest:
+    """Start a sign-in; the verifier is kept until the callback."""
+    check_redirect_uri(redirect_uri)
+    verifier, challenge = pkce_pair()
+    url = authorize_url(credentials["client_id"], redirect_uri, state, challenge)
+    return AuthorizeRequest(url, {"code_verifier": verifier})
 
 
 class PkceAuth:
@@ -118,7 +177,7 @@ class PkceAuth:
         self._credentials.save(self._service, values)
 
     def _needs_refresh(self, creds: Mapping[str, str]) -> bool:
-        expires = _parse(creds.get("expires_at"))
+        expires = iso_datetime(creds.get("expires_at"), assume_utc=True)
         if expires is None or not creds.get("access_token"):
             return "refresh_token" in creds
         return expires - _REFRESH_MARGIN <= self._clock.now()
@@ -220,13 +279,3 @@ class PkceAuth:
             maybe_applied=False,
             auth_required=True,
         )
-
-
-def _parse(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)

@@ -5,8 +5,6 @@ from linersync.domain.tracks import ServiceId
 from linersync.ports.repositories import BreakerRepository, BreakerState
 from linersync.ports.runtime import Clock
 
-__all__ = ["BreakerState", "CircuitBreaker"]
-
 
 class CircuitBreaker:
     """Per-service breaker. Open after `failure_threshold` consecutive failures;

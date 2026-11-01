@@ -1,7 +1,6 @@
 """Tidal sign-in: Authorization Code with PKCE (no client secret) and refresh."""
 
-from urllib.parse import urlencode, urlsplit
-
+from linersync.adapters.connectors.kit import oauth
 from linersync.adapters.connectors.kit.http import HttpClient
 from linersync.adapters.connectors.kit.oauth import PkceAuth
 from linersync.adapters.connectors.tidal.parse import API_BASE, SERVICE
@@ -22,33 +21,16 @@ SCOPES = (
 )
 AUTHORIZE_URL = "https://login.tidal.com/authorize"
 TOKEN_URL = "https://auth.tidal.com/v1/oauth2/token"
-_LOOPBACK = {"127.0.0.1", "localhost"}
 
 
 def check_redirect_uri(uri: str) -> None:
-    parts = urlsplit(uri)
-    if parts.scheme == "https" and parts.hostname:
-        return
-    if parts.scheme == "http" and parts.hostname in _LOOPBACK:
-        return
-    raise ValueError(
-        "Tidal needs an https:// address, or http://127.0.0.1 for local use"
-    )
+    oauth.check_redirect_uri(uri, "Tidal", allow_localhost=True)
 
 
 def authorize_url(client_id: str, redirect_uri: str, state: str, challenge: str) -> str:
-    query = urlencode(
-        {
-            "client_id": client_id,
-            "response_type": "code",
-            "redirect_uri": redirect_uri,
-            "scope": " ".join(SCOPES),
-            "state": state,
-            "code_challenge_method": "S256",
-            "code_challenge": challenge,
-        }
+    return oauth.authorize_url(
+        AUTHORIZE_URL, SCOPES, client_id, redirect_uri, state, challenge
     )
-    return f"{AUTHORIZE_URL}?{query}"
 
 
 class TidalAuth(PkceAuth):

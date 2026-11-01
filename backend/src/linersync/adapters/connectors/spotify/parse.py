@@ -7,10 +7,12 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from linersync.adapters.connectors.kit.parsing import iso_datetime
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
-SPOTIFY = ServiceId("spotify")
+SERVICE = ServiceId("spotify")
+API_BASE = "https://api.spotify.com/v1"
 
 _UNREADABLE = "Spotify only lets apps read playlists you own or collaborate on"
 _MOSAIC_HOST = "mosaic.scdn.co"
@@ -44,7 +46,7 @@ def parse_track(
         artists = tuple(a["name"] for a in obj.get("artists") or [])
         album = (obj.get("album") or {}).get("name")
     return Track(
-        service=SPOTIFY,
+        service=SERVICE,
         track_id=str(obj["uri"]),
         title=str(obj.get("name") or ""),
         artists=artists,
@@ -72,7 +74,7 @@ def parse_playlist_meta(obj: Mapping[str, Any], me_id: str) -> PlaylistMeta:
     items = obj.get("items")
     total = items.get("total") if isinstance(items, Mapping) else None
     return PlaylistMeta(
-        service=SPOTIFY,
+        service=SERVICE,
         playlist_id=str(obj["id"]),
         name=html.unescape(str(obj.get("name") or "")),
         description=html.unescape(obj.get("description") or ""),
@@ -98,18 +100,9 @@ class ItemsPage:
     next_url: str | None
 
 
-def _added_at(raw: Any) -> datetime | None:
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(str(raw))
-    except ValueError:
-        return None
-
-
 def parse_items_page(obj: Mapping[str, Any]) -> ItemsPage:
     items = [
-        RawItem(entry.get("item"), _added_at(entry.get("added_at")))
+        RawItem(entry.get("item"), iso_datetime(entry.get("added_at")))
         for entry in obj.get("items") or []
     ]
     return ItemsPage(items, int(obj["total"]), obj.get("next"))

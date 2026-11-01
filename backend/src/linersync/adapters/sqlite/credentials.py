@@ -7,8 +7,8 @@ from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import Engine, Select, delete, select
-from sqlalchemy.dialects.sqlite import insert
 
+from linersync.adapters.sqlite.db import upsert
 from linersync.adapters.sqlite.schema import credentials
 from linersync.domain.tracks import ServiceId
 
@@ -33,12 +33,7 @@ class SqliteCredentials:
             )
             current.update(values)
             blob = self._fernet.encrypt(json.dumps(current).encode())
-            stmt = insert(credentials).values(service=service, ciphertext=blob)
-            conn.execute(
-                stmt.on_conflict_do_update(
-                    index_elements=["service"], set_={"ciphertext": blob}
-                )
-            )
+            upsert(conn, credentials, {"service": service}, {"ciphertext": blob})
 
     def delete(self, service: ServiceId) -> None:
         with self._engine.begin() as conn:

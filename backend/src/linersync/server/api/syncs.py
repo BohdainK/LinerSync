@@ -7,20 +7,29 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from linersync.adapters.scheduler import cron_problem
-from linersync.domain.backups import BACKUP_SERVICE
-from linersync.domain.capabilities import Capability, limitations
+from linersync.domain.capabilities import limitations
 from linersync.domain.jobs import PreviewJob, SyncJob
-from linersync.domain.runs import Trigger
+from linersync.domain.runs import SyncRun, Trigger
 from linersync.domain.sync import (
+    SOURCE_MEMBER_ID,
     Direction,
     MemberRole,
     SyncGroup,
     SyncMember,
     SyncStatus,
+    destination_member_id,
     effective_mode,
 )
 from linersync.domain.tracks import ServiceId
+from linersync.server.api.common import (
+    Services,
+    check_destinations,
+    check_schedule,
+    check_source,
+    found,
+    invalid,
+    reconcile_schedule,
+)
 from linersync.server.api.schemas import (
     DestinationIn,
     DestinationOut,
@@ -32,72 +41,18 @@ from linersync.server.api.schemas import (
     SyncCreateIn,
     SyncOut,
     SyncPatchIn,
-    run_summary,
 )
 from linersync.server.auth import require_session
-from linersync.server.connections import ConnectionStatus
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/syncs", dependencies=[Depends(require_session)])
 
-Services = Annotated[AppServices, Depends(get_services)]
-
 PAUSED_BY_YOU = "Paused by you"
 _BUSY = "Wait for the current run to finish"
-BACKUP_BUSY = "Wait for the current backup to finish"
-UNKNOWN_BACKUP = "Unknown backup"
-
-
-def _invalid(detail: str) -> HTTPException:
-    return HTTPException(status_code=422, detail=detail)
+UNKNOWN_SYNC = "Unknown sync"
 
 
 # -- validation ---------------------------------------------------------------
-def check_services(services: AppServices, names: Iterable[str]) -> None:
-    for name in names:
-        if name not in services.registry.plugins:
-            raise _invalid(f"Unknown service {name}")
-        info = services.connections.info(ServiceId(name))
-        if info.status is ConnectionStatus.NOT_SET_UP:
-            raise _invalid(f"Connect {info.display_name} first")
-
-
-def check_destinations(services: AppServices, names: Iterable[str]) -> None:
-    """Destinations must exist, be set up, and be able to add songs."""
-    names = list(names)
-    check_services(services, names)
-    for name in names:
-        plugin = services.registry.plugins[ServiceId(name)]
-        if Capability.ADD not in plugin.capabilities:
-            raise _invalid(
-                f"{plugin.display_name} is read-only, so it can't be a destination"
-            )
-
-
-def check_source(services: AppServices, service: str, playlist_id: str) -> None:
-    """A source may also be a stored backup: an entry id or a version id (D6)."""
-    if service != BACKUP_SERVICE:
-        check_services(services, [service])
-        return
-    store = services.backups
-    if store.get_version(playlist_id) is None and store.get_entry(playlist_id) is None:
-        raise _invalid(UNKNOWN_BACKUP)
-
-
-def backup_unlocked(services: AppServices) -> None:
-    """Backup data can't change while a backup job is queued or running (D10)."""
-    if services.jobs.active_backup() is not None:
-        raise HTTPException(status_code=409, detail=BACKUP_BUSY)
-
-
-def _check_schedule(services: AppServices, schedule: str | None) -> None:
-    if schedule is None:
-        return
-    problem = cron_problem(schedule, services.config.timezone)
-    if problem is not None:
-        raise _invalid(problem)
-
-
 def _destination(member_id: str, d: DestinationIn) -> SyncMember:
     return SyncMember(
         member_id, ServiceId(d.service), d.playlist_id, MemberRole.DESTINATION, d.mode
@@ -109,20 +64,23 @@ def _valid(build: Callable[[], SyncGroup]) -> SyncGroup:
     try:
         return build()
     except ValueError as e:
-        raise _invalid(str(e)) from None
+        raise invalid(str(e)) from None
 
 
 def _new_group(services: AppServices, body: SyncCreateIn, sync_id: str) -> SyncGroup:
     check_source(services, body.source.service, body.source.playlist_id)
     check_destinations(services, (d.service for d in body.destinations))
-    _check_schedule(services, body.schedule)
+    check_schedule(services, body.schedule)
     source = SyncMember(
-        "src",
+        SOURCE_MEMBER_ID,
         ServiceId(body.source.service),
         body.source.playlist_id,
         MemberRole.SOURCE,
     )
-    destinations = [_destination(f"dst{i}", d) for i, d in enumerate(body.destinations)]
+    destinations = [
+        _destination(destination_member_id(i), d)
+        for i, d in enumerate(body.destinations)
+    ]
     return _valid(
         lambda: SyncGroup(
             sync_id=sync_id,
@@ -135,22 +93,12 @@ def _new_group(services: AppServices, body: SyncCreateIn, sync_id: str) -> SyncG
 
 
 def _found(services: AppServices, sync_id: str) -> SyncGroup:
-    group = services.repos.syncs.get(sync_id)
-    if group is None:
-        raise HTTPException(status_code=404, detail="Unknown sync")
-    return group
+    return found(services.repos.syncs.get(sync_id), UNKNOWN_SYNC)
 
 
 def _not_busy(services: AppServices, sync_id: str) -> None:
     if services.jobs.active_for_sync(sync_id) is not None:
         raise HTTPException(status_code=409, detail=_BUSY)
-
-
-def reconcile_schedule(services: AppServices) -> None:
-    services.scheduler.reconcile(
-        services.repos.syncs.list(), services.settings_store.get().default_schedule
-    )
-    services.scheduler.schedule_backup(services.settings_store.get().backup_schedule)
 
 
 # -- views --------------------------------------------------------------------
@@ -172,11 +120,7 @@ def _sync_out(
 ) -> SyncOut:
     runs = services.repos.runs.list_for_sync(group.sync_id, limit=1)
     last = runs[0] if runs else None
-    rebuilt = (
-        {m.member_id for m in last.members if m.rebuilt}
-        if last is not None and last.dry_run
-        else set()
-    )
+    missing = _missing_destinations(last)
     active = services.jobs.active_for_sync(group.sync_id)
     src = group.source
     return SyncOut(
@@ -191,12 +135,19 @@ def _sync_out(
             member_id=src.member_id, service=src.service, playlist_id=src.playlist_id
         ),
         destinations=[
-            _destination_out(services, d, d.member_id in rebuilt)
+            _destination_out(services, d, d.member_id in missing)
             for d in group.destinations
         ],
         active_job=None if active is None else JobOut.of(active),
-        last_run=None if last is None else run_summary(last),
+        last_run=None if last is None else RunSummaryOut.of(last),
     )
+
+
+def _missing_destinations(last_run: SyncRun | None) -> set[str]:
+    """Members the last run, a dry run, would rebuild: their playlist is gone."""
+    if last_run is None or not last_run.dry_run:
+        return set()
+    return {m.member_id for m in last_run.members if m.rebuilt}
 
 
 def _destination_out(
@@ -269,46 +220,51 @@ async def patch_sync(sync_id: str, body: SyncPatchIn, services: Services) -> Syn
     if body.name is not None:
         changes["name"] = body.name
     if "schedule" in body.model_fields_set:
-        _check_schedule(services, body.schedule)
+        check_schedule(services, body.schedule)
         changes["schedule"] = body.schedule
     if body.paused is not None:
         changes["status"] = SyncStatus.PAUSED if body.paused else SyncStatus.ACTIVE
         changes["pause_reason"] = PAUSED_BY_YOU if body.paused else None
-    members = list(group.members)
-    destination_ids = {m.member_id for m in group.destinations}
-    for member_id in body.modes or {}:
-        if member_id not in destination_ids:
-            raise _invalid(f"Unknown destination {member_id}")
-    if body.modes:
-        modes = body.modes
-        members = [
-            replace(m, mode=modes[m.member_id]) if m.member_id in modes else m
-            for m in members
-        ]
-    removed = set(body.remove_member_ids or ())
-    if "src" in removed:
-        raise _invalid("The source can't be removed")
-    unknown = sorted(removed - destination_ids)
-    if unknown:
-        raise _invalid(f"Unknown destination {unknown[0]}")
-    members = [m for m in members if m.member_id not in removed]
-    added = body.add_destinations or []
-    check_destinations(services, (d.service for d in added))
-    for d in added:
-        members.append(_destination(_free_member_id(members), d))
-    changes["members"] = tuple(members)
+    changes["members"] = _patched_members(services, group, body)
     updated = _valid(lambda: replace(group, **changes))
     services.repos.syncs.save(updated)
     reconcile_schedule(services)
     return _one_out(services, updated)
 
 
+def _patched_members(
+    services: AppServices, group: SyncGroup, body: SyncPatchIn
+) -> tuple[SyncMember, ...]:
+    """The members with the patch's mode changes, removals and additions."""
+    destination_ids = {m.member_id for m in group.destinations}
+    modes = body.modes or {}
+    for member_id in modes:
+        if member_id not in destination_ids:
+            raise invalid(f"Unknown destination {member_id}")
+    removed = set(body.remove_member_ids or ())
+    if SOURCE_MEMBER_ID in removed:
+        raise invalid("The source can't be removed")
+    unknown = sorted(removed - destination_ids)
+    if unknown:
+        raise invalid(f"Unknown destination {unknown[0]}")
+    members = [
+        replace(m, mode=modes[m.member_id]) if m.member_id in modes else m
+        for m in group.members
+        if m.member_id not in removed
+    ]
+    added = body.add_destinations or []
+    check_destinations(services, (d.service for d in added))
+    for d in added:
+        members.append(_destination(_free_member_id(members), d))
+    return tuple(members)
+
+
 def _free_member_id(members: list[SyncMember]) -> str:
     taken = {m.member_id for m in members}
     n = 0
-    while f"dst{n}" in taken:
+    while destination_member_id(n) in taken:
         n += 1
-    return f"dst{n}"
+    return destination_member_id(n)
 
 
 @router.delete("/{sync_id}", status_code=204)
@@ -339,4 +295,4 @@ async def list_runs(
 ) -> list[RunSummaryOut]:
     _found(services, sync_id)
     runs = services.repos.runs.list_for_sync(sync_id, limit=limit)
-    return [run_summary(r) for r in runs]
+    return [RunSummaryOut.of(r) for r in runs]

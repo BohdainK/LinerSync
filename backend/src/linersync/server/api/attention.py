@@ -1,7 +1,6 @@
 """Needs-attention routes: list, pick, not on service, dismiss, approve, resume."""
 
 from collections.abc import Callable
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
@@ -9,7 +8,7 @@ from linersync.application.attention import AttentionService
 from linersync.domain.attention import AttentionItem, AttentionKind
 from linersync.domain.jobs import SyncJob
 from linersync.domain.runs import Trigger
-from linersync.server.api.runs import TrackNames, change_out, known_track
+from linersync.server.api.common import Services, found, reconcile_schedule
 from linersync.server.api.schemas import (
     ActionOut,
     AttentionOut,
@@ -17,23 +16,20 @@ from linersync.server.api.schemas import (
     JobOut,
     PickIn,
     RunNowIn,
+    TrackOut,
 )
-from linersync.server.api.syncs import reconcile_schedule
+from linersync.server.api.views import TrackNames, change_out
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/attention", dependencies=[Depends(require_session)])
 
-Services = Annotated[AppServices, Depends(get_services)]
-
 NOT_A_CANDIDATE = "Pick one of the suggested songs"
+UNKNOWN_ITEM = "Unknown item"
 
 
 def _found(services: AppServices, item_id: str) -> AttentionItem:
-    item = services.repos.attention.get(item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Unknown item")
-    return item
+    return found(services.repos.attention.get(item_id), UNKNOWN_ITEM)
 
 
 def _resolve(action: Callable[[], None]) -> None:
@@ -63,16 +59,9 @@ def _attention_out(services: AppServices, item: AttentionItem) -> AttentionOut:
         sync_name=None if group is None else group.name,
         member_id=item.member_id,
         service=item.service,
-        source=None if item.source is None else known_track(item.source),
+        source=None if item.source is None else TrackOut.of(item.source),
         target_service=item.target_service,
-        candidates=[
-            CandidateOut(
-                track=known_track(c.track),
-                confidence=c.confidence,
-                reasons=list(c.reasons),
-            )
-            for c in item.candidates
-        ],
+        candidates=[CandidateOut.of(c) for c in item.candidates],
         not_made=[change_out(c, item.service or "", names) for c in item.not_made],
     )
 

@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import Engine, delete, select
-from sqlalchemy.dialects.sqlite import insert
 
-from linersync.adapters.sqlite.codec import dumps, loads
+from linersync.adapters.sqlite.codec import dumps
+from linersync.adapters.sqlite.db import load_one, upsert
 from linersync.adapters.sqlite.schema import connections
 from linersync.domain.tracks import ServiceId
 
@@ -24,24 +24,13 @@ class SqliteConnectionRecords:
         self._engine = engine
 
     def get(self, service: ServiceId) -> ConnectionRecord | None:
-        with self._engine.connect() as conn:
-            body = conn.execute(
-                select(connections.c.body).where(connections.c.service == service)
-            ).scalar_one_or_none()
-        if body is None:
-            return None
-        record: ConnectionRecord = loads(ConnectionRecord, body)
-        return record
+        query = select(connections.c.body).where(connections.c.service == service)
+        return load_one(self._engine, ConnectionRecord, query)
 
     def save(self, service: ServiceId, record: ConnectionRecord) -> None:
         body = dumps(ConnectionRecord, record)
-        stmt = insert(connections).values(service=service, body=body)
         with self._engine.begin() as conn:
-            conn.execute(
-                stmt.on_conflict_do_update(
-                    index_elements=["service"], set_={"body": body}
-                )
-            )
+            upsert(conn, connections, {"service": service}, {"body": body})
 
     def delete(self, service: ServiceId) -> None:
         with self._engine.begin() as conn:

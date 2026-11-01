@@ -6,7 +6,15 @@ from linersync.application.runner import Deps, SyncRunner
 from linersync.domain.capabilities import Capability
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.runs import RunKind, SyncRun, Trigger
-from linersync.domain.sync import Direction, MemberRole, SyncGroup, SyncMember, SyncMode
+from linersync.domain.sync import (
+    SOURCE_MEMBER_ID,
+    Direction,
+    MemberRole,
+    SyncGroup,
+    SyncMember,
+    SyncMode,
+    destination_member_id,
+)
 from linersync.domain.tracks import ServiceId
 
 
@@ -46,9 +54,15 @@ class TransferService:
             name=sync_id,
             direction=Direction.ONE_WAY,
             members=(
-                SyncMember("src", source_service, playlist_id, MemberRole.SOURCE),
                 SyncMember(
-                    "dst0", destination, None, MemberRole.DESTINATION, SyncMode.FULL
+                    SOURCE_MEMBER_ID, source_service, playlist_id, MemberRole.SOURCE
+                ),
+                SyncMember(
+                    destination_member_id(0),
+                    destination,
+                    None,
+                    MemberRole.DESTINATION,
+                    SyncMode.FULL,
                 ),
             ),
         )

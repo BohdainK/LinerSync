@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { setUnauthorizedHandler } from "@/api/client";
 import { EventsProvider } from "@/live/events";
-import { useConnections } from "@/features/connections/useConnections";
+import { isSetUp, useConnections } from "@/features/connections/useConnections";
 import { ONBOARDING_SKIPPED_KEY, readFlag } from "@/lib/storage";
 import { Toaster } from "@/components/ui/sonner";
 import { Sidebar } from "./Sidebar";
@@ -32,7 +32,7 @@ export function AppShell() {
   const nothingSetUp =
     connections.data !== undefined &&
     connections.data.services.length > 0 &&
-    connections.data.services.every((c) => c.status === "not_set_up");
+    connections.data.services.every((c) => !isSetUp(c));
   if (location.pathname === "/" && nothingSetUp && readFlag(ONBOARDING_SKIPPED_KEY) !== "1") {
     return <Navigate to="/onboarding" replace />;
   }

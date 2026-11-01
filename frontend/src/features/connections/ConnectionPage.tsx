@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,7 +8,7 @@ import { SetupStepper } from "@/features/setup/SetupStepper";
 import { formatDateTime } from "@/lib/format";
 import { DisconnectDialog } from "./DisconnectDialog";
 import { capabilityText } from "./ServiceGrid";
-import { useConnection } from "./useConnections";
+import { isSetUp, useConnection } from "./useConnections";
 
 export function ConnectionPage() {
   const { service = "" } = useParams();
@@ -16,7 +16,7 @@ export function ConnectionPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const info = useConnection(service);
 
-  if (info.isError) return <ErrorNotice error={info.error} onRetry={() => void info.refetch()} />;
+  if (info.isError) return <QueryError query={info} />;
   if (!info.data) return <Skeleton className="h-24 w-full" />;
   const c = info.data;
   const caps = capabilityText(c.capabilities);
@@ -61,7 +61,7 @@ export function ConnectionPage() {
         </section>
       ) : null}
       <SetupStepper service={service} />
-      {c.status !== "not_set_up" ? (
+      {isSetUp(c) ? (
         <div>
           <Button type="button" variant="outline" onClick={() => setDisconnecting(true)}>
             Disconnect…

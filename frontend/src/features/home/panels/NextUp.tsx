@@ -1,11 +1,12 @@
 import { Link } from "react-router";
 import type { NextUpOut } from "@/api/types";
+import { Section } from "@/components/Section";
 import { formatRelative } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
 
 export function NextUp({ items }: { items: NextUpOut[] }) {
   return (
-    <section aria-labelledby="home-next" className="space-y-3">
-      <h2 id="home-next" className="text-lg font-semibold">Next up</h2>
+    <Section title="Next up">
       {items.length === 0 ? <p className="text-muted-foreground">Nothing scheduled</p> : null}
       <ul className="space-y-1">
         {items.map((n, i) => {
@@ -13,7 +14,7 @@ export function NextUp({ items }: { items: NextUpOut[] }) {
           return (
             <li key={i} className="flex justify-between gap-2 text-sm">
               {to ? (
-                <Link className="text-primary underline underline-offset-4" to={to}>
+                <Link className={linkClass} to={to}>
                   {n.name}
                 </Link>
               ) : (
@@ -24,6 +25,6 @@ export function NextUp({ items }: { items: NextUpOut[] }) {
           );
         })}
       </ul>
-    </section>
+    </Section>
   );
 }

@@ -1,15 +1,14 @@
 """Run routes: run detail (songs named from the run's context, D8) and undo."""
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from linersync.domain.jobs import RunContext, UndoJob
 from linersync.domain.operations import (
     AddTracks,
-    ChangeNotMade,
     CreatePlaylist,
     MemberPlan,
     Operation,
@@ -18,36 +17,35 @@ from linersync.domain.operations import (
     UpdateMetadata,
 )
 from linersync.domain.runs import MemberResult, RunKind, SyncRun, VerificationMismatch
-from linersync.domain.tracks import ServiceId, Track, TrackKey
+from linersync.server.api.common import Services, found
 from linersync.server.api.schemas import (
     CandidateOut,
-    ChangeOut,
     JobOut,
     MemberOut,
     MismatchOut,
     OperationOut,
     OperationType,
     RunOut,
+    RunSummaryOut,
     TrackOut,
     UnresolvedOut,
-    run_summary,
 )
+from linersync.server.api.views import TrackNames, change_out
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/runs", dependencies=[Depends(require_session)])
 
-Services = Annotated[AppServices, Depends(get_services)]
-
 _UNDOABLE_KINDS = frozenset({RunKind.SYNC, RunKind.TRANSFER})
 CANT_UNDO = "This run can't be undone"
+UNKNOWN_RUN = "Unknown run"
 
 
-def _found(services: AppServices, run_id: str) -> SyncRun:
-    run = services.repos.runs.get(run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Unknown run")
-    return run
+class Place(NamedTuple):
+    """Where a member's playlist lives."""
+
+    service: str
+    playlist_id: str | None
 
 
 def undoable(services: AppServices, run: SyncRun) -> bool:
@@ -61,56 +59,18 @@ def undoable(services: AppServices, run: SyncRun) -> bool:
 
 
 # -- view ---------------------------------------------------------------------
-class TrackNames:
-    """Looks songs up in the run's context; an unknown id keeps its id as title."""
-
-    def __init__(self, tracks: Iterable[Track]) -> None:
-        self._tracks: dict[TrackKey, Track] = {t.key: t for t in tracks}
-
-    def track(self, service: str, track_id: str) -> TrackOut:
-        found = self._tracks.get(TrackKey(ServiceId(service), track_id))
-        if found is None:
-            return TrackOut(
-                service=service,
-                track_id=track_id,
-                title=track_id,
-                artists=[],
-                album=None,
-                duration_ms=None,
-                isrc=None,
-                url=None,
-                known=False,
-            )
-        return known_track(found)
-
-    def tracks(self, service: str, track_ids: Iterable[str]) -> list[TrackOut]:
-        return [self.track(service, tid) for tid in track_ids]
-
-
-def known_track(t: Track) -> TrackOut:
-    return TrackOut(
-        service=t.service,
-        track_id=t.track_id,
-        title=t.title,
-        artists=list(t.artists),
-        album=t.album,
-        duration_ms=t.duration_ms,
-        isrc=t.isrc,
-        url=t.url,
-        known=True,
-    )
-
-
 def _member_places(
     services: AppServices, run: SyncRun, ctx: RunContext | None
-) -> dict[str, tuple[str, str | None]]:
-    """member id → (service, playlist id): the run context, else the saved sync."""
-    places: dict[str, tuple[str, str | None]] = {}
+) -> dict[str, Place]:
+    """member id → place: the run context, else the saved sync."""
+    places: dict[str, Place] = {}
     group = services.repos.syncs.get(run.sync_id)
     if group is not None:
-        places = {m.member_id: (m.service, m.playlist_id) for m in group.members}
+        places = {m.member_id: Place(m.service, m.playlist_id) for m in group.members}
     if ctx is not None:
-        places.update({m.member_id: (m.service, m.playlist_id) for m in ctx.members})
+        places.update(
+            {m.member_id: Place(m.service, m.playlist_id) for m in ctx.members}
+        )
     return places
 
 
@@ -148,16 +108,6 @@ def _operation(op: Operation, service: str, names: TrackNames) -> OperationOut:
             )
 
 
-def change_out(change: ChangeNotMade, service: str, names: TrackNames) -> ChangeOut:
-    return ChangeOut(
-        kind=change.kind,
-        detail=change.detail,
-        track=None
-        if change.track_id is None
-        else names.track(service, change.track_id),
-    )
-
-
 def _surplus(ids: Sequence[str], other: Sequence[str]) -> list[str]:
     """`ids` minus `other` as multisets, in `ids` order."""
     left = Counter(other)
@@ -179,41 +129,53 @@ def _mismatch(m: VerificationMismatch, service: str, names: TrackNames) -> Misma
 
 def _member(
     member_id: str,
-    place: tuple[str, str | None] | None,
+    place: Place | None,
     plan: MemberPlan | None,
     result: MemberResult | None,
     names: TrackNames,
 ) -> MemberOut:
-    service = place[0] if place is not None else None
-    on = service or ""
-    playlist_id = place[1] if place is not None else None
-    if result is not None and result.created_playlist_id is not None:
-        playlist_id = result.created_playlist_id
-    not_made: Sequence[ChangeNotMade] = ()
-    if result is not None:
-        not_made = result.not_made
-    elif plan is not None:
-        not_made = plan.not_made
+    service = place.service if place is not None else None
+    playlist_id = place.playlist_id if place is not None else None
+    tracks_on = service or ""  # the service the member's song ids belong to
+    operations = (
+        []
+        if plan is None
+        else [_operation(op, tracks_on, names) for op in plan.operations]
+    )
+    if result is None:  # planned but not applied (a dry run, or never reached)
+        not_made = plan.not_made if plan is not None else ()
+        return MemberOut(
+            member_id=member_id,
+            service=service,
+            playlist_id=playlist_id,
+            status=None,
+            error=None,
+            rebuilt=False,
+            created_playlist_id=None,
+            operations=operations,
+            not_made=[change_out(c, tracks_on, names) for c in not_made],
+            mismatch=None,
+        )
     return MemberOut(
         member_id=member_id,
         service=service,
-        playlist_id=playlist_id,
-        status=None if result is None else result.status,
-        error=None if result is None else result.error,
-        rebuilt=result is not None and result.rebuilt,
-        created_playlist_id=None if result is None else result.created_playlist_id,
-        operations=[]
-        if plan is None
-        else [_operation(op, on, names) for op in plan.operations],
-        not_made=[change_out(c, on, names) for c in not_made],
+        playlist_id=result.created_playlist_id
+        if result.created_playlist_id is not None
+        else playlist_id,
+        status=result.status,
+        error=result.error,
+        rebuilt=result.rebuilt,
+        created_playlist_id=result.created_playlist_id,
+        operations=operations,
+        not_made=[change_out(c, tracks_on, names) for c in result.not_made],
         mismatch=None
-        if result is None or result.mismatch is None
-        else _mismatch(result.mismatch, on, names),
+        if result.mismatch is None
+        else _mismatch(result.mismatch, tracks_on, names),
     )
 
 
 def _members(
-    run: SyncRun, places: Mapping[str, tuple[str, str | None]], names: TrackNames
+    run: SyncRun, places: Mapping[str, Place], names: TrackNames
 ) -> list[MemberOut]:
     plans = {p.member_id: p for p in run.plan.member_plans} if run.plan else {}
     results = {r.member_id: r for r in run.members}
@@ -232,21 +194,14 @@ def run_detail(services: AppServices, run: SyncRun) -> RunOut:
         UnresolvedOut(
             member_id=u.member_id,
             position=u.position,
-            source=known_track(u.source),
+            source=TrackOut.of(u.source),
             reasons=list(u.decision.reasons),
-            candidates=[
-                CandidateOut(
-                    track=known_track(c.track),
-                    confidence=c.confidence,
-                    reasons=list(c.reasons),
-                )
-                for c in u.decision.candidates
-            ],
+            candidates=[CandidateOut.of(c) for c in u.decision.candidates],
         )
         for u in (run.plan.unresolved if run.plan is not None else ())
     ]
     return RunOut(
-        **run_summary(run).model_dump(),
+        **RunSummaryOut.of(run).model_dump(),
         members=_members(run, places, names),
         unresolved=unresolved,
         undoes_run_id=run.undoes_run_id,
@@ -257,12 +212,12 @@ def run_detail(services: AppServices, run: SyncRun) -> RunOut:
 # -- routes -------------------------------------------------------------------
 @router.get("/{run_id}")
 async def get_run(run_id: str, services: Services) -> RunOut:
-    return run_detail(services, _found(services, run_id))
+    return run_detail(services, found(services.repos.runs.get(run_id), UNKNOWN_RUN))
 
 
 @router.post("/{run_id}/undo", status_code=202)
 async def undo_run(run_id: str, services: Services) -> JobOut:
-    run = _found(services, run_id)
+    run = found(services.repos.runs.get(run_id), UNKNOWN_RUN)
     if not undoable(services, run):
         raise HTTPException(status_code=409, detail=CANT_UNDO)
     return JobOut.of(services.jobs.submit(UndoJob(run_id), "Undo run"))

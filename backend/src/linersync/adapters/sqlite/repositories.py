@@ -8,7 +8,13 @@ from sqlalchemy import Engine
 
 from linersync.adapters.sqlite import schema as t
 from linersync.adapters.sqlite.codec import dumps, loads
-from linersync.adapters.sqlite.db import utc_text
+from linersync.adapters.sqlite.db import (
+    load_all,
+    load_one,
+    upsert,
+    utc_text,
+    utc_text_or_none,
+)
 from linersync.domain.attention import AttentionItem
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.playlists import PlaylistSnapshot
@@ -25,36 +31,26 @@ class SqliteSyncs:
         self._engine = engine
 
     def get(self, sync_id: str) -> SyncGroup | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.syncs.c.body).where(t.syncs.c.sync_id == sync_id)
-            ).scalar_one_or_none()
-        return None if body is None else loads(SyncGroup, body)
+        query = sa.select(t.syncs.c.body).where(t.syncs.c.sync_id == sync_id)
+        return load_one(self._engine, SyncGroup, query)
 
     def save(self, group: SyncGroup) -> None:
-        body = dumps(SyncGroup, group)
         with self._engine.begin() as conn:
-            updated = conn.execute(
-                sa.update(t.syncs)
-                .where(t.syncs.c.sync_id == group.sync_id)
-                .values(body=body)
-            ).rowcount
-            if updated == 0:
-                seq = conn.execute(
-                    sa.select(sa.func.coalesce(sa.func.max(t.syncs.c.seq), 0))
-                ).scalar_one()
-                conn.execute(
-                    sa.insert(t.syncs).values(
-                        sync_id=group.sync_id, seq=seq + 1, body=body
-                    )
-                )
+            seq = conn.execute(
+                sa.select(sa.func.coalesce(sa.func.max(t.syncs.c.seq), 0))
+            ).scalar_one()
+            # seq is creation order: a re-saved sync keeps its place.
+            upsert(
+                conn,
+                t.syncs,
+                {"sync_id": group.sync_id},
+                {"body": dumps(SyncGroup, group)},
+                insert_only={"seq": seq + 1},
+            )
 
     def list(self) -> list[SyncGroup]:
-        with self._engine.begin() as conn:
-            rows = conn.execute(
-                sa.select(t.syncs.c.body).order_by(t.syncs.c.seq)
-            ).scalars()
-            return [loads(SyncGroup, b) for b in rows]
+        query = sa.select(t.syncs.c.body).order_by(t.syncs.c.seq)
+        return load_all(self._engine, SyncGroup, query)
 
     def delete(self, sync_id: str) -> None:
         with self._engine.begin() as conn:
@@ -76,19 +72,12 @@ class SqliteRuns:
             seq = conn.execute(
                 sa.select(sa.func.coalesce(sa.func.max(t.runs.c.saved_seq), 0))
             ).scalar_one()
-            values["saved_seq"] = seq + 1
-            updated = conn.execute(
-                sa.update(t.runs).where(t.runs.c.run_id == run.run_id).values(**values)
-            ).rowcount
-            if updated == 0:
-                conn.execute(sa.insert(t.runs).values(run_id=run.run_id, **values))
+            values["saved_seq"] = seq + 1  # every save moves the run last
+            upsert(conn, t.runs, {"run_id": run.run_id}, values)
 
     def get(self, run_id: str) -> SyncRun | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.runs.c.body).where(t.runs.c.run_id == run_id)
-            ).scalar_one_or_none()
-        return None if body is None else loads(SyncRun, body)
+        query = sa.select(t.runs.c.body).where(t.runs.c.run_id == run_id)
+        return load_one(self._engine, SyncRun, query)
 
     def list_for_sync(self, sync_id: str, limit: int | None = None) -> list[SyncRun]:
         query = (
@@ -98,34 +87,25 @@ class SqliteRuns:
         )
         if limit is not None:
             query = query.limit(limit)
-        with self._engine.begin() as conn:
-            rows = conn.execute(query).scalars()
-            return [loads(SyncRun, b) for b in rows]
+        return load_all(self._engine, SyncRun, query)
 
     def list_all(self) -> list[SyncRun]:
-        with self._engine.begin() as conn:
-            rows = conn.execute(
-                sa.select(t.runs.c.body).order_by(t.runs.c.saved_seq)
-            ).scalars()
-            return [loads(SyncRun, b) for b in rows]
+        query = sa.select(t.runs.c.body).order_by(t.runs.c.saved_seq)
+        return load_all(self._engine, SyncRun, query)
 
     def list_since(self, since: datetime) -> list[SyncRun]:
-        with self._engine.begin() as conn:
-            rows = conn.execute(
-                sa.select(t.runs.c.body)
-                .where(t.runs.c.started_at >= utc_text(since))
-                .order_by(t.runs.c.saved_seq)
-            ).scalars()
-            return [loads(SyncRun, b) for b in rows]
+        query = (
+            sa.select(t.runs.c.body)
+            .where(t.runs.c.started_at >= utc_text(since))
+            .order_by(t.runs.c.saved_seq)
+        )
+        return load_all(self._engine, SyncRun, query)
 
     def list_running(self) -> list[SyncRun]:
-        with self._engine.begin() as conn:
-            rows = conn.execute(
-                sa.select(t.runs.c.body).where(
-                    t.runs.c.status == str(RunStatus.RUNNING)
-                )
-            ).scalars()
-            return [loads(SyncRun, b) for b in rows]
+        query = sa.select(t.runs.c.body).where(
+            t.runs.c.status == str(RunStatus.RUNNING)
+        )
+        return load_all(self._engine, SyncRun, query)
 
 
 class SqliteSnapshots:
@@ -136,30 +116,16 @@ class SqliteSnapshots:
         self, run_id: str, member_id: str, snap: PlaylistSnapshot | None
     ) -> None:
         body = None if snap is None else dumps(PlaylistSnapshot, snap)
-        where = sa.and_(
+        key = {"run_id": run_id, "member_id": member_id}
+        with self._engine.begin() as conn:
+            upsert(conn, t.pre_write_snapshots, key, {"body": body})
+
+    def get_pre_write(self, run_id: str, member_id: str) -> PlaylistSnapshot | None:
+        query = sa.select(t.pre_write_snapshots.c.body).where(
             t.pre_write_snapshots.c.run_id == run_id,
             t.pre_write_snapshots.c.member_id == member_id,
         )
-        with self._engine.begin() as conn:
-            updated = conn.execute(
-                sa.update(t.pre_write_snapshots).where(where).values(body=body)
-            ).rowcount
-            if updated == 0:
-                conn.execute(
-                    sa.insert(t.pre_write_snapshots).values(
-                        run_id=run_id, member_id=member_id, body=body
-                    )
-                )
-
-    def get_pre_write(self, run_id: str, member_id: str) -> PlaylistSnapshot | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.pre_write_snapshots.c.body).where(
-                    t.pre_write_snapshots.c.run_id == run_id,
-                    t.pre_write_snapshots.c.member_id == member_id,
-                )
-            ).scalar_one_or_none()
-        return None if body is None else loads(PlaylistSnapshot, body)
+        return load_one(self._engine, PlaylistSnapshot, query)
 
     def has_pre_write(self, run_id: str, member_id: str) -> bool:
         with self._engine.begin() as conn:
@@ -197,18 +163,9 @@ class SqliteMatches:
             "source_track_id": match.source_key.track_id,
             "target_service": str(match.target_service),
         }
+        values = {"target_track_id": match.target_track_id}
         with self._engine.begin() as conn:
-            updated = conn.execute(
-                sa.update(t.remembered_matches)
-                .where(*(t.remembered_matches.c[k] == v for k, v in keys.items()))
-                .values(target_track_id=match.target_track_id)
-            ).rowcount
-            if updated == 0:
-                conn.execute(
-                    sa.insert(t.remembered_matches).values(
-                        target_track_id=match.target_track_id, **keys
-                    )
-                )
+            upsert(conn, t.remembered_matches, keys, values)
 
     def list_all(self) -> list[RememberedMatch]:
         with self._engine.begin() as conn:
@@ -244,7 +201,7 @@ class SqliteAttention:
                     .where(t.attention.c.item_id == old.item_id)
                     .values(
                         dedupe_key=key,
-                        resolved_at=_opt(stored.resolved_at),
+                        resolved_at=utc_text_or_none(stored.resolved_at),
                         created_at=utc_text(stored.created_at),
                         body=dumps(AttentionItem, stored),
                     )
@@ -254,7 +211,7 @@ class SqliteAttention:
                 sa.insert(t.attention).values(
                     item_id=item.item_id,
                     dedupe_key=key,
-                    resolved_at=_opt(item.resolved_at),
+                    resolved_at=utc_text_or_none(item.resolved_at),
                     created_at=utc_text(item.created_at),
                     body=dumps(AttentionItem, item),
                 )
@@ -262,20 +219,16 @@ class SqliteAttention:
             return item
 
     def get(self, item_id: str) -> AttentionItem | None:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.attention.c.body).where(t.attention.c.item_id == item_id)
-            ).scalar_one_or_none()
-        return None if body is None else loads(AttentionItem, body)
+        query = sa.select(t.attention.c.body).where(t.attention.c.item_id == item_id)
+        return load_one(self._engine, AttentionItem, query)
 
     def list_open(self) -> list[AttentionItem]:
-        with self._engine.begin() as conn:
-            rows = conn.execute(
-                sa.select(t.attention.c.body)
-                .where(t.attention.c.resolved_at.is_(None))
-                .order_by(sa.literal_column("rowid"))
-            ).scalars()
-            return [loads(AttentionItem, b) for b in rows]
+        query = (
+            sa.select(t.attention.c.body)
+            .where(t.attention.c.resolved_at.is_(None))
+            .order_by(sa.literal_column("rowid"))
+        )
+        return load_all(self._engine, AttentionItem, query)
 
     def resolve(self, item_id: str, resolution: str, at: datetime) -> None:
         with self._engine.begin() as conn:
@@ -294,33 +247,19 @@ class SqliteAttention:
             )
 
 
-def _opt(dt: datetime | None) -> str | None:
-    return None if dt is None else utc_text(dt)
-
-
 class SqliteBreakers:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
     def get(self, service: ServiceId) -> BreakerState:
-        with self._engine.begin() as conn:
-            body = conn.execute(
-                sa.select(t.breakers.c.body).where(t.breakers.c.service == service)
-            ).scalar_one_or_none()
-        return BreakerState(service) if body is None else loads(BreakerState, body)
+        query = sa.select(t.breakers.c.body).where(t.breakers.c.service == service)
+        state = load_one(self._engine, BreakerState, query)
+        return BreakerState(service) if state is None else state
 
     def save(self, state: BreakerState) -> None:
         body = dumps(BreakerState, state)
         with self._engine.begin() as conn:
-            updated = conn.execute(
-                sa.update(t.breakers)
-                .where(t.breakers.c.service == state.service)
-                .values(body=body)
-            ).rowcount
-            if updated == 0:
-                conn.execute(
-                    sa.insert(t.breakers).values(service=state.service, body=body)
-                )
+            upsert(conn, t.breakers, {"service": state.service}, {"body": body})
 
 
 class SqliteApprovals:

@@ -43,7 +43,9 @@ class RemoveTracks:
     removals: tuple[Removal, ...]
 
 
-Operation = CreatePlaylist | UpdateMetadata | AddTracks | Reorder | RemoveTracks
+# The operations a connector's ``apply`` takes (creation has its own method).
+PlaylistOp = UpdateMetadata | AddTracks | Reorder | RemoveTracks
+Operation = CreatePlaylist | PlaylistOp
 
 
 @dataclass(frozen=True, slots=True)

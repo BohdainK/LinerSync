@@ -1,4 +1,5 @@
 from datetime import datetime
+from operator import attrgetter
 
 from linersync.domain.jobs import Job, JobStatus, RunContext
 
@@ -28,7 +29,7 @@ class InMemoryJobs:
         done = [j for j in self._jobs.values() if j.finished]
         with_time = sorted(
             (j for j in done if j.finished_at is not None),
-            key=lambda j: j.finished_at or j.created_at,
+            key=attrgetter("finished_at"),
             reverse=True,
         )
         without = [j for j in done if j.finished_at is None]

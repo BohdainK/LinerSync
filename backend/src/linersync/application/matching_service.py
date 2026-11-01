@@ -60,5 +60,5 @@ class MatchService:
         try:
             candidates = await target.search(TrackQuery.from_track(t))
         except ConnectorError as e:
-            raise MatchingFailed(target.service, e.message or str(e)) from e
+            raise MatchingFailed(target.service, e.detail) from e
         return decide_match(t, candidates, self._cfg)

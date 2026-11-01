@@ -10,18 +10,26 @@ import contextlib
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
+from linersync.adapters.connectors.kit import SEARCH_LIMIT, PlaylistOp
+from linersync.adapters.connectors.kit.errors import Errors
 from linersync.adapters.connectors.kit.http import (
     HttpClient,
     HttpFailure,
     apply_in_batches,
+    json_object,
+    nothing_sent,
     read_failed,
     write_failed,
 )
-from linersync.adapters.connectors.kit.images import ArtworkHasher, jpeg_for_upload
-from linersync.adapters.connectors.spotify.auth import API_BASE
-from linersync.adapters.connectors.spotify.moves import plan_moves, plan_removal
+from linersync.adapters.connectors.kit.images import (
+    ArtworkHasher,
+    hashes_for,
+    jpeg_for_upload,
+)
+from linersync.adapters.connectors.spotify.moves import Move, plan_moves, plan_removal
 from linersync.adapters.connectors.spotify.parse import (
-    SPOTIFY,
+    API_BASE,
+    SERVICE,
     RawItem,
     parse_items_page,
     parse_playlist_meta,
@@ -42,21 +50,19 @@ from linersync.ports.errors import PlaylistNotFound, ReadFailed, WriteFailed
 from linersync.ports.runtime import Clock
 
 CAPABILITIES = frozenset(Capability) - {Capability.DELETE_PLAYLIST}
-LIMITS = ConnectorLimits(50, 100, 2)
+LIMITS = ConnectorLimits(page_size=50, add_batch_size=100, search_cost=2)
 
 _LOCAL = "spotify:local:"
 _META_FIELDS = (
     "id,name,description,images,owner(id),collaborative,snapshot_id,items(total)"
 )
-_PAGE = 50
-_BATCH = 100
-_SEARCH_LIMIT = 10
+_BATCH = 100  # items per add, delete or insert request
 
-_Op = UpdateMetadata | AddTracks | Reorder | RemoveTracks
+E = Errors(SERVICE, "Spotify")
 
 
 class SpotifyConnector:
-    service = SPOTIFY
+    service = SERVICE
     display_name = "Spotify"
     capabilities = CAPABILITIES
     limits = LIMITS
@@ -82,7 +88,10 @@ class SpotifyConnector:
             me_id = await self._me()
             metas: list[PlaylistMeta] = []
             url: str | None = f"{API_BASE}/me/playlists"
-            params: dict[str, str | int] | None = {"limit": _PAGE, "offset": 0}
+            params: dict[str, str | int] | None = {
+                "limit": LIMITS.page_size,
+                "offset": 0,
+            }
             while url is not None:
                 body = await self._get(url, params)
                 metas.extend(
@@ -94,7 +103,7 @@ class SpotifyConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("your playlists") from None
+            raise E.not_understood("your playlists") from None
         return metas
 
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
@@ -103,7 +112,7 @@ class SpotifyConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood(f"playlist {playlist_id}") from None
+            raise E.not_understood(f"playlist {playlist_id}") from None
 
     async def _read(self, playlist_id: str) -> PlaylistSnapshot:
         me_id = await self._me()
@@ -112,40 +121,34 @@ class SpotifyConnector:
             obj = await self._get(url, {"fields": _META_FIELDS})
         except HttpFailure as e:
             if e.status == 404:
-                raise PlaylistNotFound(
-                    SPOTIFY, f"Spotify has no playlist {playlist_id}"
-                ) from None
+                raise E.not_found(playlist_id) from None
             raise
         meta = parse_playlist_meta(obj, me_id)
         if not meta.readable:
             raise PlaylistNotFound(
-                SPOTIFY,
+                SERVICE,
                 f'Spotify playlist "{meta.name}" can\'t be read: '
                 "you no longer own or collaborate on it",
             )
         if not meta.version_token:
-            raise _no_version(meta.name)
+            raise E.no_version(meta.name)
         total = meta.track_count
         if total is None:
-            raise ReadFailed(SPOTIFY, f'Spotify did not say how long "{meta.name}" is')
+            raise E.no_length(meta.name)
 
         raw = await self._read_items(playlist_id, meta.name, total)
         for n, entry in enumerate(raw, start=1):
             if entry.item is None or not entry.item.get("uri"):
                 raise ReadFailed(
-                    SPOTIFY,
+                    SERVICE,
                     f"Spotify returned a song it can't identify at position {n}",
                 )
 
         check = await self._get(url, {"fields": "snapshot_id"})
         if not check.get("snapshot_id"):
-            raise _no_version(meta.name)
+            raise E.no_version(meta.name)
         if check.get("snapshot_id") != meta.version_token:
-            raise ReadFailed(
-                SPOTIFY,
-                f'Spotify playlist "{meta.name}" changed while it was being read; '
-                "it will be read again next run",
-            )
+            raise E.changed_during_read(meta.name)
 
         entries = await self._entries(raw)
         return PlaylistSnapshot(
@@ -158,42 +161,32 @@ class SpotifyConnector:
         items: list[RawItem] = []
         url: str | None = f"{API_BASE}/playlists/{playlist_id}/items"
         params: dict[str, str | int] | None = {
-            "limit": _PAGE,
+            "limit": LIMITS.page_size,
             "offset": 0,
             "additional_types": "track,episode",
         }
         while url is not None:
             page = parse_items_page(await self._get(url, params))
             if page.total != total:
-                raise ReadFailed(
-                    SPOTIFY,
-                    f'Spotify reported {page.total} songs in "{name}" after '
-                    f"reporting {total}; it will be read again next run",
-                )
+                raise E.total_moved(page.total, total, name)
             if page.next_url is not None and not page.items:
-                raise ReadFailed(SPOTIFY, f'Spotify returned an empty page of "{name}"')
+                raise E.empty_page(name)
             items.extend(page.items)
             if len(items) > total:
                 break
             url, params = page.next_url, None
         if len(items) != total:
-            raise ReadFailed(
-                SPOTIFY,
-                f'Spotify returned {len(items)} of {total} songs in "{name}"',
-            )
+            raise E.short(len(items), total, name)
         return items
 
     async def _entries(self, raw: Sequence[RawItem]) -> tuple[PlaylistEntry, ...]:
-        hashes: dict[str, str | None] = {}
-        if self._artwork is not None:
-            urls = [track_artwork_url(r.item) for r in raw if r.item is not None]
-            hashes = await self._artwork.hash_many(urls)
+        urls = [track_artwork_url(r.item) if r.item is not None else None for r in raw]
+        hashes = await hashes_for(self._artwork, urls)
         entries: list[PlaylistEntry] = []
-        for r in raw:
-            art = track_artwork_url(r.item) if r.item is not None else None
-            parsed = parse_track(r.item, hashes.get(art) if art else None)
+        for r, artwork_hash in zip(raw, hashes, strict=True):
+            parsed = parse_track(r.item, artwork_hash)
             if parsed is None:  # checked by the caller; kept for the type checker
-                raise ReadFailed(SPOTIFY, "Spotify returned a song it can't identify")
+                raise ReadFailed(SERVICE, "Spotify returned a song it can't identify")
             entries.append(PlaylistEntry(parsed, r.added_at))
         return tuple(entries)
 
@@ -210,12 +203,12 @@ class SpotifyConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("a search") from None
+            raise E.not_understood("a search") from None
 
     async def _search(self, q: str) -> list[Track]:
         body = await self._get(
             f"{API_BASE}/search",
-            {"q": q, "type": "track", "limit": _SEARCH_LIMIT, "market": "from_token"},
+            {"q": q, "type": "track", "limit": SEARCH_LIMIT, "market": "from_token"},
         )
         items = (body.get("tracks") or {}).get("items") or []
         found = (parse_track(obj) for obj in items if isinstance(obj, Mapping))
@@ -241,11 +234,7 @@ class SpotifyConnector:
         except HttpFailure as e:
             raise write_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SPOTIFY,
-                "Spotify's reply to creating a playlist was not understood",
-                True,
-            ) from None
+            raise E.create_not_understood() from None
         if draft.cover_url:
             # The playlist exists, so its meta must be returned. A cover that
             # fails here is not retried until the source cover changes.
@@ -253,7 +242,7 @@ class SpotifyConnector:
                 await self._upload_cover(meta.playlist_id, draft.cover_url)
         return meta
 
-    async def apply(self, playlist_id: str, op: _Op) -> None:
+    async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         match op:
             case AddTracks():
                 await self._add(playlist_id, op)
@@ -283,9 +272,7 @@ class SpotifyConnector:
         try:
             snap = await self.read_playlist(playlist_id)
         except ReadFailed as e:
-            raise WriteFailed(
-                SPOTIFY, e.message, False, auth_required=e.auth_required
-            ) from None
+            raise nothing_sent(e) from None
         return snap.track_ids
 
     async def _remove(self, playlist_id: str, op: RemoveTracks) -> None:
@@ -293,64 +280,65 @@ class SpotifyConnector:
         try:
             plan = plan_removal(current, op.removals)
         except ValueError:
-            raise _changed() from None
+            raise E.changed() from None
         for _, ids in plan.reinserts:
             if any(u.startswith(_LOCAL) for u in ids):
                 raise WriteFailed(
-                    SPOTIFY,
+                    SERVICE,
                     "Spotify can't remove only some copies of a local file",
                     False,
                 )
+        # Delete every copy, then put back the copies that stay, one request
+        # at a time: a failure after the first is maybe applied.
+        deletes = plan.delete_uris
+        requests: list[tuple[str, dict[str, Any]]] = [
+            ("DELETE", {"items": [{"uri": u} for u in deletes[i : i + _BATCH]]})
+            for i in range(0, len(deletes), _BATCH)
+        ]
+        for position, ids in plan.reinserts:
+            requests.extend(
+                ("POST", {"uris": list(ids[i : i + _BATCH]), "position": position + i})
+                for i in range(0, len(ids), _BATCH)
+            )
         url = f"{API_BASE}/playlists/{playlist_id}/items"
-        sent = False
+
+        async def send(chunk: Sequence[tuple[str, dict[str, Any]]]) -> None:
+            ((method, body),) = chunk
+            # Deleting every copy again changes nothing; inserting again would.
+            await self._api.request(
+                method, url, idempotent=method == "DELETE", json=body
+            )
+
         try:
-            for start in range(0, len(plan.delete_uris), _BATCH):
-                chunk = plan.delete_uris[start : start + _BATCH]
-                await self._api.request(
-                    "DELETE",
-                    url,
-                    idempotent=True,
-                    json={"items": [{"uri": u} for u in chunk]},
-                )
-                sent = True
-            for position, ids in plan.reinserts:
-                for start in range(0, len(ids), _BATCH):
-                    await self._api.request(
-                        "POST",
-                        url,
-                        idempotent=False,
-                        json={
-                            "uris": list(ids[start : start + _BATCH]),
-                            "position": position + start,
-                        },
-                    )
-                    sent = True
+            await apply_in_batches(requests, 1, send)
         except HttpFailure as e:
-            raise write_failed(e, maybe_applied=True if sent else None) from None
+            raise write_failed(e) from None
 
     async def _reorder(self, playlist_id: str, op: Reorder) -> None:
         current = await self._current_ids(playlist_id)
         try:
             moves = plan_moves(current, op.order)
         except ValueError:
-            raise _changed() from None
+            raise E.changed() from None
         url = f"{API_BASE}/playlists/{playlist_id}/items"
-        sent = False
-        try:
-            for move in moves:
-                await self._api.request(
-                    "PUT",
-                    url,
-                    idempotent=False,
-                    json={
-                        "range_start": move.range_start,
-                        "insert_before": move.insert_before,
-                        "range_length": 1,
-                    },
-                )
-                sent = True
+
+        async def send(chunk: Sequence[Move]) -> None:
+            (move,) = chunk
+            await self._api.request(
+                "PUT",
+                url,
+                idempotent=False,
+                json={
+                    "range_start": move.range_start,
+                    "insert_before": move.insert_before,
+                    "range_length": 1,
+                },
+            )
+
+        try:  # one move per request: a failure after the first is maybe applied
+            await apply_in_batches(moves, 1, send)
         except HttpFailure as e:
-            raise write_failed(e, maybe_applied=True if sent else None) from None
+            raise write_failed(e) from None
 
     async def _update_metadata(self, playlist_id: str, op: UpdateMetadata) -> None:
         draft = op.draft
@@ -407,10 +395,7 @@ class SpotifyConnector:
         self, url: str, params: Mapping[str, str | int] | None
     ) -> Mapping[str, Any]:
         response = await self._api.request("GET", url, idempotent=True, params=params)
-        body = response.json()
-        if not isinstance(body, Mapping):
-            raise ValueError("not a JSON object")
-        return body
+        return json_object(response)
 
 
 def _next(body: Mapping[str, Any]) -> str | None:
@@ -420,20 +405,3 @@ def _next(body: Mapping[str, Any]) -> str | None:
 
 def _unquote(text: str) -> str:
     return text.replace('"', "")
-
-
-def _changed() -> WriteFailed:
-    return WriteFailed(
-        SPOTIFY,
-        "The Spotify playlist changed since it was planned; it will be replanned",
-        False,
-    )
-
-
-def _no_version(name: str) -> ReadFailed:
-    # Without a snapshot_id a change during the read could go unnoticed.
-    return ReadFailed(SPOTIFY, f'Spotify did not give a version of "{name}"')
-
-
-def _not_understood(what: str) -> ReadFailed:
-    return ReadFailed(SPOTIFY, f"Spotify's reply for {what} was not understood")

@@ -8,6 +8,7 @@ from functools import partial
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from linersync.application.settings import AppSettings
 from linersync.domain.sync import SyncGroup, SyncStatus
 
 log = logging.getLogger(__name__)
@@ -60,16 +61,26 @@ class SyncScheduler:
         if self.aps.running:
             self.aps.shutdown(wait=False)
 
+    def _trigger(self, expr: str, what: str) -> CronTrigger | None:
+        """The expression's trigger, or None (logged) when it doesn't parse."""
+        try:
+            return CronTrigger.from_crontab(expr, timezone=self._timezone)
+        except ValueError:
+            log.warning("skipping %s: invalid schedule %r", what, expr)
+            return None
+
+    def reconcile_all(self, groups: Sequence[SyncGroup], settings: AppSettings) -> None:
+        """Schedule the syncs and the backup from the stored settings."""
+        self.reconcile(groups, settings.default_schedule)
+        self.schedule_backup(settings.backup_schedule)
+
     def reconcile(self, groups: Sequence[SyncGroup], default_schedule: str) -> None:
         wanted: set[str] = set()
         for g in groups:
             if g.status is not SyncStatus.ACTIVE:
                 continue
-            expr = g.schedule or default_schedule
-            try:
-                trigger = CronTrigger.from_crontab(expr, timezone=self._timezone)
-            except ValueError:
-                log.warning("skipping sync %s: invalid schedule %r", g.sync_id, expr)
+            trigger = self._trigger(g.schedule or default_schedule, f"sync {g.sync_id}")
+            if trigger is None:
                 continue
             job_id = _PREFIX + g.sync_id
             wanted.add(job_id)
@@ -78,9 +89,6 @@ class SyncScheduler:
                 trigger,
                 id=job_id,
                 replace_existing=True,
-                coalesce=COALESCE,
-                max_instances=MAX_INSTANCES,
-                misfire_grace_time=MISFIRE_GRACE_SECONDS,
             )
         for job in self.aps.get_jobs():
             if job.id.startswith(_PREFIX) and job.id not in wanted:
@@ -88,24 +96,13 @@ class SyncScheduler:
 
     def schedule_backup(self, expr: str | None) -> None:
         """Set, replace or (None or an invalid expression) remove the backup job."""
-        trigger: CronTrigger | None = None
-        if expr is not None:
-            try:
-                trigger = CronTrigger.from_crontab(expr, timezone=self._timezone)
-            except ValueError:
-                log.warning("skipping backup schedule: invalid expression %r", expr)
+        trigger = None if expr is None else self._trigger(expr, "backup")
         if trigger is None:
             if self.aps.get_job(_BACKUP_ID) is not None:
                 self.aps.remove_job(_BACKUP_ID)
             return
         self.aps.add_job(
-            self._fire_backup,
-            trigger,
-            id=_BACKUP_ID,
-            replace_existing=True,
-            coalesce=COALESCE,
-            max_instances=MAX_INSTANCES,
-            misfire_grace_time=MISFIRE_GRACE_SECONDS,
+            self._fire_backup, trigger, id=_BACKUP_ID, replace_existing=True
         )
 
     def next_backup_at(self) -> datetime | None:

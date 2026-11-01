@@ -4,7 +4,8 @@ import { Link } from "react-router";
 import { api, call } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { BackupServiceOut } from "@/api/types";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
+import { Section } from "@/components/Section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,20 +13,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { selectClass } from "@/features/pickers/ServiceSelect";
 import { formatDateTime } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
 
 export function PlaylistsTable({ services }: { services: BackupServiceOut[] }) {
   const [tab, setTab] = useState<"live" | "archive">("live");
   const [service, setService] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const archived = tab === "archive";
+  const filter = { ...(service ? { service } : {}), archived };
   const playlists = useQuery({
-    queryKey: keys.backupPlaylists({ ...(service ? { service } : {}), archived }),
-    queryFn: () =>
-      call(
-        api.GET("/api/backups/playlists", {
-          params: { query: { ...(service ? { service } : {}), archived } },
-        }),
-      ),
+    queryKey: keys.backupPlaylists(filter),
+    queryFn: () => call(api.GET("/api/backups/playlists", { params: { query: filter } })),
   });
   const nameOf = (id: string) => services.find((s) => s.service === id)?.display_name ?? id;
   const rows = playlists.data ?? [];
@@ -37,10 +35,7 @@ export function PlaylistsTable({ services }: { services: BackupServiceOut[] }) {
   }
 
   return (
-    <section aria-labelledby="playlists" className="space-y-3">
-      <h2 id="playlists" className="text-lg font-semibold">
-        Playlists
-      </h2>
+    <Section title="Playlists">
       <Tabs
         value={tab}
         onValueChange={(v) => {
@@ -92,9 +87,7 @@ export function PlaylistsTable({ services }: { services: BackupServiceOut[] }) {
           </Button>
         </div>
         <TabsContent value={tab}>
-          {playlists.isError ? (
-            <ErrorNotice error={playlists.error} onRetry={() => void playlists.refetch()} />
-          ) : null}
+          <QueryError query={playlists} />
           {playlists.data && rows.length === 0 ? (
             <p className="text-muted-foreground">{archived ? "Nothing archived yet" : "Nothing backed up yet"}</p>
           ) : null}
@@ -134,7 +127,7 @@ export function PlaylistsTable({ services }: { services: BackupServiceOut[] }) {
                     </TableCell>
                     <TableCell className="space-x-2">
                       <Link
-                        className="text-primary underline underline-offset-4"
+                        className={linkClass}
                         to={`/backup/playlists/${p.entry_id}`}
                       >
                         {p.name}
@@ -154,6 +147,6 @@ export function PlaylistsTable({ services }: { services: BackupServiceOut[] }) {
           ) : null}
         </TabsContent>
       </Tabs>
-    </section>
+    </Section>
   );
 }

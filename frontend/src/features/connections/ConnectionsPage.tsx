@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ServiceGrid } from "./ServiceGrid";
 import { useConnections } from "./useConnections";
@@ -11,7 +11,7 @@ export function ConnectionsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Connections</h1>
       {connections.isError ? (
-        <ErrorNotice error={connections.error} onRetry={() => void connections.refetch()} />
+        <QueryError query={connections} />
       ) : connections.data ? (
         <>
           {connections.data.load_errors.map((e) => (

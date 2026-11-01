@@ -86,6 +86,10 @@ class NotSetUp(ValueError):
     """The service has no stored credentials yet."""
 
 
+class WrongSetup(ValueError):
+    """The service signs in some other way than the step asked for."""
+
+
 @dataclass(frozen=True, slots=True)
 class _PendingOAuth:
     service: ServiceId
@@ -165,9 +169,22 @@ class ConnectionManager:
             raise NotSetUp(f"Set up {name} first")
         return stored
 
+    def _plugin_as[P](self, service: ServiceId, kind: type[P], how: str) -> P:
+        """The plugin as a `kind` setup, else WrongSetup ("doesn't use `how`").
+        `kind` is a runtime-checkable Protocol, which mypy only accepts as
+        `type[P]` with an ignore at the call (python/mypy#4717)."""
+        plugin = self.plugin(service)
+        if not isinstance(plugin, kind):
+            raise WrongSetup(f"{plugin.display_name} doesn't use {how}")
+        return plugin
+
     def list(self) -> list[ConnectionInfo]:
         infos = [self.info(service) for service in self._registry.plugins]
         return sorted(infos, key=lambda i: (i.display_name.casefold(), i.service))
+
+    def set_up(self) -> builtins.list[ConnectionInfo]:
+        """The services with stored credentials, in `list` order."""
+        return [i for i in self.list() if i.status is not ConnectionStatus.NOT_SET_UP]
 
     def info(self, service: ServiceId) -> ConnectionInfo:
         plugin = self.plugin(service)
@@ -254,23 +271,18 @@ class ConnectionManager:
         except Exception as e:  # noqa: BLE001 - plugin code; never echo its text
             logger.warning("%s connection test raised %s", service, type(e).__name__)
             result = ConnectionTest(False, "The connection test failed")
-        now = self._clock.now()
-        if result.ok:
-            record = ConnectionRecord(
-                ConnectionStatus.CONNECTED, result.message, result.account_name, now
-            )
-        else:
-            record = ConnectionRecord(
-                ConnectionStatus.FAILING, result.message, None, now
-            )
+        record = ConnectionRecord(
+            ConnectionStatus.CONNECTED if result.ok else ConnectionStatus.FAILING,
+            result.message,
+            result.account_name if result.ok else None,
+            self._clock.now(),
+        )
         self._records.save(service, record)
         return result
 
     # -- OAuth ------------------------------------------------------------
     def start_oauth(self, service: ServiceId) -> str:
-        plugin = self.plugin(service)
-        if not isinstance(plugin, OAuthSetup):
-            raise ValueError(f"{plugin.display_name} doesn't use a sign-in link")
+        plugin = self._plugin_as(service, OAuthSetup, "a sign-in link")  # type: ignore[type-abstract]
         stored = self._require_set_up(service)
         now = self._clock.now()
         self._pending = {s: p for s, p in self._pending.items() if p.expires > now}
@@ -311,10 +323,7 @@ class ConnectionManager:
 
     # -- device code ------------------------------------------------------
     def _device(self, service: ServiceId) -> DeviceCodeSetup:
-        plugin = self.plugin(service)
-        if not isinstance(plugin, DeviceCodeSetup):
-            raise ValueError(f"{plugin.display_name} doesn't use a device code")
-        return plugin
+        return self._plugin_as(service, DeviceCodeSetup, "a device code")  # type: ignore[type-abstract]
 
     def _pending_device(self, service: ServiceId) -> _PendingDevice | None:
         """The unexpired pending sign-in, from memory or from before a restart."""
@@ -378,10 +387,7 @@ class ConnectionManager:
 
     # -- browser sign-in --------------------------------------------------
     def _browser(self, service: ServiceId) -> BrowserSignInSetup:
-        plugin = self.plugin(service)
-        if not isinstance(plugin, BrowserSignInSetup):
-            raise ValueError(f"{plugin.display_name} doesn't use a browser sign-in")
-        return plugin
+        return self._plugin_as(service, BrowserSignInSetup, "a browser sign-in")  # type: ignore[type-abstract]
 
     def sign_in_config(self, service: ServiceId) -> dict[str, str]:
         plugin = self._browser(service)
@@ -415,16 +421,21 @@ class ConnectionManager:
                 logger.warning(
                     "%s connector failed to start: %s", service, type(e).__name__
                 )
-                self._mark_failed_start(service, plugin.display_name)
+                self._mark(
+                    service,
+                    ConnectionStatus.FAILING,
+                    f"Couldn't start the {plugin.display_name} connector",
+                )
         return built
 
-    def _mark_failed_start(self, service: ServiceId, display_name: str) -> None:
+    def _mark(self, service: ServiceId, status: ConnectionStatus, message: str) -> None:
+        """Record a problem, keeping the account name from the last check."""
         previous = self._records.get(service)
         self._records.save(
             service,
             ConnectionRecord(
-                ConnectionStatus.FAILING,
-                f"Couldn't start the {display_name} connector",
+                status,
+                message,
                 previous.account_name if previous else None,
                 self._clock.now(),
             ),
@@ -437,18 +448,12 @@ class ConnectionManager:
 
     def on_auth_required(self, service: ServiceId) -> None:
         plugin = self._registry.plugins.get(service)
-        if plugin is None:
-            return
-        previous = self._records.get(service)
-        self._records.save(
-            service,
-            ConnectionRecord(
+        if plugin is not None:
+            self._mark(
+                service,
                 ConnectionStatus.NEEDS_SIGN_IN,
                 f"Sign in to {plugin.display_name} again",
-                previous.account_name if previous else None,
-                self._clock.now(),
-            ),
-        )
+            )
 
     async def playlists(self, service: ServiceId) -> builtins.list[PlaylistMeta]:
         plugin = self.plugin(service)

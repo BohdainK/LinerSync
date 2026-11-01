@@ -23,6 +23,9 @@ class PlaylistMeta:
     unreadable_reason: str | None = None
     track_count: int | None = None
 
+    def draft(self) -> "PlaylistDraft":
+        return PlaylistDraft(self.name, self.description, self.cover_url)
+
 
 @dataclass(frozen=True, slots=True)
 class PlaylistSnapshot:

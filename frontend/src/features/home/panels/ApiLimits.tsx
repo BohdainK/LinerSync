@@ -1,11 +1,11 @@
 import type { LimitOut } from "@/api/types";
+import { Section } from "@/components/Section";
 import { formatRelative } from "@/lib/format";
 
 export function ApiLimits({ limits }: { limits: LimitOut[] }) {
   if (limits.length === 0) return null;
   return (
-    <section aria-labelledby="home-limits" className="space-y-3">
-      <h2 id="home-limits" className="text-lg font-semibold">API limits today</h2>
+    <Section title="API limits today">
       <ul className="space-y-1 text-sm">
         {limits.map((l) => (
           <li key={l.service}>
@@ -16,6 +16,6 @@ export function ApiLimits({ limits }: { limits: LimitOut[] }) {
           </li>
         ))}
       </ul>
-    </section>
+    </Section>
   );
 }

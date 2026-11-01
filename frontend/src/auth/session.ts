@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { api, call } from "@/api/client";
 import { keys } from "@/api/keys";
 
-export type Session = { signed_in: boolean };
+type Session = { signed_in: boolean };
 
 export function useSession(): UseQueryResult<Session> {
   return useQuery({

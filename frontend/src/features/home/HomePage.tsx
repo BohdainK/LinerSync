@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, call } from "@/api/client";
 import { keys } from "@/api/keys";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
 import { ApiLimits } from "./panels/ApiLimits";
 import { NeedsAttention } from "./panels/NeedsAttention";
 import { NextUp } from "./panels/NextUp";
@@ -13,7 +13,7 @@ export function HomePage() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Home</h1>
-      {home.isError ? <ErrorNotice error={home.error} onRetry={() => void home.refetch()} /> : null}
+      <QueryError query={home} />
       {home.data ? (
         <>
           <RunningNow running={home.data.running} queued={home.data.queued} />

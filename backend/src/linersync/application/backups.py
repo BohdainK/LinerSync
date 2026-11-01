@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime
 
 from linersync.application.settings import DEFAULT_VERSIONS_KEPT
 from linersync.domain.backups import (
@@ -34,10 +33,6 @@ def _no_progress(done: int, total: int, message: str) -> None:
 
 def _ignore(run: BackupRun) -> None:
     return None
-
-
-def _detail(e: ConnectorError) -> str:
-    return e.message or str(e)
 
 
 class _AuthRequired(Exception):
@@ -128,7 +123,7 @@ class BackupService:
         except ConnectorError as e:
             if e.auth_required:
                 return sign_in
-            return f"Couldn't list the playlists: {_detail(e)}"
+            return f"Couldn't list the playlists: {e.detail}"
         # A playlist listed twice is backed up once (the first listing wins).
         unique: dict[str, PlaylistMeta] = {}
         for meta in listed:
@@ -186,7 +181,7 @@ class BackupService:
             except ConnectorError as e:
                 if e.auth_required:
                     raise _AuthRequired from e
-                errors.append(f"{meta.name}: couldn't read it: {_detail(e)}")
+                errors.append(f"{meta.name}: couldn't read it: {e.detail}")
                 continue
             if not snap.is_complete:
                 reason = f"; {snap.missing_reason}" if snap.missing_reason else ""
@@ -295,12 +290,8 @@ class BackupService:
                 updated = replace(entry, missing_since=now)
             else:
                 updated = replace(
-                    entry, archived_at=now, missing_since=_or_now(entry, now)
+                    entry, archived_at=now, missing_since=entry.missing_since or now
                 )
                 archived += 1
             self._store.save_entry(updated)
         return archived
-
-
-def _or_now(entry: BackedUpPlaylist, now: datetime) -> datetime:
-    return entry.missing_since if entry.missing_since is not None else now

@@ -1,13 +1,13 @@
 /** D7: browser sign-in handlers, keyed by service id. */
-export type SignInHandler = (config: Record<string, string>) => Promise<Record<string, string>>;
+type SignInHandler = (config: Record<string, string>) => Promise<Record<string, string>>;
 
-export type MusicKitConfig = { developerToken: string; app: { name: string; build: string } };
-export type MusicKitInstance = { authorize(): Promise<string> };
+type MusicKitConfig = { developerToken: string; app: { name: string; build: string } };
+type MusicKitInstance = { authorize(): Promise<string> };
 export type MusicKitGlobal = {
   configure(config: MusicKitConfig): MusicKitInstance | Promise<MusicKitInstance>;
 };
 
-export const MUSICKIT_URL = "https://js-cdn.music.apple.com/musickit/v3/musickit.js";
+const MUSICKIT_URL = "https://js-cdn.music.apple.com/musickit/v3/musickit.js";
 
 type WithMusicKit = { MusicKit?: MusicKitGlobal };
 

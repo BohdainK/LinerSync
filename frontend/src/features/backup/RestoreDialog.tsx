@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useConnections } from "@/features/connections/useConnections";
+import { canAdd, useConnections } from "@/features/connections/useConnections";
 import { ServiceSelect } from "@/features/pickers/ServiceSelect";
 import { isActive, useCancelJob, useJob } from "@/live/useJob";
 
@@ -28,7 +28,7 @@ export function RestoreDialog(props: {
   const [chosen, setDestination] = useState(props.defaultService);
   const connections = useConnections();
   // A read-only service (e.g. Jellyfin) can't be restored to, so it's never the default.
-  const readOnly = connections.data?.services.some((s) => s.service === chosen && !s.capabilities.includes("add"));
+  const readOnly = connections.data?.services.some((s) => s.service === chosen && !canAdd(s));
   const destination = readOnly ? "" : chosen;
   const [dryRun, setDryRun] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);

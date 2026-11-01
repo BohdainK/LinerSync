@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from linersync.adapters.connectors.kit.parsing import attributes
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -44,7 +45,7 @@ def parse_library_song(
     url: str | None = None,
     artwork_hash: str | None = None,
 ) -> Track:
-    attrs = obj.get("attributes") or {}
+    attrs = attributes(obj)
     catalog_id = (attrs.get("playParams") or {}).get("catalogId")
     return _track(str(catalog_id or obj["id"]), attrs, isrc, url, artwork_hash)
 
@@ -52,14 +53,14 @@ def parse_library_song(
 def parse_catalog_song(
     obj: Mapping[str, Any], artwork_hash: str | None = None
 ) -> Track:
-    attrs = obj.get("attributes") or {}
+    attrs = attributes(obj)
     return _track(
         str(obj["id"]), attrs, attrs.get("isrc"), attrs.get("url"), artwork_hash
     )
 
 
 def parse_library_playlist(obj: Mapping[str, Any]) -> PlaylistMeta:
-    attrs = obj.get("attributes") or {}
+    attrs = attributes(obj)
     return PlaylistMeta(
         service=APPLE,
         playlist_id=str(obj["id"]),

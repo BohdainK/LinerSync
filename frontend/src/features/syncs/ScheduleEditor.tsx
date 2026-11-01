@@ -2,6 +2,7 @@ import { useState } from "react";
 import { errorMessage } from "@/api/client";
 import type { SyncOut } from "@/api/types";
 import { ErrorNotice } from "@/components/ErrorNotice";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { formatRelative } from "@/lib/format";
 import { ScheduleField } from "./ScheduleField";
@@ -13,10 +14,7 @@ export function ScheduleEditor({ sync }: { sync: SyncOut }) {
   const invalid = patch.error?.status === 422;
   const empty = value !== null && value.trim() === "";
   return (
-    <section aria-labelledby="sync-schedule" className="space-y-3">
-      <h2 id="sync-schedule" className="text-lg font-semibold">
-        Schedule
-      </h2>
+    <Section title="Schedule">
       <ScheduleField
         defaultSchedule={sync.effective_schedule}
         value={value}
@@ -36,6 +34,6 @@ export function ScheduleEditor({ sync }: { sync: SyncOut }) {
       <p className="text-sm text-muted-foreground">
         {sync.next_run_at ? `Next run ${formatRelative(sync.next_run_at)}` : "No run scheduled"}
       </p>
-    </section>
+    </Section>
   );
 }

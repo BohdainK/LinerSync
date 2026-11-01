@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from linersync.adapters.connectors.kit.parsing import as_mapping
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -56,15 +57,11 @@ _COVER_SIZES = ("small", "thumbnail", "large")
 _PLAYLIST_IMAGES = ("images300", "images150", "images")
 
 
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
-
-
 def _artists(item: Mapping[str, Any]) -> tuple[str, ...]:
     """The performer, then the other main and featured artists that the
     ``performers`` credit line names ("Name, Role, Role - Name, Role")."""
     names: list[str] = []
-    main = _mapping(item.get("performer")).get("name")
+    main = as_mapping(item.get("performer")).get("name")
     if main:
         names.append(str(main))
     for credit in str(item.get("performers") or "").split(" - "):
@@ -87,7 +84,7 @@ def _is_role(part: str) -> bool:
 
 
 def artwork_url(item: Mapping[str, Any]) -> str | None:
-    image = _mapping(_mapping(item.get("album")).get("image"))
+    image = as_mapping(as_mapping(item.get("album")).get("image"))
     return next((str(image[s]) for s in _COVER_SIZES if image.get(s)), None)
 
 
@@ -96,7 +93,7 @@ def parse_track(item: Mapping[str, Any], artwork_hash: str | None = None) -> Tra
     title = str(item.get("title") or "")
     if item.get("version"):
         title = f"{title} ({item['version']})"
-    album = _mapping(item.get("album")).get("title")
+    album = as_mapping(item.get("album")).get("title")
     duration = item.get("duration")
     return Track(
         service=SERVICE,
@@ -114,7 +111,7 @@ def parse_track(item: Mapping[str, Any], artwork_hash: str | None = None) -> Tra
 def parse_playlist_meta(obj: Mapping[str, Any], me: str | None) -> PlaylistMeta:
     """``me`` is the signed-in user's id; when unknown, the playlist counts as
     owned and a write to someone else's playlist fails when it's made."""
-    owner = _mapping(obj.get("owner")).get("id")
+    owner = as_mapping(obj.get("owner")).get("id")
     cover = next(
         (
             str(images[0])
@@ -149,7 +146,7 @@ class RawItem:
 
 def parse_tracks_page(obj: Mapping[str, Any]) -> tuple[list[RawItem], int | None]:
     """A page of ``playlist/get?extra=tracks``: its items and the reported total."""
-    block = _mapping(obj.get("tracks"))
+    block = as_mapping(obj.get("tracks"))
     raw: list[RawItem] = []
     for item in block.get("items") or []:
         added = item.get("created_at")
@@ -167,6 +164,6 @@ def parse_tracks_page(obj: Mapping[str, Any]) -> tuple[list[RawItem], int | None
 
 def parse_account(body: Mapping[str, Any]) -> tuple[str | None, str | None]:
     """The (user id, login) a ``playlist/getUserPlaylists`` reply names."""
-    user = _mapping(body.get("user"))
+    user = as_mapping(body.get("user"))
     uid, login = user.get("id"), user.get("login")
     return (str(uid) if uid is not None else None, str(login) if login else None)

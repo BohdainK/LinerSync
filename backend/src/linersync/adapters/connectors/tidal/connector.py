@@ -13,15 +13,20 @@ from urllib.parse import quote
 
 import httpx
 
+from linersync.adapters.connectors.kit import SEARCH_LIMIT, PlaylistOp
+from linersync.adapters.connectors.kit.errors import Errors
 from linersync.adapters.connectors.kit.http import (
     HttpClient,
     HttpFailure,
     apply_in_batches,
+    json_object,
+    nothing_sent,
     read_failed,
     write_failed,
 )
-from linersync.adapters.connectors.kit.images import ArtworkHasher
-from linersync.adapters.connectors.tidal.moves import plan_moves
+from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
+from linersync.adapters.connectors.kit.ordering import at_positions
+from linersync.adapters.connectors.tidal.moves import Move, plan_moves
 from linersync.adapters.connectors.tidal.parse import (
     API_BASE,
     SERVICE,
@@ -45,7 +50,7 @@ from linersync.domain.playlists import (
 )
 from linersync.domain.tracks import Track, TrackQuery
 from linersync.ports.connector import ConnectorLimits
-from linersync.ports.errors import PlaylistNotFound, ReadFailed, WriteFailed
+from linersync.ports.errors import ReadFailed, WriteFailed
 from linersync.ports.runtime import Clock
 
 CAPABILITIES = frozenset(Capability) - {Capability.DELETE_PLAYLIST}
@@ -53,12 +58,11 @@ LIMITS = ConnectorLimits(page_size=50, add_batch_size=50, search_cost=2)
 
 JSON_API = "application/vnd.api+json"
 _ITEM_INCLUDE = "items.artists,items.albums.coverArt"
-_SEARCH_LIMIT = 10
 _BATCH = 50  # occurrences per add or remove
 _NAME_MAX = 250
 _DESCRIPTION_MAX = 500
 
-_Op = UpdateMetadata | AddTracks | Reorder | RemoveTracks
+E = Errors(SERVICE, "Tidal")
 
 
 class TidalConnector:
@@ -104,7 +108,7 @@ class TidalConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("your playlists") from None
+            raise E.not_understood("your playlists") from None
         return metas
 
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
@@ -114,7 +118,7 @@ class TidalConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood(f"playlist {playlist_id}") from None
+            raise E.not_understood(f"playlist {playlist_id}") from None
         return PlaylistSnapshot(
             meta, entries, expected_total=meta.track_count, taken_at=self._clock.now()
         )
@@ -130,16 +134,14 @@ class TidalConnector:
             doc = await self._get(url, {"countryCode": country, "include": "coverArt"})
         except HttpFailure as e:
             if e.status == 404:
-                raise PlaylistNotFound(
-                    SERVICE, f"Tidal has no playlist {playlist_id}"
-                ) from None
+                raise E.not_found(playlist_id) from None
             raise
         meta = parse_playlist_meta(doc["data"], Included(doc))
-        if not meta.version_token:
-            raise _no_version(meta.name)
+        if not meta.version_token:  # lastModifiedAt
+            raise E.no_version(meta.name)
         total = meta.track_count
         if total is None:
-            raise ReadFailed(SERVICE, f'Tidal did not say how long "{meta.name}" is')
+            raise E.no_length(meta.name)
 
         included = Included({})
         raw: list[RawItem] = []
@@ -151,42 +153,27 @@ class TidalConnector:
             items, link = parse_items_page(page)
             next_url, params = _follow(link, first), None
             if next_url is not None and not items:
-                raise ReadFailed(
-                    SERVICE, f'Tidal returned an empty page of "{meta.name}"'
-                )
+                raise E.empty_page(meta.name)
             included.add(page)
             raw.extend(items)
             if len(raw) > total:
-                raise ReadFailed(
-                    SERVICE,
-                    f'Tidal returned more songs than it reported in "{meta.name}"; '
-                    "it will be read again next run",
-                )
+                raise E.too_many(meta.name)
 
         check = await self._get(url, {"countryCode": country})
         if check["data"]["attributes"].get("lastModifiedAt") != meta.version_token:
-            raise ReadFailed(
-                SERVICE,
-                f'Tidal playlist "{meta.name}" changed while it was being read; '
-                "it will be read again next run",
-            )
+            raise E.changed_during_read(meta.name)
         return meta, raw, included
 
     async def _entries(
         self, raw: list[RawItem], included: Included
     ) -> tuple[PlaylistEntry, ...]:
-        available = [r for r in raw if r.resource is not None]
-        hashes: dict[str, str | None] = {}
-        if self._artwork is not None:
-            urls = [artwork_url(r.resource, included) for r in available if r.resource]
-            hashes = await self._artwork.hash_many(urls)
-        entries: list[PlaylistEntry] = []
-        for r in available:
-            assert r.resource is not None  # filtered above
-            art = artwork_url(r.resource, included)
-            track = parse_track(r.resource, included, hashes.get(art) if art else None)
-            entries.append(PlaylistEntry(track, r.added_at))
-        return tuple(entries)
+        available = [(r, r.resource) for r in raw if r.resource is not None]
+        urls = [artwork_url(res, included) for _, res in available]
+        hashes = await hashes_for(self._artwork, urls)
+        return tuple(
+            PlaylistEntry(parse_track(res, included, artwork_hash), r.added_at)
+            for (r, res), artwork_hash in zip(available, hashes, strict=True)
+        )
 
     async def search(self, query: TrackQuery) -> list[Track]:
         try:
@@ -207,7 +194,7 @@ class TidalConnector:
                     if isinstance(res, Mapping)
                 ]
                 if hits:
-                    return hits[:_SEARCH_LIMIT]
+                    return hits[:SEARCH_LIMIT]
             text = query.title
             if query.artists:
                 text += f" {query.artists[0]}"
@@ -221,11 +208,11 @@ class TidalConnector:
                 res = included.get(str(ref.get("type")), str(ref.get("id")))
                 if res is not None:
                     found.append(parse_track(res, included))
-            return found[:_SEARCH_LIMIT]
+            return found[:SEARCH_LIMIT]
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("a search") from None
+            raise E.not_understood("a search") from None
 
     # -- writes ------------------------------------------------------------
 
@@ -247,11 +234,9 @@ class TidalConnector:
         except HttpFailure as e:
             raise write_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SERVICE, "Tidal's reply to creating a playlist was not understood", True
-            ) from None
+            raise E.create_not_understood() from None
 
-    async def apply(self, playlist_id: str, op: _Op) -> None:
+    async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         match op:
             case AddTracks():
                 await self._add(playlist_id, op)
@@ -294,20 +279,10 @@ class TidalConnector:
         holding songs Tidal can't serve: positions would not line up."""
         try:
             meta, raw, _ = await self._read(playlist_id)
-        except HttpFailure as e:
-            raise WriteFailed(
-                SERVICE, e.message, False, auth_required=e.auth_required
-            ) from None
-        except ReadFailed as e:
-            raise WriteFailed(
-                SERVICE, e.message, False, auth_required=e.auth_required
-            ) from None
+        except (HttpFailure, ReadFailed) as e:
+            raise nothing_sent(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SERVICE,
-                f"Tidal's reply for playlist {playlist_id} was not understood",
-                False,
-            ) from None
+            raise E.write_not_understood(f"playlist {playlist_id}") from None
         if len(raw) != meta.track_count or any(r.resource is None for r in raw):
             raise WriteFailed(
                 SERVICE,
@@ -319,11 +294,11 @@ class TidalConnector:
 
     async def _remove(self, playlist_id: str, op: RemoveTracks) -> None:
         raw = await self._current_items(playlist_id)
-        refs: list[dict[str, Any]] = []
-        for r in op.removals:
-            if not 0 <= r.position < len(raw) or raw[r.position].track_id != r.track_id:
-                raise _changed()
-            refs.append(_occurrence(raw[r.position]))
+        try:
+            doomed = at_positions(raw, op.removals, lambda r: r.track_id)
+        except ValueError:
+            raise E.changed() from None
+        refs = [_occurrence(r) for r in doomed]
         url = self._items_url(playlist_id)
 
         async def send(chunk: Sequence[dict[str, Any]]) -> None:
@@ -339,21 +314,23 @@ class TidalConnector:
         try:
             moves = plan_moves([(r.track_id, r.item_id) for r in raw], op.order)
         except ValueError:
-            raise _changed() from None
+            raise E.changed() from None
         by_item = {r.item_id: r for r in raw}
         url = self._items_url(playlist_id)
-        sent = False
-        try:
-            for move in moves:
-                body: dict[str, Any] = {
-                    "data": [_occurrence(by_item[i]) for i in move.item_ids]
-                }
-                if move.before is not None:
-                    body["meta"] = {"positionBefore": move.before}
-                await self._send("PATCH", url, body)
-                sent = True
+
+        async def send(chunk: Sequence[Move]) -> None:
+            (move,) = chunk
+            body: dict[str, Any] = {
+                "data": [_occurrence(by_item[i]) for i in move.item_ids]
+            }
+            if move.before is not None:
+                body["meta"] = {"positionBefore": move.before}
+            await self._send("PATCH", url, body)
+
+        try:  # one move per request: a failure after the first is maybe applied
+            await apply_in_batches(moves, 1, send)
         except HttpFailure as e:
-            raise write_failed(e, maybe_applied=True if sent else None) from None
+            raise write_failed(e) from None
 
     async def _update_metadata(self, playlist_id: str, op: UpdateMetadata) -> None:
         try:
@@ -394,10 +371,7 @@ class TidalConnector:
         response = await self._api.request(
             "GET", url, idempotent=True, params=params, headers={"Accept": JSON_API}
         )
-        body = response.json()
-        if not isinstance(body, Mapping):
-            raise ValueError("not a JSON object")
-        return body
+        return json_object(response)
 
 
 def _details(draft: PlaylistDraft) -> dict[str, str]:
@@ -440,20 +414,3 @@ def _ref(track_id: str) -> dict[str, str]:
 
 def _occurrence(item: RawItem) -> dict[str, Any]:
     return {"id": item.ref_id, "type": item.ref_type, "meta": {"itemId": item.item_id}}
-
-
-def _changed() -> WriteFailed:
-    return WriteFailed(
-        SERVICE,
-        "The Tidal playlist changed since it was planned; it will be replanned",
-        False,
-    )
-
-
-def _no_version(name: str) -> ReadFailed:
-    # Without lastModifiedAt a change during the read could go unnoticed.
-    return ReadFailed(SERVICE, f'Tidal did not give a version of "{name}"')
-
-
-def _not_understood(what: str) -> ReadFailed:
-    return ReadFailed(SERVICE, f"Tidal's reply for {what} was not understood")

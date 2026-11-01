@@ -9,14 +9,19 @@ playlist again and fails if its length or update time moved.
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from linersync.adapters.connectors.kit import SEARCH_LIMIT, PlaylistOp
+from linersync.adapters.connectors.kit.errors import Errors
 from linersync.adapters.connectors.kit.http import (
     HttpClient,
     HttpFailure,
     apply_in_batches,
+    json_object,
+    nothing_sent,
     read_failed,
     write_failed,
 )
-from linersync.adapters.connectors.kit.images import ArtworkHasher
+from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
+from linersync.adapters.connectors.kit.ordering import at_positions
 from linersync.adapters.connectors.qobuz.parse import (
     API_BASE,
     SERVICE,
@@ -37,7 +42,7 @@ from linersync.domain.playlists import (
 )
 from linersync.domain.tracks import Track, TrackQuery
 from linersync.ports.connector import ConnectorLimits
-from linersync.ports.errors import PlaylistNotFound, ReadFailed, WriteFailed
+from linersync.ports.errors import ReadFailed, WriteFailed
 from linersync.ports.runtime import Clock
 
 # No REORDER: the web player's move endpoint couldn't be confirmed.
@@ -52,11 +57,9 @@ CAPABILITIES = frozenset(
 )
 LIMITS = ConnectorLimits(page_size=500, add_batch_size=50, search_cost=2)
 
-_PAGE = 500
 _BATCH = 50  # songs per add or remove
-_SEARCH_LIMIT = 10
 
-_Op = UpdateMetadata | AddTracks | Reorder | RemoveTracks
+E = Errors(SERVICE, "Qobuz")
 
 
 class QobuzConnector:
@@ -86,7 +89,8 @@ class QobuzConnector:
             offset = 0
             while True:
                 body = await self._get(
-                    "playlist/getUserPlaylists", {"offset": offset, "limit": _PAGE}
+                    "playlist/getUserPlaylists",
+                    {"offset": offset, "limit": LIMITS.page_size},
                 )
                 self._user_id = parse_account(body)[0] or self._user_id
                 block = body["playlists"]
@@ -100,7 +104,7 @@ class QobuzConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("your playlists") from None
+            raise E.not_understood("your playlists") from None
 
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
         try:
@@ -109,7 +113,7 @@ class QobuzConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood(f"playlist {playlist_id}") from None
+            raise E.not_understood(f"playlist {playlist_id}") from None
         return PlaylistSnapshot(
             meta, entries, expected_total=len(raw), taken_at=self._clock.now()
         )
@@ -120,36 +124,21 @@ class QobuzConnector:
         Each later page starts one back, at the last song already read: if
         that song moved, the playlist changed in between, even when its
         length didn't (a removal plus an add)."""
-        first: Mapping[str, Any] | None = None
-        total: int | None = None
+        first = await self._playlist_page(playlist_id, 0)
+        meta = parse_playlist_meta(first, self._user_id)
+        items, total = parse_tracks_page(first)
+        if total is None:
+            raise E.no_length(meta.name)
+        first_count = len(items)
         raw: list[RawItem] = []
         seen: set[str] = set()
         while True:
-            page = await self._playlist_page(playlist_id, max(len(raw) - 1, 0))
-            if first is None:
-                first = page
-            items, page_total = parse_tracks_page(page)
-            meta = parse_playlist_meta(first, self._user_id)
-            if page_total is None:
-                raise ReadFailed(
-                    SERVICE, f'Qobuz did not say how long "{meta.name}" is'
-                )
-            if total is None:
-                total = page_total
-            if raw:
-                if not items or items[0].playlist_track_id != raw[-1].playlist_track_id:
-                    raise _changed_during_read(meta.name)
-                items = items[1:]
-            if page_total != total or any(r.playlist_track_id in seen for r in items):
-                raise _changed_during_read(meta.name)
+            if any(r.playlist_track_id in seen for r in items):
+                raise E.changed_during_read(meta.name)
             seen.update(r.playlist_track_id for r in items)
             raw.extend(items)
             if len(raw) > total:
-                raise ReadFailed(
-                    SERVICE,
-                    f'Qobuz returned more songs than it reported in "{meta.name}"; '
-                    "it will be read again next run",
-                )
+                raise E.too_many(meta.name)
             if len(raw) == total:
                 break
             if not items:
@@ -157,10 +146,17 @@ class QobuzConnector:
                     SERVICE,
                     f'Qobuz returned fewer songs than it reported in "{meta.name}"',
                 )
-        if raw and len(raw) > len(parse_tracks_page(first)[0]):
+            page = await self._playlist_page(playlist_id, len(raw) - 1)
+            items, page_total = parse_tracks_page(page)
+            if page_total is None:
+                raise E.no_length(meta.name)
+            items = _after_overlap(items, raw[-1], meta.name)
+            if page_total != total:
+                raise E.changed_during_read(meta.name)
+        if len(raw) > first_count:
             check = await self._get("playlist/get", {"playlist_id": playlist_id})
             if _version(check) != _version(first):
-                raise _changed_during_read(meta.name)
+                raise E.changed_during_read(meta.name)
         return meta, raw
 
     async def _playlist_page(self, playlist_id: str, offset: int) -> Mapping[str, Any]:
@@ -168,27 +164,21 @@ class QobuzConnector:
             "playlist_id": playlist_id,
             "extra": "tracks",
             "offset": offset,
-            "limit": _PAGE,
+            "limit": LIMITS.page_size,
         }
         try:
             return await self._get("playlist/get", params)
         except HttpFailure as e:
             if e.status == 404:
-                raise PlaylistNotFound(
-                    SERVICE, f"Qobuz has no playlist {playlist_id}"
-                ) from None
+                raise E.not_found(playlist_id) from None
             raise
 
     async def _entries(self, raw: list[RawItem]) -> tuple[PlaylistEntry, ...]:
-        hashes: dict[str, str | None] = {}
-        if self._artwork is not None:
-            hashes = await self._artwork.hash_many([artwork_url(r.item) for r in raw])
-        entries: list[PlaylistEntry] = []
-        for r in raw:
-            art = artwork_url(r.item)
-            track = parse_track(r.item, hashes.get(art) if art else None)
-            entries.append(PlaylistEntry(track, r.added_at))
-        return tuple(entries)
+        hashes = await hashes_for(self._artwork, [artwork_url(r.item) for r in raw])
+        return tuple(
+            PlaylistEntry(parse_track(r.item, artwork_hash), r.added_at)
+            for r, artwork_hash in zip(raw, hashes, strict=True)
+        )
 
     async def search(self, query: TrackQuery) -> list[Track]:
         try:
@@ -200,18 +190,18 @@ class QobuzConnector:
                     if t.isrc is not None and t.isrc.upper() == wanted
                 ]
                 if hits:
-                    return hits[:_SEARCH_LIMIT]
+                    return hits[:SEARCH_LIMIT]
             text = query.title
             if query.artists:
                 text = f"{query.artists[0]} {text}"
-            return (await self._search(text))[:_SEARCH_LIMIT]
+            return (await self._search(text))[:SEARCH_LIMIT]
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("a search") from None
+            raise E.not_understood("a search") from None
 
     async def _search(self, text: str) -> list[Track]:
-        body = await self._get("track/search", {"query": text, "limit": _SEARCH_LIMIT})
+        body = await self._get("track/search", {"query": text, "limit": SEARCH_LIMIT})
         items = (body.get("tracks") or {}).get("items") or []
         return [parse_track(i) for i in items if isinstance(i, Mapping)]
 
@@ -234,11 +224,9 @@ class QobuzConnector:
         except HttpFailure as e:
             raise write_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SERVICE, "Qobuz's reply to creating a playlist was not understood", True
-            ) from None
+            raise E.create_not_understood() from None
 
-    async def apply(self, playlist_id: str, op: _Op) -> None:
+    async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         match op:
             case AddTracks():
                 await self._add(playlist_id, op)
@@ -271,29 +259,18 @@ class QobuzConnector:
         try:
             _, raw = await self._read(playlist_id)
         except (HttpFailure, ReadFailed) as e:
-            raise WriteFailed(
-                SERVICE, e.message, False, auth_required=e.auth_required
-            ) from None
+            raise nothing_sent(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SERVICE,
-                f"Qobuz's reply for playlist {playlist_id} was not understood",
-                False,
-            ) from None
+            raise E.write_not_understood(f"playlist {playlist_id}") from None
         return raw
 
     async def _remove(self, playlist_id: str, op: RemoveTracks) -> None:
         raw = await self._current_items(playlist_id)
-        occurrences: list[str] = []
-        for r in op.removals:
-            if not 0 <= r.position < len(raw) or raw[r.position].track_id != r.track_id:
-                raise WriteFailed(
-                    SERVICE,
-                    "The Qobuz playlist changed since it was planned; "
-                    "it will be replanned",
-                    False,
-                )
-            occurrences.append(raw[r.position].playlist_track_id)
+        try:
+            doomed = at_positions(raw, op.removals, lambda r: r.track_id)
+        except ValueError:
+            raise E.changed() from None
+        occurrences = [r.playlist_track_id for r in doomed]
 
         async def send(chunk: Sequence[str]) -> None:
             # Ids name occurrences, so a replay removes nothing more.
@@ -333,7 +310,7 @@ class QobuzConnector:
             )
         except HttpFailure as e:
             raise _app_id_rejected(e) from None
-        return _object(response.json())
+        return json_object(response)
 
     async def _post(
         self, endpoint: str, form: Mapping[str, str], *, idempotent: bool
@@ -344,7 +321,7 @@ class QobuzConnector:
             )
         except HttpFailure as e:
             raise _app_id_rejected(e) from None
-        return _object(response.json())
+        return json_object(response)
 
 
 def _app_id_rejected(e: HttpFailure) -> HttpFailure:
@@ -356,23 +333,13 @@ def _app_id_rejected(e: HttpFailure) -> HttpFailure:
     return e
 
 
-def _object(body: Any) -> Mapping[str, Any]:
-    if not isinstance(body, Mapping):
-        raise ValueError("not a JSON object")
-    return body
+def _after_overlap(items: list[RawItem], last: RawItem, name: str) -> list[RawItem]:
+    """A later page without its first song, which must be ``last``, the song
+    already read: if that moved, the playlist changed in between."""
+    if not items or items[0].playlist_track_id != last.playlist_track_id:
+        raise E.changed_during_read(name)
+    return items[1:]
 
 
 def _version(obj: Mapping[str, Any]) -> tuple[Any, Any]:
     return obj.get("tracks_count"), obj.get("updated_at")
-
-
-def _changed_during_read(name: str) -> ReadFailed:
-    return ReadFailed(
-        SERVICE,
-        f'Qobuz playlist "{name}" changed while it was being read; '
-        "it will be read again next run",
-    )
-
-
-def _not_understood(what: str) -> ReadFailed:
-    return ReadFailed(SERVICE, f"Qobuz's reply for {what} was not understood")

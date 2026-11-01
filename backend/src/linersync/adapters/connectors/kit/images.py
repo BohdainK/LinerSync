@@ -3,7 +3,7 @@
 import asyncio
 import io
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 
 import imagehash
 from PIL import Image
@@ -72,6 +72,16 @@ class ArtworkHasher:
         unique = list(dict.fromkeys(u for u in urls if u is not None))
         values = await asyncio.gather(*(self.hash(u) for u in unique))
         return dict(zip(unique, values, strict=True))
+
+
+async def hashes_for(
+    hasher: ArtworkHasher | None, urls: Sequence[str | None]
+) -> list[str | None]:
+    """Each url's hash, in order; all None when artwork isn't hashed."""
+    if hasher is None:
+        return [None] * len(urls)
+    hashes = await hasher.hash_many(urls)
+    return [hashes[url] if url is not None else None for url in urls]
 
 
 def http_fetcher(client: HttpClient) -> Callable[[str], Awaitable[bytes]]:

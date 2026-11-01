@@ -10,6 +10,11 @@ class ConnectorError(Exception):
         self.message = message
         self.auth_required = auth_required
 
+    @property
+    def detail(self) -> str:
+        """The message alone, or the full text when there is none."""
+        return self.message or str(self)
+
 
 class ReadFailed(ConnectorError):
     """Errors, timeouts, auth failures, partial pages."""

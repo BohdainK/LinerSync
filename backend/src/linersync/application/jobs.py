@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, Protocol
 
-from linersync.application.backups import BackupService
+from linersync.application.backups import BackupProgress, BackupService
 from linersync.application.breaker import CircuitBreaker
 from linersync.application.config import EngineConfig
 from linersync.application.job_guard import (
@@ -14,7 +14,7 @@ from linersync.application.job_guard import (
     JobGuard,
     referenced_keys,
 )
-from linersync.application.runner import Deps, SyncRunner
+from linersync.application.runner import Deps, SyncRunner, fail_unwritten
 from linersync.application.transfer import TransferService
 from linersync.application.undo import UndoNotAllowed, UndoService
 from linersync.domain.backups import BACKUP_SERVICE, BackupRun
@@ -33,14 +33,13 @@ from linersync.domain.jobs import (
     TransferJob,
     UndoJob,
 )
-from linersync.domain.runs import (
-    MemberResult,
-    MemberStatus,
-    RunEvent,
-    RunStatus,
-    SyncRun,
+from linersync.domain.runs import RunEvent, RunKind, RunStatus, SyncRun
+from linersync.domain.sync import (
+    SOURCE_MEMBER_ID,
+    MemberRole,
+    SyncGroup,
+    destination_member_id,
 )
-from linersync.domain.sync import MemberRole, SyncGroup
 from linersync.domain.tracks import ServiceId, Track, TrackKey
 from linersync.ports.connector import Connector
 from linersync.ports.errors import ConnectorError
@@ -114,21 +113,10 @@ class JobService:
     def submit(self, request: JobRequest, label: str) -> Job:
         """Queue a job. A sync already queued or running with the same `dry_run`,
         or a backup with the same services, returns that job unchanged."""
-        if isinstance(request, BackupJob):
-            for job in self._jobs.list_by_status(*ACTIVE_STATUSES):
-                if (
-                    isinstance(job.request, BackupJob)
-                    and job.request.services == request.services
-                ):
-                    return job
-        if isinstance(request, SyncJob):
-            for job in self._jobs.list_by_status(*ACTIVE_STATUSES):
-                if (
-                    isinstance(job.request, SyncJob)
-                    and job.request.sync_id == request.sync_id
-                    and job.request.dry_run == request.dry_run
-                ):
-                    return job
+        if isinstance(request, (BackupJob, SyncJob)):
+            existing = self._find_active(lambda r: _duplicates(r, request))
+            if existing is not None:
+                return existing
         job = Job(
             job_id=self._new_id(),
             request=request,
@@ -161,16 +149,17 @@ class JobService:
         return job
 
     def active_for_sync(self, sync_id: str) -> Job | None:
-        for job in self._jobs.list_by_status(*ACTIVE_STATUSES):
-            if isinstance(job.request, SyncJob) and job.request.sync_id == sync_id:
-                return job
-        return None
+        return self._find_active(
+            lambda r: isinstance(r, SyncJob) and r.sync_id == sync_id
+        )
 
     def active_backup(self) -> Job | None:
-        for job in self._jobs.list_by_status(*ACTIVE_STATUSES):
-            if isinstance(job.request, BackupJob):
-                return job
-        return None
+        return self._find_active(lambda r: isinstance(r, BackupJob))
+
+    def _find_active(self, pred: Callable[[JobRequest], bool]) -> Job | None:
+        """The first queued or running job whose request matches `pred`."""
+        active = self._jobs.list_by_status(*ACTIVE_STATUSES)
+        return next((job for job in active if pred(job.request)), None)
 
     def build_deps(self) -> Deps:
         """Deps on the environment's connectors, for read-only use (estimates)."""
@@ -180,26 +169,22 @@ class JobService:
         """D4: running runs end ABORTED (still undoable), running jobs end
         INTERRUPTED, queued jobs stay queued."""
         now = self._clock.now()
-        snapshots = self._repos.snapshots
         for run in self._repos.runs.list_running():
-            members = list(run.members)
-            done = {m.member_id for m in members}
             plans = run.plan.member_plans if run.plan is not None else ()
-            for plan in plans:
-                mid = plan.member_id
-                if mid not in done and snapshots.has_pre_write(run.run_id, mid):
-                    members.append(
-                        MemberResult(
-                            mid, MemberStatus.FAILED, error=RUN_INTERRUPTED_ERROR
-                        )
-                    )
+            members = fail_unwritten(
+                self._repos.snapshots,
+                run.run_id,
+                run.members,
+                (p.member_id for p in plans),
+                RUN_INTERRUPTED_ERROR,
+            )
             self._repos.runs.save(
                 replace(
                     run,
                     status=RunStatus.ABORTED,
                     error=RUN_INTERRUPTED_ERROR,
                     finished_at=now,
-                    members=tuple(members),
+                    members=members,
                 )
             )
         for job in self._jobs.list_by_status(JobStatus.RUNNING):
@@ -241,12 +226,10 @@ class JobService:
                 raise _JobFailed(f"Connect {missing} first")
             guarded = {s: GuardedConnector(c, guard) for s, c in connectors.items()}
             await self._execute(job, guarded, guard)
-        except _JobFailed as e:
-            status, error = JobStatus.FAILED, str(e)
         except JobCancelled:
             pass
-        except ConnectorError as e:
-            # The guard has already reported an expired login.
+        except (_JobFailed, ConnectorError) as e:
+            # For a ConnectorError the guard has already reported an expired login.
             status, error = JobStatus.FAILED, str(e)
         except Exception as e:
             status, error = JobStatus.FAILED, f"{type(e).__name__}: {e}"
@@ -276,23 +259,24 @@ class JobService:
             case TransferJob():
                 return [request.source_service, request.destination]
             case BulkTransferJob():
-                found: dict[ServiceId, None] = {}
-                for t in request.transfers:
-                    found[t.source_service] = None
-                    found[t.destination] = None
-                return list(found)
+                return list(
+                    dict.fromkeys(
+                        s
+                        for t in request.transfers
+                        for s in (t.source_service, t.destination)
+                    )
+                )
             case UndoJob():
                 run = self._repos.runs.get(request.run_id)
                 if run is None:
                     return []
-                services: dict[ServiceId, None] = {}
-                for m in run.members:
-                    snap = self._repos.snapshots.get_pre_write(
-                        request.run_id, m.member_id
-                    )
-                    if snap is not None:
-                        services[snap.meta.service] = None
-                return list(services)
+                snaps = (
+                    self._repos.snapshots.get_pre_write(request.run_id, m.member_id)
+                    for m in run.members
+                )
+                return list(
+                    dict.fromkeys(s.meta.service for s in snaps if s is not None)
+                )
             case BackupJob():
                 return list(request.services)
 
@@ -307,14 +291,13 @@ class JobService:
                 group = self._repos.syncs.get(request.sync_id)
                 if group is None:
                     raise _JobFailed(_SYNC_GONE)
-                try:
-                    run = await runner.run(
-                        request.sync_id,
-                        trigger=request.trigger,
-                        dry_run=request.dry_run,
-                    )
-                except KeyError:
-                    raise _JobFailed(_SYNC_GONE) from None
+                run, _ = await runner.run_group(
+                    group,
+                    kind=RunKind.SYNC,
+                    trigger=request.trigger,
+                    dry_run=request.dry_run,
+                    persist=True,
+                )
                 self._record(job.job_id, run, _group_members(group), guard)
             case PreviewJob():
                 run = await runner.preview(request.group)
@@ -329,7 +312,7 @@ class JobService:
                     await self._transfer(job.job_id, transfers, item, guard)
                     # Each transfer is a finished, verified run, so a cancel
                     # may stop the job before the next one starts.
-                    guard.wrote = not guard.cancellable
+                    guard.reset_writes()
             case UndoJob():
                 try:
                     run = await UndoService(deps, runner).undo(request.run_id)
@@ -358,28 +341,32 @@ class JobService:
         services = list(request.services) or sorted(
             s for s in connectors if s != BACKUP_SERVICE
         )
+
+        def saved(run: BackupRun) -> None:
+            job = self._current(job_id)
+            self._update(job_id, backup_ids=(*job.backup_ids, run.backup_id))
+
         for service in services:
             guard.check()
             connector = connectors[service]
-
-            def progress(
-                done: int, total: int, message: str, name: str = connector.display_name
-            ) -> None:
-                self._update(
-                    job_id,
-                    progress=JobProgress("backup", done, total, f"{name}: {message}"),
-                )
-
-            def saved(run: BackupRun) -> None:
-                job = self._current(job_id)
-                self._update(job_id, backup_ids=(*job.backup_ids, run.backup_id))
-
+            progress = self._backup_progress(job_id, connector.display_name)
             try:
                 await self._backups.back_up(connector, progress, on_saved=saved)
             except JobCancelled:
                 raise
             except Exception:  # noqa: BLE001 - D4: the run says FAILED; go on
                 continue
+
+    def _backup_progress(self, job_id: str, name: str) -> BackupProgress:
+        """Reports a backup's progress on the job, prefixed with `name`."""
+
+        def progress(done: int, total: int, message: str) -> None:
+            self._update(
+                job_id,
+                progress=JobProgress("backup", done, total, f"{name}: {message}"),
+            )
+
+        return progress
 
     async def _transfer(
         self, job_id: str, transfers: TransferService, t: TransferJob, guard: JobGuard
@@ -388,8 +375,12 @@ class JobService:
             t.source_service, t.playlist_id, t.destination, dry_run=t.dry_run
         )
         members = (
-            RunMemberInfo("src", t.source_service, t.playlist_id, MemberRole.SOURCE),
-            RunMemberInfo("dst0", t.destination, None, MemberRole.DESTINATION),
+            RunMemberInfo(
+                SOURCE_MEMBER_ID, t.source_service, t.playlist_id, MemberRole.SOURCE
+            ),
+            RunMemberInfo(
+                destination_member_id(0), t.destination, None, MemberRole.DESTINATION
+            ),
         )
         self._record(job_id, run, members, guard)
 
@@ -401,9 +392,7 @@ class JobService:
         guard: JobGuard,
     ) -> None:
         """Note the run on the job and save its context."""
-        job = self._current(job_id)
-        if run.run_id not in job.run_ids:
-            self._update(job_id, run_ids=(*job.run_ids, run.run_id))
+        self._note_run(job_id, run.run_id)
         created = {
             r.member_id: r.created_playlist_id
             for r in run.members
@@ -434,12 +423,17 @@ class JobService:
 
     def _event(self, job_id: str, event: RunEvent) -> None:
         """Record the event's run id (if new) and progress on the job."""
-        job = self._current(job_id)
-        run_ids = job.run_ids
-        if event.run_id not in run_ids:
-            run_ids = (*run_ids, event.run_id)
         progress = JobProgress(event.phase, event.done, event.total, event.message)
-        self._update(job_id, run_ids=run_ids, progress=progress)
+        self._note_run(job_id, event.run_id, progress=progress)
+
+    def _note_run(self, job_id: str, run_id: str, **changes: Any) -> None:
+        """Add `run_id` to the job's runs if new, along with `changes`; with
+        neither there is nothing to save."""
+        job = self._current(job_id)
+        if run_id not in job.run_ids:
+            changes["run_ids"] = (*job.run_ids, run_id)
+        if changes:
+            self._update(job_id, **changes)
 
     def _end(self, job_id: str, status: JobStatus, error: str | None = None) -> Job:
         return self._update(
@@ -462,6 +456,14 @@ class JobService:
     def _save(self, job: Job) -> None:
         self._jobs.save(job)
         self._listener(job)
+
+
+def _duplicates(a: JobRequest, b: BackupJob | SyncJob) -> bool:
+    """`a` does `b`'s work: a backup of the same services, or a sync of the same
+    group with the same `dry_run` (whatever its trigger)."""
+    if isinstance(b, BackupJob):
+        return isinstance(a, BackupJob) and a.services == b.services
+    return isinstance(a, SyncJob) and a.sync_id == b.sync_id and a.dry_run == b.dry_run
 
 
 def _group_members(group: SyncGroup) -> tuple[RunMemberInfo, ...]:

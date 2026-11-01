@@ -1,28 +1,28 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { JobOut } from "@/api/types";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { TrackList } from "@/components/TrackList";
+import { UnresolvedItem } from "@/components/UnresolvedItem";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useServiceNames } from "@/features/pickers/useServiceNames";
-import { formatDateTime } from "@/lib/format";
-import { isActive, useCancelJob, useJob } from "@/live/useJob";
+import { formatChangeCounts, formatDateTime } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
+import { isActive, useCancelJob, useJob, useOnJobEnd } from "@/live/useJob";
 import { MemberSection } from "./MemberSection";
+import { useRun } from "./useRun";
 
 export function RunPage() {
   const { runId = "" } = useParams();
   const queryClient = useQueryClient();
   const nameOf = useServiceNames();
-  const run = useQuery({
-    queryKey: keys.run(runId),
-    queryFn: () => call(api.GET("/api/runs/{run_id}", { params: { path: { run_id: runId } } })),
-  });
+  const run = useRun(runId);
+  const [undoJobId, setUndoJobId] = useState<string | null>(null);
   const undo = useMutation<JobOut, ApiError, void>({
     mutationFn: () => call(api.POST("/api/runs/{run_id}/undo", { params: { path: { run_id: runId } } })),
     onSuccess: (job) => {
@@ -31,19 +31,15 @@ export function RunPage() {
       void queryClient.invalidateQueries({ queryKey: keys.run(runId) });
     },
   });
-  const [undoJobId, setUndoJobId] = useState<string | null>(null);
   const undoJob = useJob(undoJobId);
   const cancel = useCancelJob();
-  const undoStatus = undoJob.data?.status;
   const syncId = run.data?.sync_id;
-  useEffect(() => {
-    if (undoStatus && undoStatus !== "queued" && undoStatus !== "running") {
-      void queryClient.invalidateQueries({ queryKey: keys.run(runId) });
-      if (syncId) void queryClient.invalidateQueries({ queryKey: keys.syncRuns(syncId) });
-    }
-  }, [undoStatus, queryClient, runId, syncId]);
+  useOnJobEnd(undoJob.data, () => {
+    void queryClient.invalidateQueries({ queryKey: keys.run(runId) });
+    if (syncId) void queryClient.invalidateQueries({ queryKey: keys.syncRuns(syncId) });
+  });
 
-  if (run.isError) return <ErrorNotice error={run.error} onRetry={() => void run.refetch()} />;
+  if (run.isError) return <QueryError query={run} />;
   if (!run.data) return <p>Loading…</p>;
   const r = run.data;
 
@@ -52,7 +48,7 @@ export function RunPage() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">Run</h1>
         <p>
-          <Link className="text-primary underline underline-offset-4" to={`/syncs/${r.sync_id}`}>
+          <Link className={linkClass} to={`/syncs/${r.sync_id}`}>
             Back to the sync
           </Link>
         </p>
@@ -68,7 +64,7 @@ export function RunPage() {
           {r.finished_at ? ` · Finished ${formatDateTime(r.finished_at)}` : ""}
         </p>
         <p className="text-sm">
-          <span>{`+${r.added} −${r.removed}`}</span>
+          <span>{formatChangeCounts(r)}</span>
           {r.not_made > 0 ? ` · ${r.not_made} not made` : ""}
           {r.unmatched > 0 ? ` · ${r.unmatched} didn't match` : ""}
         </p>
@@ -84,7 +80,7 @@ export function RunPage() {
         ) : null}
         {undoJob.data?.run_ids[0] ? (
           <p className="text-sm">
-            <Link className="text-primary underline underline-offset-4" to={`/runs/${undoJob.data.run_ids[0]}`}>
+            <Link className={linkClass} to={`/runs/${undoJob.data.run_ids[0]}`}>
               View the undo run
             </Link>
           </p>
@@ -100,20 +96,10 @@ export function RunPage() {
           <h2 className="text-lg font-semibold">Didn't match ({r.unresolved.length})</h2>
           <ul className="space-y-3">
             {r.unresolved.map((u, i) => (
-              <li key={`${u.member_id}:${u.position}:${i}`} className="space-y-1 rounded-md border p-3">
-                <TrackList tracks={[u.source]} />
-                {u.reasons.length > 0 ? (
-                  <ul className="list-disc pl-6 text-sm text-muted-foreground">
-                    {u.reasons.map((reason, j) => (
-                      <li key={j}>{reason}</li>
-                    ))}
-                  </ul>
-                ) : null}
-                {u.candidates.length > 0 ? <TrackList tracks={u.candidates.map((c) => c.track)} /> : null}
-              </li>
+              <UnresolvedItem key={`${u.member_id}:${u.position}:${i}`} item={u} />
             ))}
           </ul>
-          <Link className="text-primary underline underline-offset-4" to="/">
+          <Link className={linkClass} to="/">
             Resolve in Needs attention
           </Link>
         </section>

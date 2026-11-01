@@ -1,5 +1,6 @@
 import type { JobOut } from "@/api/types";
 import { JobProgress } from "@/components/JobProgress";
+import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { useCancelJob } from "@/live/useJob";
@@ -8,8 +9,7 @@ export function RunningNow({ running, queued }: { running: JobOut[]; queued: Job
   const cancel = useCancelJob();
   const busy = (id: string) => cancel.isPending && cancel.variables === id;
   return (
-    <section aria-labelledby="home-running" className="space-y-3">
-      <h2 id="home-running" className="text-lg font-semibold">Running now</h2>
+    <Section title="Running now">
       {running.length === 0 && queued.length === 0 ? (
         <p className="text-muted-foreground">Nothing running</p>
       ) : null}
@@ -40,6 +40,6 @@ export function RunningNow({ running, queued }: { running: JobOut[]; queued: Job
           ))}
         </ul>
       ) : null}
-    </section>
+    </Section>
   );
 }

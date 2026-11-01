@@ -5,6 +5,8 @@ from typing import Literal
 
 from linersync.domain.operations import ChangeNotMade, SyncPlan
 
+RunPhase = Literal["read", "match", "plan", "apply", "verify", "done"]
+
 
 class RunKind(StrEnum):
     SYNC = "sync"
@@ -80,7 +82,7 @@ class SyncRun:
 class RunEvent:
     run_id: str
     sync_id: str
-    phase: Literal["read", "match", "plan", "apply", "verify", "done"]
+    phase: RunPhase
     done: int
     total: int
     message: str

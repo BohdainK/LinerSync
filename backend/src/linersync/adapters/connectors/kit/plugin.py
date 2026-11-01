@@ -1,14 +1,21 @@
 """What a connector package exposes to the application."""
 
 import asyncio
+import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 import httpx
 
-from linersync.adapters.connectors.kit.http import HttpSettings
+from linersync.adapters.connectors.kit.http import (
+    AuthProvider,
+    HttpClient,
+    HttpFailure,
+    HttpSettings,
+)
+from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
 from linersync.domain.capabilities import Capability
 from linersync.domain.tracks import ServiceId
 from linersync.ports.connector import Connector, ConnectorLimits
@@ -19,6 +26,7 @@ from linersync.ports.setup import SetupGuide
 
 Category = Literal["streaming", "self_hosted"]
 OAUTH_CALLBACK_PATH = "/api/connections/oauth/callback"  # Plan 3 implements this route
+_NO_QUOTA = QuotaPolicy()
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,11 +50,55 @@ class ConnectorContext:
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
+def http_client(
+    ctx: ConnectorContext,
+    service: ServiceId,
+    base_url: str = "",
+    *,
+    auth: AuthProvider | None = None,
+    quota_policy: QuotaPolicy = _NO_QUOTA,
+    **options: Any,
+) -> HttpClient:
+    """An HttpClient wired to the context. Without ``auth`` it is the plain
+    client that token endpoints and artwork hosts get: those must never see a
+    service's credentials. ``options`` go to HttpClient as they are."""
+    return HttpClient(
+        service,
+        base_url,
+        settings=ctx.settings.http,
+        quota=ctx.quota,
+        quota_policy=quota_policy,
+        clock=ctx.clock,
+        auth=auth,
+        transport=ctx.transport,
+        sleep=ctx.sleep,
+        **options,
+    )
+
+
+def artwork_hasher(ctx: ConnectorContext, service: ServiceId) -> ArtworkHasher | None:
+    """A hasher fetching over a plain client, or None when hashing is off."""
+    if not ctx.settings.hash_artwork:
+        return None
+    return ArtworkHasher(http_fetcher(http_client(ctx, service)))
+
+
+def fingerprint(secret: str) -> str:
+    """A short digest that tells whether a stored secret was replaced."""
+    return hashlib.sha256(secret.strip().encode()).hexdigest()[:16]
+
+
 @dataclass(frozen=True, slots=True)
 class ConnectionTest:
     ok: bool
     message: str
     account_name: str | None = None
+
+
+def connection_failed(e: HttpFailure, sign_in_again: str) -> ConnectionTest:
+    """A failed connection test: ``sign_in_again`` when the sign-in is no
+    longer accepted, else the failure's own message."""
+    return ConnectionTest(False, sign_in_again if e.auth_required else e.message)
 
 
 @dataclass(frozen=True, slots=True)

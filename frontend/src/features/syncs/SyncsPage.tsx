@@ -1,30 +1,29 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { api, call } from "@/api/client";
-import { keys } from "@/api/keys";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useServiceNames } from "@/features/pickers/useServiceNames";
-import { formatRelative } from "@/lib/format";
+import { formatChangeCounts, formatRelative } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
+import { useSyncs } from "./useSync";
 
 export function SyncsPage() {
-  const syncs = useQuery({ queryKey: keys.syncs, queryFn: () => call(api.GET("/api/syncs")) });
+  const syncs = useSyncs();
   const nameOf = useServiceNames();
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Syncs</h1>
-        <Link className="text-primary underline underline-offset-4" to="/syncs/new">
+        <Link className={linkClass} to="/syncs/new">
           + New sync
         </Link>
       </div>
-      {syncs.isError ? <ErrorNotice error={syncs.error} onRetry={() => void syncs.refetch()} /> : null}
+      <QueryError query={syncs} />
       {syncs.data?.length === 0 ? (
         <div className="space-y-1">
           <p className="text-muted-foreground">No syncs yet</p>
-          <Link className="text-primary underline underline-offset-4" to="/syncs/new">
+          <Link className={linkClass} to="/syncs/new">
             Create your first sync
           </Link>
         </div>
@@ -44,7 +43,7 @@ export function SyncsPage() {
             {syncs.data.map((s) => (
               <TableRow key={s.sync_id}>
                 <TableCell>
-                  <Link className="text-primary underline underline-offset-4" to={`/syncs/${s.sync_id}`}>
+                  <Link className={linkClass} to={`/syncs/${s.sync_id}`}>
                     {s.name}
                   </Link>
                 </TableCell>
@@ -59,7 +58,7 @@ export function SyncsPage() {
                   ) : s.last_run ? (
                     <span className="flex items-center gap-2">
                       <StatusBadge kind="run" status={s.last_run.status} />
-                      <span>{`+${s.last_run.added} −${s.last_run.removed}`}</span>
+                      <span>{formatChangeCounts(s.last_run)}</span>
                     </span>
                   ) : (
                     "—"

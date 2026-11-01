@@ -1,31 +1,21 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useId, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, call } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { LibraryServiceOut, StatsOut } from "@/api/types";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
+import { cn } from "@/lib/utils";
 import { ActivityChart } from "./ActivityChart";
 
 const PERIODS = [7, 30, 90] as const;
 const DEFAULT_DAYS = 30;
 
 const count = new Intl.NumberFormat();
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id} className="space-y-3">
-      <h2 id={id} className="text-lg font-semibold">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 function Tiles({ items }: { items: [string, number][] }) {
   return (
@@ -51,7 +41,7 @@ function Library({ stats }: { stats: StatsOut }) {
       <Section title="Library">
         <p className="text-muted-foreground">
           No backups yet.{" "}
-          <Link className="text-primary underline underline-offset-4" to="/backup">
+          <Link className={linkClass} to="/backup">
             Back up now
           </Link>
         </p>
@@ -159,7 +149,7 @@ export function StatsPage() {
           ))}
         </div>
       </header>
-      {stats.isError ? <ErrorNotice error={stats.error} onRetry={() => void stats.refetch()} /> : null}
+      <QueryError query={stats} />
       {data ? (
         <div className={`space-y-8 transition-opacity ${stats.isPlaceholderData ? "opacity-60" : ""}`}>
           <Library stats={data} />
@@ -181,7 +171,7 @@ export function StatsPage() {
               ]}
             />
             {data.matching.open_attention > 0 ? (
-              <Link className="text-sm text-primary underline underline-offset-4" to="/">
+              <Link className={cn("text-sm", linkClass)} to="/">
                 Review on Home
               </Link>
             ) : null}

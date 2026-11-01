@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from linersync.domain.capabilities import Capability
-from linersync.domain.operations import AddTracks, RemoveTracks, Reorder, UpdateMetadata
+from linersync.domain.operations import PlaylistOp
 from linersync.domain.playlists import PlaylistDraft, PlaylistMeta, PlaylistSnapshot
 from linersync.domain.tracks import ServiceId, Track, TrackQuery
 
@@ -31,5 +31,5 @@ class Connector(Protocol):
     async def apply(
         self,
         playlist_id: str,
-        op: UpdateMetadata | AddTracks | Reorder | RemoveTracks,
+        op: PlaylistOp,
     ) -> None: ...

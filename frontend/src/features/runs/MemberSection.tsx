@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TrackList } from "@/components/TrackList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatSongs } from "@/lib/format";
 
 function Expandable({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -24,10 +25,6 @@ function Expandable({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-function songs(n: number): string {
-  return `${n} ${n === 1 ? "song" : "songs"}`;
-}
-
 function Operation({ op }: { op: OperationOut }) {
   switch (op.type) {
     case "create_playlist":
@@ -36,7 +33,7 @@ function Operation({ op }: { op: OperationOut }) {
       return <p>Updated name and description</p>;
     case "add_tracks":
       return (
-        <Expandable label={`Added ${songs(op.tracks.length)}`}>
+        <Expandable label={`Added ${formatSongs(op.tracks.length)}`}>
           <TrackList tracks={op.tracks} />
         </Expandable>
       );
@@ -44,7 +41,7 @@ function Operation({ op }: { op: OperationOut }) {
       return <p>Reordered the playlist</p>;
     case "remove_tracks":
       return (
-        <Expandable label={`Removed ${songs(op.tracks.length)}`}>
+        <Expandable label={`Removed ${formatSongs(op.tracks.length)}`}>
           <TrackList tracks={op.tracks} />
         </Expandable>
       );

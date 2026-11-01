@@ -3,15 +3,17 @@ import { Link } from "react-router";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { BackupServiceOut, JobOut } from "@/api/types";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
+import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDateTime, formatRelative } from "@/lib/format";
+import { formatBackupResult, formatDateTime, formatRelative } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
 import { isActive, useCancelJob, useJob } from "@/live/useJob";
 import { ImportExport } from "./ImportExport";
 import { PlaylistsTable } from "./PlaylistsTable";
@@ -42,7 +44,7 @@ function ServiceCard({
               <StatusBadge kind="run" status={run.status} />
               <span>{formatDateTime(run.finished_at)}</span>
             </p>
-            <p>{`${run.saved} saved, ${run.unchanged} unchanged, ${run.archived} archived, ${run.unreadable} unreadable`}</p>
+            <p>{formatBackupResult(run)}</p>
             {run.errors.length > 0 ? (
               <Collapsible>
                 <CollapsibleTrigger asChild>
@@ -107,7 +109,7 @@ export function BackupPage() {
           ) : (
             <p className="text-sm">
               Scheduled backups are off{" "}
-              <Link className="text-primary underline underline-offset-4" to="/settings">
+              <Link className={linkClass} to="/settings">
                 Change in Settings
               </Link>
             </p>
@@ -122,7 +124,7 @@ export function BackupPage() {
         ) : null}
       </header>
 
-      {summary.isError ? <ErrorNotice error={summary.error} onRetry={() => void summary.refetch()} /> : null}
+      <QueryError query={summary} />
       <div className="grid gap-4 md:grid-cols-2">
         {data?.services.map((s) => (
           <ServiceCard key={s.service} s={s} busy={busy} onRun={(id) => start.mutate([id])} />
@@ -131,11 +133,8 @@ export function BackupPage() {
 
       <PlaylistsTable services={data?.services ?? []} />
 
-      <section aria-labelledby="recent-backups" className="space-y-3">
-        <h2 id="recent-backups" className="text-lg font-semibold">
-          Recent backups
-        </h2>
-        {runs.isError ? <ErrorNotice error={runs.error} onRetry={() => void runs.refetch()} /> : null}
+      <Section title="Recent backups">
+        <QueryError query={runs} />
         {runs.data && runs.data.length === 0 ? <p className="text-muted-foreground">No backups yet</p> : null}
         {runs.data && runs.data.length > 0 ? (
           <Table aria-label="Recent backups">
@@ -157,13 +156,13 @@ export function BackupPage() {
                     <StatusBadge kind="run" status={r.status} />
                   </TableCell>
                   <TableCell>{r.playlists}</TableCell>
-                  <TableCell>{`${r.saved} saved, ${r.unchanged} unchanged, ${r.archived} archived, ${r.unreadable} unreadable`}</TableCell>
+                  <TableCell>{formatBackupResult(r)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         ) : null}
-      </section>
+      </Section>
 
       <ImportExport />
     </div>

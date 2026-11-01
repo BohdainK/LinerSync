@@ -17,7 +17,7 @@ export function useAttention(): UseQueryResult<AttentionOut[]> {
   });
 }
 
-export type AttentionAction =
+type AttentionAction =
   | { type: "pick"; trackId: string }
   | { type: "not-on-service" }
   | { type: "dismiss" }

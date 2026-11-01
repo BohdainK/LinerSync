@@ -1,10 +1,23 @@
 from dataclasses import replace
+from typing import Any
 
 from linersync.domain.attention import AttentionItem, AttentionKind
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.sync import SyncStatus
-from linersync.ports.repositories import Repositories
+from linersync.ports.repositories import AttentionRepository, Repositories
 from linersync.ports.runtime import Clock
+
+
+def open_items(
+    repo: AttentionRepository, kind: AttentionKind, **match: Any
+) -> list[AttentionItem]:
+    """The open items of `kind` whose fields equal `match`."""
+    return [
+        item
+        for item in repo.list_open()
+        if item.kind is kind
+        and all(getattr(item, name) == value for name, value in match.items())
+    ]
 
 
 class AttentionService:
@@ -62,13 +75,11 @@ class AttentionService:
             raise ValueError(f"item {item.item_id} has no source song or target")
         key, service = item.source.key, item.target_service
         self._repos.matches.remember(RememberedMatch(key, service, target_track_id))
-        for other in self._repos.attention.list_open():
-            if (
-                other.kind is AttentionKind.UNMATCHED
-                and other.source is not None
-                and other.source.key == key
-                and other.target_service == service
-            ):
+        unmatched = open_items(
+            self._repos.attention, AttentionKind.UNMATCHED, target_service=service
+        )
+        for other in unmatched:
+            if other.source is not None and other.source.key == key:
                 self._resolve(other, resolution)
 
     def _resolve(self, item: AttentionItem, resolution: str) -> None:

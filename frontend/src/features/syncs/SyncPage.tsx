@@ -1,20 +1,20 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { keys } from "@/api/keys";
+import type { SyncOut } from "@/api/types";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { isActive, useCancelJob, useJob } from "@/live/useJob";
+import { isActive, useCancelJob, useJob, useOnJobEnd } from "@/live/useJob";
 import { AddDestination } from "./AddDestination";
 import { BusyTip } from "./BusyTip";
 import { DestinationsTable } from "./DestinationsTable";
 import { RunHistory } from "./RunHistory";
 import { ScheduleEditor } from "./ScheduleEditor";
 import { useDeleteSync, usePatchSync, useRunSync, useSync } from "./useSync";
-import type { SyncOut } from "@/api/types";
 
 function Rename({ sync, disabled }: { sync: SyncOut; disabled: boolean }) {
   const patch = usePatchSync(sync.sync_id);
@@ -73,15 +73,12 @@ export function SyncPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const started = useJob(startedId);
 
-  const startedStatus = started.data?.status;
-  useEffect(() => {
-    if (startedStatus && startedStatus !== "queued" && startedStatus !== "running") {
-      void queryClient.invalidateQueries({ queryKey: keys.sync(syncId) });
-      void queryClient.invalidateQueries({ queryKey: keys.syncRuns(syncId) });
-    }
-  }, [startedStatus, queryClient, syncId]);
+  useOnJobEnd(started.data, () => {
+    void queryClient.invalidateQueries({ queryKey: keys.sync(syncId) });
+    void queryClient.invalidateQueries({ queryKey: keys.syncRuns(syncId) });
+  });
 
-  if (sync.isError) return <ErrorNotice error={sync.error} onRetry={() => void sync.refetch()} />;
+  if (sync.isError) return <QueryError query={sync} />;
   if (!sync.data) return <p>Loading…</p>;
   const s = sync.data;
   const job = s.active_job ?? (started.data && isActive(started.data) ? started.data : null);
@@ -89,6 +86,7 @@ export function SyncPage() {
   const paused = s.status !== "active";
   const needsRebuild = s.destinations.some((d) => d.missing);
   const actionError = run.error ?? pause.error ?? del.error;
+  const startRun = (dryRun: boolean) => run.mutate(dryRun, { onSuccess: (j) => setStartedId(j.job_id) });
 
   return (
     <div className="space-y-8">
@@ -102,7 +100,7 @@ export function SyncPage() {
             <Button
               type="button"
               disabled={busy || run.isPending}
-              onClick={() => run.mutate(false, { onSuccess: (j) => setStartedId(j.job_id) })}
+              onClick={() => startRun(false)}
             >
               {needsRebuild ? "Rebuild" : "Sync now"}
             </Button>
@@ -112,7 +110,7 @@ export function SyncPage() {
               type="button"
               variant="outline"
               disabled={busy || run.isPending}
-              onClick={() => run.mutate(true, { onSuccess: (j) => setStartedId(j.job_id) })}
+              onClick={() => startRun(true)}
             >
               Dry run
             </Button>

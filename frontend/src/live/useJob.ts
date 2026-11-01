@@ -5,6 +5,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { JobOut } from "@/api/types";
@@ -40,4 +41,16 @@ export function useCancelJob(): UseMutationResult<JobOut, ApiError, string> {
       void queryClient.invalidateQueries({ queryKey: keys.home });
     },
   });
+}
+
+/** Calls `onEnd` once each time the job leaves queued/running. */
+export function useOnJobEnd(job: JobOut | undefined, onEnd: () => void): void {
+  const latest = useRef(onEnd);
+  useEffect(() => {
+    latest.current = onEnd;
+  }, [onEnd]);
+  const ended = job && !isActive(job) ? `${job.job_id}:${job.status}` : null;
+  useEffect(() => {
+    if (ended !== null) latest.current();
+  }, [ended]);
 }

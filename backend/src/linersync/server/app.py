@@ -43,7 +43,7 @@ from linersync.server.api import transfers as transfers_api
 from linersync.server.api.schemas import JobOut
 from linersync.server.auth import LoginThrottle, SameOriginMiddleware
 from linersync.server.config import ServerConfig
-from linersync.server.connections import ConnectionManager, ConnectionStatus
+from linersync.server.connections import ConnectionManager
 from linersync.server.environment import ServerJobEnvironment
 from linersync.server.events import EventHub
 from linersync.server.state import AppServices
@@ -84,9 +84,7 @@ def create_app(
     events = EventHub()
 
     def reconcile() -> None:
-        settings = settings_store.get()
-        scheduler.reconcile(repos.syncs.list(), settings.default_schedule)
-        scheduler.schedule_backup(settings.backup_schedule)
+        scheduler.reconcile_all(repos.syncs.list(), settings_store.get())
 
     def on_job(job: Job) -> None:
         events.publish_job(JobOut.of(job))
@@ -125,7 +123,7 @@ def create_app(
             jobs.submit(SyncJob(sync_id, Trigger.SCHEDULED), f"Sync “{group.name}”")
 
     def on_backup_due() -> None:
-        if any(i.status is not ConnectionStatus.NOT_SET_UP for i in connections.list()):
+        if connections.set_up():
             jobs.submit(BackupJob(trigger=Trigger.SCHEDULED), BACKUP_ALL_LABEL)
 
     scheduler = SyncScheduler(on_due, config.timezone, on_backup_due)

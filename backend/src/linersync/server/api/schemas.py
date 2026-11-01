@@ -5,17 +5,25 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from linersync.adapters.connectors.kit.plugin import (
+    ConnectionTest,
+    DeviceCodeStart,
+    DevicePoll,
+)
+from linersync.application.export_json import RestoreReport
 from linersync.application.settings import (
     DEFAULT_BACKUP_SCHEDULE,
     DEFAULT_VERSIONS_KEPT,
 )
 from linersync.domain.attention import AttentionKind
 from linersync.domain.backups import BackedUpPlaylist, BackupRun, PlaylistVersion
-from linersync.domain.jobs import Job
+from linersync.domain.jobs import Job, JobProgress
+from linersync.domain.matching.types import ScoredCandidate
 from linersync.domain.operations import AddTracks, RemoveTracks
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.runs import MemberStatus, SyncRun
 from linersync.domain.sync import SyncMode
+from linersync.domain.tracks import Track
 from linersync.server.connections import ConnectionInfo
 
 
@@ -72,6 +80,12 @@ class ConnectionTestOut(BaseModel):
     message: str
     account_name: str | None
 
+    @classmethod
+    def of(cls, result: ConnectionTest) -> "ConnectionTestOut":
+        return cls(
+            ok=result.ok, message=result.message, account_name=result.account_name
+        )
+
 
 class OAuthStartOut(BaseModel):
     url: str
@@ -83,11 +97,24 @@ class DeviceCodeOut(BaseModel):
     interval_s: int
     expires_in_s: int
 
+    @classmethod
+    def of(cls, start: DeviceCodeStart) -> "DeviceCodeOut":
+        return cls(
+            user_code=start.user_code,
+            verification_url=start.verification_url,
+            interval_s=start.interval_s,
+            expires_in_s=start.expires_in_s,
+        )
+
 
 class DevicePollOut(BaseModel):
     status: Literal["pending", "done", "denied", "expired"]
     message: str
     interval_s: int | None = None  # poll this often from now on
+
+    @classmethod
+    def of(cls, poll: DevicePoll) -> "DevicePollOut":
+        return cls(status=poll.status, message=poll.message, interval_s=poll.interval_s)
 
 
 class SignInConfigOut(BaseModel):
@@ -173,6 +200,10 @@ class JobProgressOut(BaseModel):
     total: int
     message: str
 
+    @classmethod
+    def of(cls, p: JobProgress) -> "JobProgressOut":
+        return cls(phase=p.phase, done=p.done, total=p.total, message=p.message)
+
 
 class JobOut(BaseModel):
     job_id: str
@@ -191,7 +222,6 @@ class JobOut(BaseModel):
 
     @classmethod
     def of(cls, job: Job) -> "JobOut":
-        p = job.progress
         return cls(
             job_id=job.job_id,
             kind=job.kind,
@@ -204,11 +234,7 @@ class JobOut(BaseModel):
             run_ids=list(job.run_ids),
             backup_ids=list(job.backup_ids),
             error=job.error,
-            progress=None
-            if p is None
-            else JobProgressOut(
-                phase=p.phase, done=p.done, total=p.total, message=p.message
-            ),
+            progress=None if job.progress is None else JobProgressOut.of(job.progress),
             cancel_requested=job.cancel_requested,
         )
 
@@ -228,33 +254,33 @@ class RunSummaryOut(BaseModel):
     not_made: int
     unmatched: int
 
-
-def run_summary(run: SyncRun) -> RunSummaryOut:
-    added = removed = not_made = unmatched = 0
-    if run.plan is not None:
-        for plan in run.plan.member_plans:
-            for op in plan.operations:
-                if isinstance(op, AddTracks):
-                    added += len(op.track_ids)
-                elif isinstance(op, RemoveTracks):
-                    removed += len(op.removals)
-        not_made = sum(len(m.not_made) for m in run.members)
-        unmatched = len(run.plan.unresolved)
-    return RunSummaryOut(
-        run_id=run.run_id,
-        sync_id=run.sync_id,
-        kind=run.kind.value,
-        trigger=run.trigger.value,
-        dry_run=run.dry_run,
-        status=run.status.value,
-        started_at=run.started_at,
-        finished_at=run.finished_at,
-        error=run.error,
-        added=added,
-        removed=removed,
-        not_made=not_made,
-        unmatched=unmatched,
-    )
+    @classmethod
+    def of(cls, run: SyncRun) -> "RunSummaryOut":
+        added = removed = not_made = unmatched = 0
+        if run.plan is not None:
+            for plan in run.plan.member_plans:
+                for op in plan.operations:
+                    if isinstance(op, AddTracks):
+                        added += len(op.track_ids)
+                    elif isinstance(op, RemoveTracks):
+                        removed += len(op.removals)
+            not_made = sum(len(m.not_made) for m in run.members)
+            unmatched = len(run.plan.unresolved)
+        return cls(
+            run_id=run.run_id,
+            sync_id=run.sync_id,
+            kind=run.kind.value,
+            trigger=run.trigger.value,
+            dry_run=run.dry_run,
+            status=run.status.value,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            error=run.error,
+            added=added,
+            removed=removed,
+            not_made=not_made,
+            unmatched=unmatched,
+        )
 
 
 class SourceOut(BaseModel):
@@ -300,6 +326,20 @@ class TrackOut(BaseModel):
     url: str | None
     known: bool
 
+    @classmethod
+    def of(cls, t: Track) -> "TrackOut":
+        return cls(
+            service=t.service,
+            track_id=t.track_id,
+            title=t.title,
+            artists=list(t.artists),
+            album=t.album,
+            duration_ms=t.duration_ms,
+            isrc=t.isrc,
+            url=t.url,
+            known=True,
+        )
+
 
 OperationType = Literal[
     "create_playlist", "update_metadata", "add_tracks", "reorder", "remove_tracks"
@@ -327,6 +367,12 @@ class CandidateOut(BaseModel):
     track: TrackOut
     confidence: float
     reasons: list[str]
+
+    @classmethod
+    def of(cls, c: ScoredCandidate) -> "CandidateOut":
+        return cls(
+            track=TrackOut.of(c.track), confidence=c.confidence, reasons=list(c.reasons)
+        )
 
 
 class UnresolvedOut(BaseModel):
@@ -668,6 +714,14 @@ class RestoreReportOut(BaseModel):
     added: dict[str, int]
     skipped: dict[str, int]
     settings_applied: bool
+
+    @classmethod
+    def of(cls, report: RestoreReport) -> "RestoreReportOut":
+        return cls(
+            added=report.added,
+            skipped=report.skipped,
+            settings_applied=report.settings_applied,
+        )
 
 
 def cover_path(sha256: str | None) -> str | None:

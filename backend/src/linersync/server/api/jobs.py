@@ -5,15 +5,14 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from linersync.domain.jobs import Job, JobStatus
+from linersync.server.api.common import Services, found
 from linersync.server.api.schemas import JobOut
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
 
 router = APIRouter(prefix="/api/jobs", dependencies=[Depends(require_session)])
 
-Services = Annotated[AppServices, Depends(get_services)]
-
 RECENT_LIMIT = 50
+UNKNOWN_JOB = "Unknown job"
 _FINISHED = "This job has already finished"
 
 
@@ -36,10 +35,7 @@ async def list_jobs(
 
 @router.get("/{job_id}")
 async def get_job(job_id: str, services: Services) -> JobOut:
-    job = services.job_store.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Unknown job")
-    return JobOut.of(job)
+    return JobOut.of(found(services.job_store.get(job_id), UNKNOWN_JOB))
 
 
 @router.post("/{job_id}/cancel")
@@ -47,7 +43,7 @@ async def cancel_job(job_id: str, services: Services) -> JobOut:
     try:
         job = services.jobs.cancel(job_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail="Unknown job") from None
+        raise HTTPException(status_code=404, detail=UNKNOWN_JOB) from None
     except ValueError:
         raise HTTPException(status_code=409, detail=_FINISHED) from None
     return JobOut.of(job)

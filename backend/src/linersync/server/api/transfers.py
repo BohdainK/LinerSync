@@ -1,7 +1,5 @@
 """Transfer routes: one playlist, many playlists, and the bulk estimate."""
 
-from typing import Annotated
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from linersync.application.runner import SyncRunner
@@ -9,6 +7,12 @@ from linersync.application.transfer import BulkItem, TransferService
 from linersync.domain.jobs import BulkTransferJob, TransferJob
 from linersync.domain.tracks import ServiceId
 from linersync.ports.errors import ConnectorError
+from linersync.server.api.common import (
+    Services,
+    check_destinations,
+    check_source,
+    connector_failed,
+)
 from linersync.server.api.schemas import (
     BulkItemIn,
     BulkTransferIn,
@@ -18,13 +22,10 @@ from linersync.server.api.schemas import (
     PlaylistOut,
     TransferIn,
 )
-from linersync.server.api.syncs import check_destinations, check_source
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/transfers", dependencies=[Depends(require_session)])
-
-Services = Annotated[AppServices, Depends(get_services)]
 
 
 def _check_items(services: AppServices, items: list[BulkItemIn]) -> None:
@@ -84,10 +85,7 @@ async def estimate(body: EstimateIn, services: Services) -> EstimateOut:
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     except ConnectorError as e:
-        if e.auth_required:
-            services.connections.on_auth_required(e.service)
-        detail = e.message or "The service could not be reached"
-        raise HTTPException(status_code=502, detail=detail) from None
+        raise connector_failed(services.connections, e, e.service) from None
     return EstimateOut(
         playlists=found.playlists,
         songs=found.songs,

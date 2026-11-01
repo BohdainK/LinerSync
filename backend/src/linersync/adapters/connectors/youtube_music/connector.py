@@ -11,14 +11,19 @@ import dataclasses
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from linersync.adapters.connectors.kit import SEARCH_LIMIT, PlaylistOp
+from linersync.adapters.connectors.kit.errors import Errors
 from linersync.adapters.connectors.kit.http import (
     HttpClient,
     HttpFailure,
     apply_in_batches,
+    json_object,
+    nothing_sent,
     read_failed,
     write_failed,
 )
-from linersync.adapters.connectors.kit.images import ArtworkHasher
+from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
+from linersync.adapters.connectors.kit.ordering import at_positions
 from linersync.adapters.connectors.youtube_music.moves import plan_moves
 from linersync.adapters.connectors.youtube_music.parse import (
     API_BASE,
@@ -45,7 +50,7 @@ from linersync.domain.playlists import (
 )
 from linersync.domain.tracks import Track, TrackQuery
 from linersync.ports.connector import ConnectorLimits
-from linersync.ports.errors import PlaylistNotFound, ReadFailed, WriteFailed
+from linersync.ports.errors import ReadFailed, WriteFailed
 from linersync.ports.runtime import Clock
 
 CAPABILITIES = frozenset(
@@ -60,12 +65,11 @@ CAPABILITIES = frozenset(
 )
 LIMITS = ConnectorLimits(page_size=100, add_batch_size=50, search_cost=1)
 
-_SEARCH_LIMIT = 10
 _BATCH = 50  # actions per edit request
 _NAME_MAX = 150
 _DESCRIPTION_MAX = 5000
 
-_Op = UpdateMetadata | AddTracks | Reorder | RemoveTracks
+E = Errors(SERVICE, "YouTube Music")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -101,7 +105,7 @@ class YouTubeMusicConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("your playlists") from None
+            raise E.not_understood("your playlists") from None
         return metas
 
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
@@ -111,7 +115,7 @@ class YouTubeMusicConnector:
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood(f"playlist {playlist_id}") from None
+            raise E.not_understood(f"playlist {playlist_id}") from None
         page = read.page
         meta = PlaylistMeta(
             service=SERVICE,
@@ -135,9 +139,7 @@ class YouTubeMusicConnector:
             doc = await self._post("browse", browseId=f"VL{playlist_id}")
         except HttpFailure as e:
             if e.status == 404:
-                raise PlaylistNotFound(
-                    SERVICE, f"YouTube Music has no playlist {playlist_id}"
-                ) from None
+                raise E.not_found(playlist_id) from None
             raise
         return parse_playlist(doc)
 
@@ -147,9 +149,7 @@ class YouTubeMusicConnector:
         if total is None and not page.items and page.continuation is None:
             total = 0  # an empty playlist may show no count at all
         if total is None:
-            raise ReadFailed(
-                SERVICE, f'YouTube Music did not say how long "{page.name}" is'
-            )
+            raise E.no_length(page.name)
         songs = list(page.items)
         token = page.continuation
         while token is not None:
@@ -157,16 +157,10 @@ class YouTubeMusicConnector:
                 await self._post("browse", continuation=token)
             )
             if token is not None and not more:
-                raise ReadFailed(
-                    SERVICE, f'YouTube Music returned an empty page of "{page.name}"'
-                )
+                raise E.empty_page(page.name)
             songs.extend(more)
             if len(songs) > total:
-                raise ReadFailed(
-                    SERVICE,
-                    f"YouTube Music returned more songs than it reported in "
-                    f'"{page.name}"; it will be read again next run',
-                )
+                raise E.too_many(page.name)
         # No version to compare: the first page must look the same afterwards,
         # and no entry may turn up twice (a move between later pages).
         check = await self._first_page(playlist_id)
@@ -176,27 +170,15 @@ class YouTubeMusicConnector:
             or _set_ids(check.items) != _set_ids(page.items)
             or len(set(set_ids)) != len(set_ids)
         ):
-            raise ReadFailed(
-                SERVICE,
-                f'YouTube Music playlist "{page.name}" changed while it was being '
-                "read; it will be read again next run",
-            )
+            raise E.changed_during_read(page.name)
         return _Read(page, songs, total)
 
     async def _entries(self, songs: list[Song | None]) -> tuple[PlaylistEntry, ...]:
         available = [s for s in songs if s is not None]
-        hashes: dict[str, str | None] = {}
-        if self._artwork is not None:
-            hashes = await self._artwork.hash_many(s.artwork_url for s in available)
+        hashes = await hashes_for(self._artwork, [s.artwork_url for s in available])
         return tuple(
-            PlaylistEntry(
-                dataclasses.replace(
-                    s.track,
-                    artwork_hash=hashes.get(s.artwork_url) if s.artwork_url else None,
-                ),
-                None,
-            )
-            for s in available
+            PlaylistEntry(dataclasses.replace(s.track, artwork_hash=h), None)
+            for s, h in zip(available, hashes, strict=True)
         )
 
     async def search(self, query: TrackQuery) -> list[Track]:
@@ -219,11 +201,11 @@ class YouTubeMusicConnector:
                 if s.track.track_id not in seen:
                     found.append(s.track)
                     seen.add(s.track.track_id)
-            return found[:_SEARCH_LIMIT]
+            return found[:SEARCH_LIMIT]
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("a search") from None
+            raise E.not_understood("a search") from None
 
     async def _search(self, text: str) -> list[Song]:
         return parse_search(await self._post("search", query=text, params=SONGS_FILTER))
@@ -246,11 +228,7 @@ class YouTubeMusicConnector:
         except HttpFailure as e:
             raise write_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SERVICE,
-                "YouTube Music's reply to creating a playlist was not understood",
-                True,
-            ) from None
+            raise E.create_not_understood() from None
         return PlaylistMeta(
             service=SERVICE,
             playlist_id=playlist_id,
@@ -261,39 +239,45 @@ class YouTubeMusicConnector:
             track_count=0,
         )
 
-    async def apply(self, playlist_id: str, op: _Op) -> None:
+    async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         match op:
             case AddTracks():
-                # DEDUPE_OPTION_SKIP skips YouTube's duplicate check, so a
-                # song can be added again; without it the edit is refused.
-                actions = [
-                    {
-                        "action": "ACTION_ADD_VIDEO",
-                        "addedVideoId": t,
-                        "dedupeOption": "DEDUPE_OPTION_SKIP",
-                    }
-                    for t in op.track_ids
-                ]
-                await self._edit_in_batches(playlist_id, actions)
+                await self._add(playlist_id, op)
             case RemoveTracks():
                 await self._remove(playlist_id, op)
             case Reorder():
                 await self._reorder(playlist_id, op)
             case UpdateMetadata():
-                draft = op.draft
-                await self._edit_in_batches(
-                    playlist_id,
-                    [
-                        {
-                            "action": "ACTION_SET_PLAYLIST_NAME",
-                            "playlistName": draft.name[:_NAME_MAX],
-                        },
-                        {
-                            "action": "ACTION_SET_PLAYLIST_DESCRIPTION",
-                            "playlistDescription": draft.description[:_DESCRIPTION_MAX],
-                        },
-                    ],
-                )
+                await self._update_metadata(playlist_id, op)
+
+    async def _add(self, playlist_id: str, op: AddTracks) -> None:
+        # DEDUPE_OPTION_SKIP skips YouTube's duplicate check, so a song can be
+        # added again; without it the edit is refused.
+        actions = [
+            {
+                "action": "ACTION_ADD_VIDEO",
+                "addedVideoId": t,
+                "dedupeOption": "DEDUPE_OPTION_SKIP",
+            }
+            for t in op.track_ids
+        ]
+        await self._edit_in_batches(playlist_id, actions)
+
+    async def _update_metadata(self, playlist_id: str, op: UpdateMetadata) -> None:
+        draft = op.draft
+        await self._edit_in_batches(
+            playlist_id,
+            [
+                {
+                    "action": "ACTION_SET_PLAYLIST_NAME",
+                    "playlistName": draft.name[:_NAME_MAX],
+                },
+                {
+                    "action": "ACTION_SET_PLAYLIST_DESCRIPTION",
+                    "playlistDescription": draft.description[:_DESCRIPTION_MAX],
+                },
+            ],
+        )
 
     async def _edit_in_batches(
         self, playlist_id: str, actions: Sequence[dict[str, Any]]
@@ -325,20 +309,10 @@ class YouTubeMusicConnector:
         that didn't read completely: positions would not line up."""
         try:
             read = await self._read(playlist_id)
-        except HttpFailure as e:
-            raise WriteFailed(
-                SERVICE, e.message, False, auth_required=e.auth_required
-            ) from None
-        except ReadFailed as e:
-            raise WriteFailed(
-                SERVICE, e.message, False, auth_required=e.auth_required
-            ) from None
+        except (HttpFailure, ReadFailed) as e:
+            raise nothing_sent(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                SERVICE,
-                f"YouTube Music's reply for playlist {playlist_id} was not understood",
-                False,
-            ) from None
+            raise E.write_not_understood(f"playlist {playlist_id}") from None
         songs = [s for s in read.songs if s is not None and s.set_video_id]
         if len(songs) != read.total or len(songs) != len(read.songs):
             raise WriteFailed(
@@ -351,20 +325,18 @@ class YouTubeMusicConnector:
 
     async def _remove(self, playlist_id: str, op: RemoveTracks) -> None:
         songs = await self._current(playlist_id)
-        actions: list[dict[str, Any]] = []
-        for r in op.removals:
-            if not 0 <= r.position < len(songs):
-                raise _changed()
-            song = songs[r.position]
-            if song.track.track_id != r.track_id:
-                raise _changed()
-            actions.append(
-                {
-                    "action": "ACTION_REMOVE_VIDEO",
-                    "removedVideoId": r.track_id,
-                    "setVideoId": song.set_video_id,
-                }
-            )
+        try:
+            doomed = at_positions(songs, op.removals, lambda s: s.track.track_id)
+        except ValueError:
+            raise E.changed() from None
+        actions: list[dict[str, Any]] = [
+            {
+                "action": "ACTION_REMOVE_VIDEO",
+                "removedVideoId": song.track.track_id,
+                "setVideoId": song.set_video_id,
+            }
+            for song in doomed
+        ]
         await self._edit_in_batches(playlist_id, actions)
 
     async def _reorder(self, playlist_id: str, op: Reorder) -> None:
@@ -373,7 +345,7 @@ class YouTubeMusicConnector:
         try:
             moves = plan_moves(current, op.order)
         except ValueError:
-            raise _changed() from None
+            raise E.changed() from None
         actions: list[dict[str, Any]] = []
         for set_id, before in moves:
             action: dict[str, Any] = {
@@ -397,10 +369,7 @@ class YouTubeMusicConnector:
             params={"prettyPrint": "false"},
             json={"context": context(), **body},
         )
-        doc = response.json()
-        if not isinstance(doc, Mapping):
-            raise ValueError("not a JSON object")
-        return doc
+        return json_object(response)
 
 
 def _prefer_art_tracks(songs: list[Song]) -> list[Song]:
@@ -413,18 +382,6 @@ def _prefer_art_tracks(songs: list[Song]) -> list[Song]:
 
 def _set_ids(items: list[Song | None]) -> list[str | None]:
     return [s.set_video_id if s else None for s in items]
-
-
-def _changed() -> WriteFailed:
-    return WriteFailed(
-        SERVICE,
-        "The YouTube Music playlist changed since it was planned; it will be replanned",
-        False,
-    )
-
-
-def _not_understood(what: str) -> ReadFailed:
-    return ReadFailed(SERVICE, f"YouTube Music's reply for {what} was not understood")
 
 
 def _unavailable(songs: list[Song | None]) -> str | None:

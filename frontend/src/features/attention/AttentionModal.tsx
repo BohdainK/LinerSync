@@ -12,17 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useConnections } from "@/features/connections/useConnections";
 import { ATTENTION_KIND_LABELS } from "@/copy";
+import { useServiceNames } from "@/features/pickers/useServiceNames";
 import { formatDateTime } from "@/lib/format";
 import { useAttentionAction } from "./useAttention";
 
 function NotOnService({ service, onClick, disabled }: { service: string; onClick(): void; disabled: boolean }) {
-  const connections = useConnections();
-  const name = connections.data?.services.find((s) => s.service === service)?.display_name ?? service;
+  const nameOf = useServiceNames();
   return (
     <Button type="button" variant="outline" disabled={disabled} onClick={onClick}>
-      Not on {name}
+      Not on {nameOf(service)}
     </Button>
   );
 }

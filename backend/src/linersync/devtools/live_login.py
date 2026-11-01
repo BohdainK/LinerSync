@@ -17,9 +17,8 @@ import json
 import secrets
 import sys
 import webbrowser
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -39,14 +38,10 @@ from linersync.adapters.connectors.youtube_music.plugin import (
 )
 from linersync.adapters.memory.credentials import InMemoryCredentials
 from linersync.adapters.memory.quota import InMemoryQuota
+from linersync.adapters.system import SystemClock
 from linersync.domain.tracks import ServiceId
 
 MUSICKIT_URL = "https://js-cdn.music.apple.com/musickit/v3/musickit.js"
-
-
-class _SystemClock:
-    def now(self) -> datetime:
-        return datetime.now(UTC)
 
 
 def _redirect_uri(port: int) -> str:
@@ -195,7 +190,7 @@ def _loopback_oauth(
 
     credentials = InMemoryCredentials()
     credentials.save(service, {"client_id": client_id})
-    ctx = ConnectorContext(credentials, InMemoryQuota(), _SystemClock())
+    ctx = ConnectorContext(credentials, InMemoryQuota(), SystemClock())
     asyncio.run(
         plugin.complete(
             ctx, _redirect_uri(port), result.code, {"code_verifier": verifier}
@@ -204,46 +199,47 @@ def _loopback_oauth(
     return credentials.get(service)
 
 
-def _login_spotify(client_id: str, port: int) -> list[str]:
+def _login_oauth(
+    plugin: OAuthSetup,
+    service: str,
+    display_name: str,
+    login_url: Callable[[str, int, str, str], str],
+    client_id: str,
+    port: int,
+) -> list[str]:
+    """A PKCE loopback sign-in; prints the client id and refresh token as
+    `<SERVICE>_CLIENT_ID` / `<SERVICE>_REFRESH_TOKEN`."""
     verifier, challenge = pkce_pair()
     state = secrets.token_urlsafe(16)
-    url = spotify_login_url(client_id, port, state, challenge)
+    url = login_url(client_id, port, state, challenge)
     saved = _loopback_oauth(
-        SPOTIFY_PLUGIN,
-        ServiceId("spotify"),
-        "Spotify",
+        plugin,
+        ServiceId(service),
+        display_name,
         url,
         port,
         verifier,
         state,
         client_id,
     )
+    prefix = service.upper()
     return [
-        f"export SPOTIFY_CLIENT_ID={client_id}",
-        f"export SPOTIFY_REFRESH_TOKEN={saved['refresh_token']}",
+        f"export {prefix}_CLIENT_ID={client_id}",
+        f"export {prefix}_REFRESH_TOKEN={saved['refresh_token']}",
         "export LINERSYNC_LIVE=1",
     ]
+
+
+def _login_spotify(client_id: str, port: int) -> list[str]:
+    return _login_oauth(
+        SPOTIFY_PLUGIN, "spotify", "Spotify", spotify_login_url, client_id, port
+    )
 
 
 def _login_tidal(client_id: str, port: int) -> list[str]:
-    verifier, challenge = pkce_pair()
-    state = secrets.token_urlsafe(16)
-    url = tidal_login_url(client_id, port, state, challenge)
-    saved = _loopback_oauth(
-        TIDAL_PLUGIN,
-        ServiceId("tidal"),
-        "Tidal",
-        url,
-        port,
-        verifier,
-        state,
-        client_id,
+    return _login_oauth(
+        TIDAL_PLUGIN, "tidal", "Tidal", tidal_login_url, client_id, port
     )
-    return [
-        f"export TIDAL_CLIENT_ID={client_id}",
-        f"export TIDAL_REFRESH_TOKEN={saved['refresh_token']}",
-        "export LINERSYNC_LIVE=1",
-    ]
 
 
 def _login_youtube_music(client_id: str, client_secret: str) -> list[str]:
@@ -252,7 +248,7 @@ def _login_youtube_music(client_id: str, client_secret: str) -> list[str]:
     plugin = YouTubeMusicPlugin(YTAuthMode.OAUTH)
     credentials = InMemoryCredentials()
     credentials.save(service, {"client_id": client_id, "client_secret": client_secret})
-    ctx = ConnectorContext(credentials, InMemoryQuota(), _SystemClock())
+    ctx = ConnectorContext(credentials, InMemoryQuota(), SystemClock())
 
     async def flow() -> str:
         try:
@@ -280,7 +276,7 @@ def _login_youtube_music(client_id: str, client_secret: str) -> list[str]:
 
 def _login_apple(team_id: str, key_id: str, key_file: Path, port: int) -> list[str]:
     token = make_developer_token(
-        team_id, key_id, key_file.read_text(), datetime.now(UTC)
+        team_id, key_id, key_file.read_text(), SystemClock().now()
     )
     page = apple_sign_in_page(token, port)
     found: dict[str, str] = {}

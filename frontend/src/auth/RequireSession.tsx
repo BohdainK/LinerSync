@@ -11,11 +11,10 @@ import { useSession } from "./session";
 export function RequireSession() {
   const session = useSession();
   const location = useLocation();
+  const toLogin = <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   if (session.isPending) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
   if (session.data === undefined) {
-    if (session.error instanceof ApiError && session.error.status === 401) {
-      return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
-    }
+    if (session.error instanceof ApiError && session.error.status === 401) return toLogin;
     return (
       <div className="flex flex-col items-start gap-3 p-6">
         <p role="alert" className="text-sm text-destructive">
@@ -27,8 +26,6 @@ export function RequireSession() {
       </div>
     );
   }
-  if (!session.data.signed_in && !session.isError) {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
-  }
+  if (!session.data.signed_in && !session.isError) return toLogin;
   return <Outlet />;
 }

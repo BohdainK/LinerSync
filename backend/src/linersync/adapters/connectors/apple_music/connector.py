@@ -20,13 +20,18 @@ from linersync.adapters.connectors.apple_music.parse import (
     parse_library_playlist,
     parse_library_song,
 )
+from linersync.adapters.connectors.kit import SEARCH_LIMIT, PlaylistOp
+from linersync.adapters.connectors.kit.errors import Errors
 from linersync.adapters.connectors.kit.http import (
     HttpClient,
     HttpFailure,
     apply_in_batches,
+    json_object,
+    nothing_sent,
     write_failed,
 )
-from linersync.adapters.connectors.kit.images import ArtworkHasher
+from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
+from linersync.adapters.connectors.kit.parsing import as_mapping, attributes
 from linersync.domain.capabilities import Capability
 from linersync.domain.operations import AddTracks, RemoveTracks, Reorder, UpdateMetadata
 from linersync.domain.playlists import (
@@ -43,13 +48,10 @@ from linersync.ports.runtime import Clock
 CAPABILITIES = frozenset(
     {Capability.READ_ORDER, Capability.ADD, Capability.CREATE_PLAYLIST}
 )
-LIMITS = ConnectorLimits(100, 100, 2)
+LIMITS = ConnectorLimits(page_size=100, add_batch_size=100, search_cost=2)
 
 _LIBRARY = f"{API_BASE}/v1/me/library/playlists"
-_PAGE = 100
-_BATCH = 100
 _CATALOG_CHUNK = 100
-_SEARCH_LIMIT = 10
 _ART_SIZE = 64
 
 EMPTY_OR_ERROR = (
@@ -66,8 +68,9 @@ REFUSED = (
     "or the sign-in expired)"
 )
 
-_Op = UpdateMetadata | AddTracks | Reorder | RemoveTracks
 _Page = tuple[str, Mapping[str, str | int]]
+
+E = Errors(APPLE, "Apple Music")
 
 
 class AppleMusicConnector:
@@ -100,7 +103,7 @@ class AppleMusicConnector:
     async def list_playlists(self) -> list[PlaylistMeta]:
         try:
             metas: list[PlaylistMeta] = []
-            page: _Page | None = (_LIBRARY, {"limit": _PAGE})
+            page: _Page | None = (_LIBRARY, {"limit": LIMITS.page_size})
             seen: set[str] = set()
             while page is not None:
                 body = await self._get(*page)
@@ -116,7 +119,7 @@ class AppleMusicConnector:
         except HttpFailure as e:
             raise _read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("your playlists") from None
+            raise E.not_understood("your playlists") from None
         return metas
 
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
@@ -125,7 +128,7 @@ class AppleMusicConnector:
         except HttpFailure as e:
             raise _read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood(f"playlist {playlist_id}") from None
+            raise E.not_understood(f"playlist {playlist_id}") from None
 
     async def _read(self, playlist_id: str) -> PlaylistSnapshot:
         obj = await self._playlist_obj(playlist_id)
@@ -159,7 +162,10 @@ class AppleMusicConnector:
     ) -> tuple[list[Mapping[str, Any]], int]:
         songs: list[Mapping[str, Any]] = []
         total: int | None = None
-        request: _Page | None = (f"{_LIBRARY}/{playlist_id}/tracks", {"limit": _PAGE})
+        request: _Page | None = (
+            f"{_LIBRARY}/{playlist_id}/tracks",
+            {"limit": LIMITS.page_size},
+        )
         while request is not None:
             try:
                 page = await self._get(*request)
@@ -169,64 +175,46 @@ class AppleMusicConnector:
                 raise
             page_total = _total(page)
             if page_total is None:
-                raise ReadFailed(APPLE, f'Apple Music did not say how long "{name}" is')
+                raise E.no_length(name)
             if total is None:
                 total = page_total
             elif page_total != total:
-                raise ReadFailed(
-                    APPLE,
-                    f'Apple Music reported {page_total} songs in "{name}" after '
-                    f"reporting {total}; it will be read again next run",
-                )
+                raise E.total_moved(page_total, total, name)
             data = _data(page)
             request = _next(page)
             if request is not None and not data:
-                raise ReadFailed(
-                    APPLE, f'Apple Music returned an empty page of "{name}"'
-                )
+                raise E.empty_page(name)
             songs.extend(data)
             if len(songs) > total:
                 break
         if total is None or len(songs) != total:
-            raise ReadFailed(
-                APPLE,
-                f'Apple Music returned {len(songs)} of {total} songs in "{name}"',
-            )
+            raise E.short(len(songs), total, name)
         return songs, total
 
     async def _entries(
         self, songs: Sequence[Mapping[str, Any]]
     ) -> tuple[PlaylistEntry, ...]:
-        catalog = await self._catalog(
-            [cid for s in songs if (cid := _catalog_id(s)) is not None]
-        )
-        art: list[str | None] = []
-        for s in songs:
-            cid = _catalog_id(s)
-            found = catalog.get(cid) if cid is not None else None
-            url = artwork_url(_attrs(s).get("artwork"), _ART_SIZE)
-            if url is None and found is not None:
-                url = artwork_url(_attrs(found).get("artwork"), _ART_SIZE)
-            art.append(url)
-        hashes: dict[str, str | None] = {}
-        if self._artwork is not None:
-            hashes = await self._artwork.hash_many(art)
-        entries: list[PlaylistEntry] = []
-        for s, url in zip(songs, art, strict=True):
-            cid = _catalog_id(s)
-            found = catalog.get(cid) if cid is not None else None
-            found_attrs = _attrs(found) if found is not None else {}
-            entries.append(
-                PlaylistEntry(
-                    parse_library_song(
-                        s,
-                        isrc=found_attrs.get("isrc") or None,
-                        url=found_attrs.get("url") or None,
-                        artwork_hash=hashes.get(url) if url else None,
-                    )
+        ids = [_catalog_id(s) for s in songs]
+        catalog = await self._catalog([cid for cid in ids if cid is not None])
+        # Each song's catalog attributes; empty for one Apple didn't return.
+        found = [attributes(catalog[cid]) if cid in catalog else {} for cid in ids]
+        art = [
+            artwork_url(attributes(s).get("artwork"), _ART_SIZE)
+            or artwork_url(f.get("artwork"), _ART_SIZE)
+            for s, f in zip(songs, found, strict=True)
+        ]
+        hashes = await hashes_for(self._artwork, art)
+        return tuple(
+            PlaylistEntry(
+                parse_library_song(
+                    s,
+                    isrc=f.get("isrc") or None,
+                    url=f.get("url") or None,
+                    artwork_hash=artwork_hash,
                 )
             )
-        return tuple(entries)
+            for s, f, artwork_hash in zip(songs, found, hashes, strict=True)
+        )
 
     async def _catalog(self, ids: Sequence[str]) -> dict[str, Mapping[str, Any]]:
         """Catalog songs by id; songs Apple doesn't return are simply absent."""
@@ -257,14 +245,14 @@ class AppleMusicConnector:
             term = " ".join([query.title, *query.artists[:1]]).strip()
             body = await self._get(
                 f"{API_BASE}/v1/catalog/{sf}/search",
-                {"types": "songs", "term": term, "limit": _SEARCH_LIMIT},
+                {"types": "songs", "term": term, "limit": SEARCH_LIMIT},
             )
             songs = (body.get("results") or {}).get("songs") or {}
             return [parse_catalog_song(obj) for obj in _data(songs)]
         except HttpFailure as e:
             raise _read_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise _not_understood("a search") from None
+            raise E.not_understood("a search") from None
 
     # -- writes ------------------------------------------------------------
 
@@ -279,15 +267,11 @@ class AppleMusicConnector:
                     "attributes": {"name": draft.name, "description": draft.description}
                 },
             )
-            meta = parse_library_playlist(_first(_json(response.json())))
+            meta = parse_library_playlist(_first(json_object(response)))
         except HttpFailure as e:
             raise write_failed(e) from None
         except (KeyError, TypeError, ValueError):
-            raise WriteFailed(
-                APPLE,
-                "Apple Music's reply to creating a playlist was not understood",
-                True,
-            ) from None
+            raise E.create_not_understood() from None
 
         async def visible() -> PlaylistMeta | None:
             try:
@@ -301,7 +285,7 @@ class AppleMusicConnector:
         appeared = await self._settle(visible)
         return appeared or meta
 
-    async def apply(self, playlist_id: str, op: _Op) -> None:
+    async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         match op:
             case AddTracks():
                 await self._add(playlist_id, op)
@@ -326,10 +310,7 @@ class AppleMusicConnector:
         try:
             baseline = await self._song_total(url)
         except HttpFailure as e:  # nothing has been sent yet
-            read = _read_failed(e)
-            raise WriteFailed(
-                APPLE, read.message, False, auth_required=read.auth_required
-            ) from None
+            raise nothing_sent(_read_failed(e)) from None
         except (KeyError, TypeError, ValueError):
             baseline = None
         if baseline is None:
@@ -355,7 +336,7 @@ class AppleMusicConnector:
             landed += len(chunk)
 
         try:
-            await apply_in_batches(ids, _BATCH, send)
+            await apply_in_batches(ids, LIMITS.add_batch_size, send)
         except HttpFailure as e:
             if e.status == 403:
                 error = WriteFailed(APPLE, REFUSED, e.maybe_applied)
@@ -409,13 +390,7 @@ class AppleMusicConnector:
         self, url: str, params: Mapping[str, str | int] | None
     ) -> Mapping[str, Any]:
         response = await self._api.request("GET", url, idempotent=True, params=params)
-        return _json(response.json())
-
-
-def _json(body: Any) -> Mapping[str, Any]:
-    if not isinstance(body, Mapping):
-        raise ValueError("not a JSON object")
-    return body
+        return json_object(response)
 
 
 def _data(body: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -434,19 +409,13 @@ def _first(body: Mapping[str, Any]) -> Mapping[str, Any]:
     return data[0]
 
 
-def _attrs(obj: Mapping[str, Any]) -> Mapping[str, Any]:
-    attrs = obj.get("attributes")
-    return attrs if isinstance(attrs, Mapping) else {}
-
-
 def _catalog_id(song: Mapping[str, Any]) -> str | None:
-    play = _attrs(song).get("playParams")
-    value = play.get("catalogId") if isinstance(play, Mapping) else None
+    value = as_mapping(attributes(song).get("playParams")).get("catalogId")
     return str(value) if value else None
 
 
 def _last_modified(obj: Mapping[str, Any]) -> str | None:
-    value = _attrs(obj).get("lastModifiedDate")
+    value = attributes(obj).get("lastModifiedDate")
     return value if isinstance(value, str) and value else None
 
 
@@ -464,7 +433,7 @@ def _next(body: Mapping[str, Any]) -> "_Page | None":
     if not value:
         return None
     url = httpx.URL(str(value))
-    params: dict[str, str | int] = {"limit": _PAGE, **dict(url.params)}
+    params: dict[str, str | int] = {"limit": LIMITS.page_size, **dict(url.params)}
     return f"{API_BASE}{url.path}", params
 
 
@@ -474,7 +443,3 @@ def _read_failed(e: HttpFailure) -> ReadFailed:
     return ReadFailed(
         APPLE, e.message, auth_required=e.auth_required or e.status == 403
     )
-
-
-def _not_understood(what: str) -> ReadFailed:
-    return ReadFailed(APPLE, f"Apple Music's reply for {what} was not understood")

@@ -9,6 +9,10 @@ import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { JobOut, SyncOut, SyncPatchIn } from "@/api/types";
 
+export function useSyncs(): UseQueryResult<SyncOut[]> {
+  return useQuery({ queryKey: keys.syncs, queryFn: () => call(api.GET("/api/syncs")) });
+}
+
 export function useSync(syncId: string): UseQueryResult<SyncOut> {
   return useQuery({
     queryKey: keys.sync(syncId),

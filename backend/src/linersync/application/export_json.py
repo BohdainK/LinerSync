@@ -8,9 +8,10 @@ or other server-only state. Restoring merges: local data always wins.
 
 import base64
 import hashlib
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from linersync.application.settings import AppSettings
 from linersync.domain.backups import (
@@ -28,6 +29,8 @@ from linersync.ports.backups import BackupRepository
 from linersync.ports.jobs import RunContextRepository
 from linersync.ports.repositories import Repositories
 from linersync.ports.runtime import Clock
+
+_T = TypeVar("_T")
 
 EXPORT_FORMAT = "linersync-export"
 EXPORT_VERSION = 1
@@ -183,50 +186,54 @@ class ExportService:
         def count(kind: str, new: bool) -> None:
             (added if new else skipped)[kind] += 1
 
+        def merge(
+            kind: str,
+            items: Iterable[_T],
+            exists: Callable[[_T], bool],
+            save: Callable[[_T], None],
+        ) -> None:
+            for item in items:
+                new = not exists(item)
+                if new:
+                    save(item)
+                count(kind, new)
+
         repos = self._repos
-        for group in doc.syncs:
-            new = repos.syncs.get(group.sync_id) is None
-            if new:
-                repos.syncs.save(
-                    replace(
-                        group,
-                        status=SyncStatus.PAUSED,
-                        pause_reason=IMPORTED_PAUSE_REASON,
-                    )
-                )
-            count("syncs", new)
-        for run in doc.runs:
-            new = repos.runs.get(run.run_id) is None
-            if new:
-                if run.status is RunStatus.RUNNING:
-                    # Like JobService.recover: it ended when last known to
-                    # be running, here the moment of the export.
-                    run = replace(
-                        run,
-                        status=RunStatus.ABORTED,
-                        error=EXPORTED_WHILE_RUNNING,
-                        finished_at=run.finished_at or doc.exported_at,
-                    )
-                repos.runs.save(run)
-            count("runs", new)
-        for ctx in doc.run_contexts:
-            new = self._contexts.get(ctx.run_id) is None
-            if new:
-                self._contexts.save(ctx)
-            count("run_contexts", new)
-        for match in doc.remembered_matches:
-            new = repos.matches.get(match.source_key, match.target_service) is None
-            if new:
-                repos.matches.remember(match)
-            count("remembered_matches", new)
+        merge(
+            "syncs",
+            doc.syncs,
+            lambda g: repos.syncs.get(g.sync_id) is not None,
+            lambda g: repos.syncs.save(
+                replace(g, status=SyncStatus.PAUSED, pause_reason=IMPORTED_PAUSE_REASON)
+            ),
+        )
+        merge(
+            "runs",
+            doc.runs,
+            lambda r: repos.runs.get(r.run_id) is not None,
+            lambda r: repos.runs.save(_ended(r, doc.exported_at)),
+        )
+        merge(
+            "run_contexts",
+            doc.run_contexts,
+            lambda c: self._contexts.get(c.run_id) is not None,
+            self._contexts.save,
+        )
+        merge(
+            "remembered_matches",
+            doc.remembered_matches,
+            lambda m: repos.matches.get(m.source_key, m.target_service) is not None,
+            repos.matches.remember,
+        )
         versions = {v.version_id: v for v in doc.backup_versions}
         for entry in doc.backup_playlists:
             count("backup_playlists", self._restore_entry(entry, versions, covers))
-        for backup_run in doc.backup_runs:
-            new = self._backups.get_run(backup_run.backup_id) is None
-            if new:
-                self._backups.save_run(backup_run)
-            count("backup_runs", new)
+        merge(
+            "backup_runs",
+            doc.backup_runs,
+            lambda r: self._backups.get_run(r.backup_id) is not None,
+            self._backups.save_run,
+        )
         applied = self._settings.get() == AppSettings()
         if applied:
             self._settings.save(doc.settings)
@@ -254,3 +261,16 @@ class ExportService:
         store.add_version(version)
         store.save_entry(replace(entry, versions=1))
         return True
+
+
+def _ended(run: SyncRun, exported_at: datetime) -> SyncRun:
+    """Like JobService.recover: a run still running ended when last known to
+    be running, here the moment of the export."""
+    if run.status is not RunStatus.RUNNING:
+        return run
+    return replace(
+        run,
+        status=RunStatus.ABORTED,
+        error=EXPORTED_WHILE_RUNNING,
+        finished_at=run.finished_at or exported_at,
+    )

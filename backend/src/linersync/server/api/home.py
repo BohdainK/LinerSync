@@ -1,7 +1,6 @@
 """Home panels: jobs, what runs next, needs-attention count, warnings, API limits."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
@@ -9,6 +8,7 @@ from fastapi import APIRouter, Depends
 from linersync.application.backups import BACKUP_ALL_LABEL
 from linersync.domain.jobs import JobStatus
 from linersync.ports.quota import QuotaPolicy, quota_day_start
+from linersync.server.api.common import Services
 from linersync.server.api.schemas import (
     HomeOut,
     JobOut,
@@ -18,11 +18,9 @@ from linersync.server.api.schemas import (
 )
 from linersync.server.auth import require_session
 from linersync.server.connections import ConnectionInfo, ConnectionStatus
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/home", dependencies=[Depends(require_session)])
-
-Services = Annotated[AppServices, Depends(get_services)]
 
 LOGIN_EXPIRY_WARNING = timedelta(days=14)
 NEXT_UP_LIMIT = 10
@@ -113,11 +111,7 @@ def _limit(services: AppServices, info: ConnectionInfo) -> LimitOut:
 @router.get("")
 async def home(services: Services) -> HomeOut:
     store = services.job_store
-    set_up = [
-        info
-        for info in services.connections.list()
-        if info.status is not ConnectionStatus.NOT_SET_UP
-    ]
+    set_up = services.connections.set_up()
     return HomeOut(
         running=[JobOut.of(j) for j in store.list_by_status(JobStatus.RUNNING)],
         queued=[JobOut.of(j) for j in store.list_by_status(JobStatus.QUEUED)],

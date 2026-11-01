@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { useConnections } from "@/features/connections/useConnections";
+import { canAdd, isSetUp, useConnections } from "@/features/connections/useConnections";
 import { ARCHIVE } from "./usePlaylists";
 
 export const selectClass =
@@ -18,9 +18,7 @@ export function ServiceSelect(props: {
   const connections = useConnections();
   const options = (connections.data?.services ?? []).filter(
     (s) =>
-      s.status !== "not_set_up" &&
-      !props.exclude?.includes(s.service) &&
-      (!props.writableOnly || s.capabilities.includes("add")),
+      isSetUp(s) && !props.exclude?.includes(s.service) && (!props.writableOnly || canAdd(s)),
   );
   return (
     <div className="flex flex-col gap-1">

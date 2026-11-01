@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CONTRIBUTE_SOURCE_URL, REQUEST_SOURCE_URL } from "@/config";
@@ -14,7 +14,7 @@ export function OnboardingPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Connect your first service</h1>
       {connections.isError ? (
-        <ErrorNotice error={connections.error} onRetry={() => void connections.refetch()} />
+        <QueryError query={connections} />
       ) : connections.data ? (
         <ServiceGrid services={connections.data.services} onPick={(s) => navigate(`/connections/${s}`)} />
       ) : (

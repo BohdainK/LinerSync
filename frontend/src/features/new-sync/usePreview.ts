@@ -1,12 +1,13 @@
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, call } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { JobOut, RunOut, SyncCreateIn } from "@/api/types";
 import { JOB_STATUS_LABELS } from "@/copy";
+import { useRun } from "@/features/runs/useRun";
 import { isActive, useJob } from "@/live/useJob";
 
-export const PREVIEW_DEBOUNCE_MS = 800;
+const PREVIEW_DEBOUNCE_MS = 800;
 
 export type PreviewState = {
   status: "idle" | "waiting" | "running" | "ready" | "failed";
@@ -76,11 +77,7 @@ export function usePreview(input: SyncCreateIn | null): PreviewState {
   const jobQuery = useJob(current?.jobId ?? null);
   const job = current !== null && jobQuery.data ? jobQuery.data : null;
   const runId = job?.status === "succeeded" ? (job.run_ids[0] ?? null) : null;
-  const runQuery = useQuery({
-    queryKey: keys.run(runId ?? ""),
-    enabled: runId !== null,
-    queryFn: () => call(api.GET("/api/runs/{run_id}", { params: { path: { run_id: runId ?? "" } } })),
-  });
+  const runQuery = useRun(runId);
 
   if (key === null) return { status: "idle", run: null, job: null, error: null };
   if (current === null) return { status: "waiting", run: null, job: null, error: null };

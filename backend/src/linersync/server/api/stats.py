@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 
 from linersync.application import stats
 from linersync.domain.sync import SyncStatus
-from linersync.domain.tracks import ServiceId
+from linersync.server.api.common import Services, display_name
 from linersync.server.api.schemas import (
     ActivityOut,
     DayOut,
@@ -17,16 +17,8 @@ from linersync.server.api.schemas import (
     StatsOut,
 )
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
 
 router = APIRouter(prefix="/api/stats", dependencies=[Depends(require_session)])
-
-Services = Annotated[AppServices, Depends(get_services)]
-
-
-def _display_name(services: AppServices, service: ServiceId) -> str:
-    plugin = services.registry.plugins.get(service)
-    return plugin.display_name if plugin is not None else service
 
 
 @router.get("")
@@ -38,7 +30,7 @@ async def get_stats(
     runs = services.repos.runs.list_since(since)
     library = [
         LibraryServiceOut(
-            display_name=_display_name(services, row.service), **asdict(row)
+            display_name=display_name(services, row.service), **asdict(row)
         )
         for row in stats.library(services.backups.list_entries())
     ]

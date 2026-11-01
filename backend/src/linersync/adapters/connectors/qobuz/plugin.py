@@ -5,16 +5,18 @@ talks to the private API its web player uses, with the app ID and user auth
 token the user copies from their own signed-in web player.
 """
 
-import hashlib
 from collections.abc import Mapping
 from datetime import datetime
 
-from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
-from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
+from linersync.adapters.connectors.kit.http import HttpFailure
 from linersync.adapters.connectors.kit.plugin import (
     Category,
     ConnectionTest,
     ConnectorContext,
+    artwork_hasher,
+    connection_failed,
+    fingerprint,
+    http_client,
 )
 from linersync.adapters.connectors.qobuz.auth import QobuzAuth
 from linersync.adapters.connectors.qobuz.connector import (
@@ -35,28 +37,7 @@ from linersync.ports.setup import (
     validate_values,
 )
 
-_POLICY = QuotaPolicy()
 _SIGN_IN_AGAIN = "Sign in to Qobuz again"
-
-
-def _fingerprint(token: str) -> str:
-    return hashlib.sha256(token.strip().encode()).hexdigest()[:16]
-
-
-def _client(ctx: ConnectorContext, base: str, auth: QobuzAuth | None) -> HttpClient:
-    """With auth for the API; without for artwork, whose host must never see
-    the token."""
-    return HttpClient(
-        SERVICE,
-        base,
-        settings=ctx.settings.http,
-        quota=ctx.quota,
-        quota_policy=_POLICY,
-        clock=ctx.clock,
-        auth=auth,
-        transport=ctx.transport,
-        sleep=ctx.sleep,
-    )
 
 
 class QobuzPlugin:
@@ -65,7 +46,7 @@ class QobuzPlugin:
     category: Category = "streaming"
     capabilities = CAPABILITIES
     limits = LIMITS
-    quota_policy = _POLICY
+    quota_policy = QuotaPolicy()
     experimental = True
 
     def setup_guide(self) -> SetupGuide:
@@ -127,35 +108,32 @@ class QobuzPlugin:
         return validate_values(self.setup_guide(), values)
 
     async def test_connection(self, ctx: ConnectorContext) -> ConnectionTest:
-        api = _client(ctx, API_BASE, QobuzAuth(ctx.credentials))
-        try:
-            response = await api.request(
-                "GET",
-                f"{API_BASE}/playlist/getUserPlaylists",
-                idempotent=True,
-                params={"limit": 1},
-            )
-            body = response.json()
-            user_id, login = parse_account(body if isinstance(body, dict) else {})
-        except HttpFailure as e:
-            if e.auth_required:
-                return ConnectionTest(False, _SIGN_IN_AGAIN)
-            if e.status == 400:
-                return ConnectionTest(
-                    False,
-                    "Qobuz refused the app ID; copy it again from the web player",
+        auth = QobuzAuth(ctx.credentials)
+        async with http_client(ctx, SERVICE, API_BASE, auth=auth) as api:
+            try:
+                response = await api.request(
+                    "GET",
+                    f"{API_BASE}/playlist/getUserPlaylists",
+                    idempotent=True,
+                    params={"limit": 1},
                 )
-            return ConnectionTest(False, e.message)
-        except ValueError:
-            return ConnectionTest(False, "Qobuz's reply was not understood")
-        finally:
-            await api.aclose()
+                body = response.json()
+                user_id, login = parse_account(body if isinstance(body, dict) else {})
+            except HttpFailure as e:
+                if e.status == 400 and not e.auth_required:
+                    return ConnectionTest(
+                        False,
+                        "Qobuz refused the app ID; copy it again from the web player",
+                    )
+                return connection_failed(e, _SIGN_IN_AGAIN)
+            except ValueError:
+                return ConnectionTest(False, "Qobuz's reply was not understood")
         # The user id belongs to this token: a token for another account must
         # not inherit the last one's, even when Qobuz's reply names no user.
         token = ctx.credentials.get(SERVICE).get("user_auth_token", "")
         ctx.credentials.save(
             SERVICE,
-            {"user_id": user_id, "user_id_token": _fingerprint(token)}
+            {"user_id": user_id, "user_id_token": fingerprint(token)}
             if user_id is not None
             else {"user_id": "", "user_id_token": ""},
         )
@@ -165,18 +143,13 @@ class QobuzPlugin:
         return None  # Qobuz documents no lifetime for a token
 
     def create(self, ctx: ConnectorContext) -> Connector:
-        api = _client(ctx, API_BASE, QobuzAuth(ctx.credentials))
-        artwork = (
-            ArtworkHasher(http_fetcher(_client(ctx, "", None)))
-            if ctx.settings.hash_artwork
-            else None
-        )
+        api = http_client(ctx, SERVICE, API_BASE, auth=QobuzAuth(ctx.credentials))
+        # Artwork goes over a plain client: its host must never see the token.
+        artwork = artwork_hasher(ctx, SERVICE)
         creds = ctx.credentials.get(SERVICE)
         user_id = creds.get("user_id") or None
         owner_token = creds.get("user_id_token")
-        if owner_token and owner_token != _fingerprint(
-            creds.get("user_auth_token", "")
-        ):
+        if owner_token and owner_token != fingerprint(creds.get("user_auth_token", "")):
             user_id = None  # learnt for an earlier token
         return QobuzConnector(api, artwork, user_id=user_id, clock=ctx.clock)
 

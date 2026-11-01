@@ -15,8 +15,16 @@ from linersync.domain.backups import (
 from linersync.domain.jobs import BackupJob, TransferJob
 from linersync.domain.runs import Trigger
 from linersync.domain.tracks import ServiceId
-from linersync.server.api.export import csv_response
-from linersync.server.api.runs import known_track
+from linersync.server.api.common import (
+    UNKNOWN_BACKUP,
+    Services,
+    backup_unlocked,
+    check_destinations,
+    check_services,
+    csv_response,
+    display_name,
+    found,
+)
 from linersync.server.api.schemas import (
     BackupPlaylistDetailOut,
     BackupPlaylistOut,
@@ -29,38 +37,17 @@ from linersync.server.api.schemas import (
     BackupVersionOut,
     JobOut,
     RestoreIn,
-)
-from linersync.server.api.syncs import (
-    UNKNOWN_BACKUP,
-    backup_unlocked,
-    check_destinations,
-    check_services,
+    TrackOut,
 )
 from linersync.server.auth import require_session
-from linersync.server.connections import ConnectionStatus
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/backups", dependencies=[Depends(require_session)])
-
-Services = Annotated[AppServices, Depends(get_services)]
 
 CONNECT_FIRST = "Connect a service first"
 COVER_CACHE = "private, max-age=31536000, immutable"
 COVER_CSP = "default-src 'none'; sandbox"
 ONLY_ARCHIVED = "Only archived playlists can be deleted"
-
-
-def _set_up(services: AppServices) -> list[ServiceId]:
-    return [
-        i.service
-        for i in services.connections.list()
-        if i.status is not ConnectionStatus.NOT_SET_UP
-    ]
-
-
-def _display_name(services: AppServices, service: ServiceId) -> str:
-    plugin = services.registry.plugins.get(service)
-    return plugin.display_name if plugin is not None else service
 
 
 def _service_out(
@@ -71,7 +58,7 @@ def _service_out(
     runs = store.list_runs(service, limit=1)
     return BackupServiceOut(
         service=service,
-        display_name=_display_name(services, service),
+        display_name=display_name(services, service),
         connected=connected,
         playlists=len(live),
         archived=len(store.list_entries(service, archived=True)),
@@ -83,7 +70,7 @@ def _service_out(
 @router.get("")
 async def backup_summary(services: Services) -> BackupSummaryOut:
     store = services.backups
-    set_up = set(_set_up(services))
+    set_up = {i.service for i in services.connections.set_up()}
     known = (
         set_up
         | {e.service for e in store.list_entries()}
@@ -105,11 +92,11 @@ async def run_backup(services: Services, body: BackupRunIn | None = None) -> Job
     names = body.services if body is not None else []
     if names:
         check_services(services, names)
-    elif not _set_up(services):
+    elif not services.connections.set_up():
         raise HTTPException(status_code=422, detail=CONNECT_FIRST)
     chosen = tuple(dict.fromkeys(ServiceId(n) for n in names))
     label = (
-        f"Back up {_display_name(services, chosen[0])}"
+        f"Back up {display_name(services, chosen[0])}"
         if len(chosen) == 1
         else BACKUP_ALL_LABEL
     )
@@ -131,9 +118,7 @@ async def list_backup_runs(
 
 @router.get("/runs/{backup_id}")
 async def get_backup_run(backup_id: str, services: Services) -> BackupRunOut:
-    run = services.backups.get_run(backup_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Unknown backup run")
+    run = found(services.backups.get_run(backup_id), "Unknown backup run")
     return BackupRunOut.of(run)
 
 
@@ -142,9 +127,7 @@ async def get_backup_run(backup_id: str, services: Services) -> BackupRunOut:
     responses={200: {"content": {"image/*": {}}, "description": "The cover image"}},
 )
 async def get_cover(sha256: str, services: Services) -> Response:
-    cover = services.backups.get_cover(sha256)
-    if cover is None:
-        raise HTTPException(status_code=404, detail="Not found")
+    cover = found(services.backups.get_cover(sha256), "Not found")
     return Response(
         content=cover.data,
         media_type=cover.media_type,
@@ -158,17 +141,11 @@ async def get_cover(sha256: str, services: Services) -> Response:
 
 # -- the archive --------------------------------------------------------------
 def _entry(services: AppServices, entry_id: str) -> BackedUpPlaylist:
-    entry = services.backups.get_entry(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=UNKNOWN_BACKUP)
-    return entry
+    return found(services.backups.get_entry(entry_id), UNKNOWN_BACKUP)
 
 
 def _version(services: AppServices, version_id: str) -> PlaylistVersion:
-    version = services.backups.get_version(version_id)
-    if version is None:
-        raise HTTPException(status_code=404, detail=UNKNOWN_BACKUP)
-    return version
+    return found(services.backups.get_version(version_id), UNKNOWN_BACKUP)
 
 
 @router.get("/playlists")
@@ -209,7 +186,7 @@ async def get_backup_version(
 ) -> BackupVersionDetailOut:
     version = _version(services, version_id)
     tracks = [
-        BackupTrackOut(position=i, added_at=e.added_at, track=known_track(e.track))
+        BackupTrackOut(position=i, added_at=e.added_at, track=TrackOut.of(e.track))
         for i, e in enumerate(version.snapshot.entries, start=1)
     ]
     return BackupVersionDetailOut(
@@ -240,6 +217,6 @@ async def restore_version(
     destination = ServiceId(request.destination or entry.service)
     check_destinations(services, [destination])
     name = version.snapshot.meta.name
-    label = f"Restore “{name}” to {_display_name(services, destination)}"
+    label = f"Restore “{name}” to {display_name(services, destination)}"
     transfer = TransferJob(BACKUP_SERVICE, version_id, destination, request.dry_run)
     return JobOut.of(services.jobs.submit(transfer, label))

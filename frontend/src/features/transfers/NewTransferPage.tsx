@@ -1,31 +1,28 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
-import type { BulkTransferIn, EstimateOut, JobOut, TransferIn } from "@/api/types";
+import type { BulkItemIn, BulkTransferIn, JobOut, TransferIn } from "@/api/types";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
+import { NotesList } from "@/components/NotesList";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
-import { useConnections } from "@/features/connections/useConnections";
+import { canAdd, isSetUp, useConnections } from "@/features/connections/useConnections";
 import { BulkWarningDialog } from "@/features/pickers/BulkWarningDialog";
-import { unreadableIds } from "@/features/pickers/unreadableIds";
 import { PlaylistPicker } from "@/features/pickers/PlaylistPicker";
 import { ServiceSelect } from "@/features/pickers/ServiceSelect";
-import { parseSourceParam } from "@/features/pickers/sourceParam";
+import { useBulkEstimate } from "@/features/pickers/useBulkEstimate";
+import { useSourceSelection } from "@/features/pickers/useSourceSelection";
 import { isActive, useCancelJob, useJob } from "@/live/useJob";
 import { limitations } from "@/lib/limitations";
 
 export function NewTransferPage() {
   const queryClient = useQueryClient();
-  const [params] = useSearchParams();
-  const [preset] = useState(() => parseSourceParam(params.get("source")));
-  const [service, setService] = useState<string | null>(preset?.service ?? null);
-  const [selection, setSelection] = useState<string[]>(preset ? [preset.playlistId] : []);
+  const { service, selection, setSelection, changeSource } = useSourceSelection();
   const [destinations, setDestinations] = useState<string[]>([]);
   const [dryRun, setDryRun] = useState(false);
-  const [estimate, setEstimate] = useState<EstimateOut | null>(null);
-  const [warnOpen, setWarnOpen] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const dryId = useId();
 
@@ -33,41 +30,31 @@ export function NewTransferPage() {
   const job = useJob(jobId);
   const cancel = useCancelJob();
   const targets = (connections.data?.services ?? []).filter(
-    (s) => s.status !== "not_set_up" && s.service !== service && s.capabilities.includes("add"),
+    (s) => isSetUp(s) && s.service !== service && canAdd(s),
   );
   const chosen = targets.filter((t) => destinations.includes(t.service)).map((t) => t.service);
+  const items: BulkItemIn[] = selection.map((id) => ({
+    source_service: service ?? "",
+    playlist_id: id,
+    destination_services: chosen,
+  }));
+  const bulkEstimate = useBulkEstimate(items);
 
   function started(out: JobOut) {
     queryClient.setQueryData(keys.job(out.job_id), out);
     setJobId(out.job_id);
-    setWarnOpen(false);
+    bulkEstimate.setWarnOpen(false);
   }
 
   const single = useMutation<JobOut, ApiError, TransferIn>({
     mutationFn: (body) => call(api.POST("/api/transfers", { body })),
     onSuccess: started,
   });
-  const runEstimate = useMutation<EstimateOut, ApiError, void>({
-    mutationFn: () =>
-      call(api.POST("/api/transfers/estimate", { body: { items: items() } })),
-    onSuccess: (out) => {
-      setEstimate(out);
-      setWarnOpen(true);
-    },
-  });
   const bulk = useMutation<JobOut, ApiError, BulkTransferIn>({
     mutationFn: (body) => call(api.POST("/api/transfers/bulk", { body })),
     onSuccess: started,
-    onSettled: () => setWarnOpen(false),
+    onSettled: () => bulkEstimate.setWarnOpen(false),
   });
-
-  function items() {
-    return selection.map((id) => ({
-      source_service: service ?? "",
-      playlist_id: id,
-      destination_services: chosen,
-    }));
-  }
 
   function start() {
     if (service === null) return;
@@ -76,22 +63,20 @@ export function NewTransferPage() {
     if (selection.length === 1 && chosen.length === 1 && only !== undefined && dest !== undefined) {
       single.mutate({ source_service: service, playlist_id: only, destination: dest, dry_run: dryRun });
     } else {
-      runEstimate.mutate();
+      bulkEstimate.request.mutate();
     }
   }
 
   function startBulk() {
-    const skipped = unreadableIds(estimate);
-    const remaining = items().filter((i) => !skipped.has(i.playlist_id));
-    if (remaining.length === 0) return;
-    bulk.mutate({ items: remaining, dry_run: dryRun });
+    if (bulkEstimate.readable.length === 0) return;
+    bulk.mutate({ items: bulkEstimate.readable, dry_run: dryRun });
   }
 
   function reset() {
     setJobId(null);
     setSelection([]);
     setDestinations([]);
-    setEstimate(null);
+    bulkEstimate.clearEstimate();
   }
 
   if (jobId !== null) {
@@ -129,26 +114,15 @@ export function NewTransferPage() {
     );
   }
 
-  const pending = single.isPending || runEstimate.isPending || bulk.isPending;
+  const pending = single.isPending || bulkEstimate.request.isPending || bulk.isPending;
   const ready = service !== null && selection.length > 0 && chosen.length > 0;
 
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">New transfer</h1>
 
-      <section aria-labelledby="new-transfer-source" className="space-y-3">
-        <h2 id="new-transfer-source" className="text-lg font-semibold">
-          Source
-        </h2>
-        <ServiceSelect
-          label="Source service"
-          value={service}
-          includeArchive
-          onChange={(next) => {
-            setService(next);
-            setSelection([]);
-          }}
-        />
+      <Section title="Source">
+        <ServiceSelect label="Source service" value={service} includeArchive onChange={changeSource} />
         {service !== null ? (
           <PlaylistPicker
             service={service}
@@ -158,12 +132,9 @@ export function NewTransferPage() {
             onChange={setSelection}
           />
         ) : null}
-      </section>
+      </Section>
 
-      <section aria-labelledby="new-transfer-destinations" className="space-y-3">
-        <h2 id="new-transfer-destinations" className="text-lg font-semibold">
-          Destinations
-        </h2>
+      <Section title="Destinations">
         {targets.length === 0 ? (
           <p className="text-sm text-muted-foreground">No other connected services.</p>
         ) : null}
@@ -186,18 +157,12 @@ export function NewTransferPage() {
                   />
                   {t.display_name}
                 </label>
-                {notes.length > 0 ? (
-                  <ul className="list-disc space-y-1 pl-12 text-sm text-muted-foreground">
-                    {notes.map((note) => (
-                      <li key={note}>{note}</li>
-                    ))}
-                  </ul>
-                ) : null}
+                <NotesList notes={notes} className="pl-12" />
               </li>
             );
           })}
         </ul>
-      </section>
+      </Section>
 
       <div className="flex items-center gap-2">
         <input id={dryId} type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
@@ -207,20 +172,20 @@ export function NewTransferPage() {
       </div>
 
       <div className="space-y-3">
-        {single.error ? <ErrorNotice error={single.error} /> : null}
-        {runEstimate.error ? <ErrorNotice error={runEstimate.error} /> : null}
-        {bulk.error ? <ErrorNotice error={bulk.error} /> : null}
+        {[single.error, bulkEstimate.request.error, bulk.error].map((error, i) =>
+          error ? <ErrorNotice key={i} error={error} /> : null,
+        )}
         <Button type="button" disabled={!ready || pending} onClick={start}>
           Start transfer
         </Button>
       </div>
 
       <BulkWarningDialog
-        open={warnOpen}
-        onOpenChange={setWarnOpen}
-        estimate={estimate}
+        open={bulkEstimate.warnOpen}
+        onOpenChange={bulkEstimate.setWarnOpen}
+        estimate={bulkEstimate.estimate}
         verb="Transfer"
-        nothingToStart={estimate !== null && items().every((i) => unreadableIds(estimate).has(i.playlist_id))}
+        nothingToStart={bulkEstimate.nothingToStart}
         onStart={startBulk}
         pending={bulk.isPending}
       />

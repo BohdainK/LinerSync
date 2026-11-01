@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from linersync.adapters.connectors.spotify.parse import (
-    SPOTIFY,
+    SERVICE,
     parse_items_page,
     parse_playlist_meta,
     parse_track,
@@ -18,7 +18,7 @@ def test_parse_track_fields() -> None:
     raw = _items()[0]["item"]
     t = parse_track(raw, artwork_hash="h")  # type: ignore[arg-type]
     assert t is not None
-    assert t.service == SPOTIFY
+    assert t.service == SERVICE
     assert t.track_id == "spotify:track:trk1"
     assert t.title == "Rock Song"
     assert t.artists == ("Band One", "Guest Two")

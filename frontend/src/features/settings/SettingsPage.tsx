@@ -1,15 +1,16 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api, call, fieldErrors, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { SettingsIn, SettingsOut } from "@/api/types";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
 import { ExternalLink } from "@/components/ExternalLink";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { DONATE_URL } from "@/config";
+import { useSettings } from "./useSettings";
 
 const DEFAULT_BACKUP_SCHEDULE = "0 3 * * *";
 
@@ -29,20 +30,57 @@ function Field(props: { label: string; error?: string | undefined; children: (id
 // 0.2 * 100 is 20.000000000000004; round to two decimals for display.
 const toPercent = (f: number) => String(Math.round(f * 10_000) / 100);
 
+type NumberField = {
+  key:
+    | "brake_max_fraction"
+    | "brake_max_count"
+    | "match_accept_threshold"
+    | "match_min_margin"
+    | "breaker_failure_threshold"
+    | "breaker_cooldown_minutes"
+    | "backup_versions_kept";
+  label: string;
+  attrs: { min: number; max?: number; step: number | "any" };
+  /** Shown as a percentage, stored as a fraction. */
+  percent?: boolean;
+};
+
+/** The numeric settings shown before the backup schedule, in order. */
+const LIMIT_FIELDS: NumberField[] = [
+  {
+    key: "brake_max_fraction",
+    label: "Pause a run that removes more than (%)",
+    attrs: { min: 1, max: 100, step: "any" },
+    percent: true,
+  },
+  { key: "brake_max_count", label: "…or more than (songs)", attrs: { min: 0, step: 1 } },
+  { key: "match_accept_threshold", label: "Accept a match from confidence", attrs: { min: 0, max: 1, step: 0.01 } },
+  { key: "match_min_margin", label: "Minimum lead over the next candidate", attrs: { min: 0, max: 1, step: 0.01 } },
+  { key: "breaker_failure_threshold", label: "Pause a service after (failures)", attrs: { min: 1, step: 1 } },
+  { key: "breaker_cooldown_minutes", label: "Retry a paused service after (minutes)", attrs: { min: 1, step: 1 } },
+];
+const KEPT_FIELD: NumberField = {
+  key: "backup_versions_kept",
+  label: "Versions kept per playlist",
+  attrs: { min: 1, max: 100, step: 1 },
+};
+const NUMBER_FIELDS = [...LIMIT_FIELDS, KEPT_FIELD];
+
+type Numbers = Record<NumberField["key"], string>;
+
 function SettingsForm({ settings }: { settings: SettingsOut }) {
   const queryClient = useQueryClient();
   const [v, setV] = useState({
     default_schedule: settings.default_schedule,
-    percent: toPercent(settings.brake_max_fraction),
-    count: String(settings.brake_max_count),
-    accept: String(settings.match_accept_threshold),
-    margin: String(settings.match_min_margin),
-    failures: String(settings.breaker_failure_threshold),
-    cooldown: String(settings.breaker_cooldown_minutes),
     backupOn: settings.backup_schedule !== null,
     backup_schedule: settings.backup_schedule ?? DEFAULT_BACKUP_SCHEDULE,
-    kept: String(settings.backup_versions_kept),
   });
+  const [numbers, setNumbers] = useState(
+    () =>
+      Object.fromEntries(
+        NUMBER_FIELDS.map((f) => [f.key, f.percent ? toPercent(settings[f.key]) : String(settings[f.key])]),
+      ) as Numbers,
+  );
   const set = <K extends keyof typeof v>(k: K, value: (typeof v)[K]) => setV((c) => ({ ...c, [k]: value }));
   const save = useMutation<SettingsOut, ApiError, SettingsIn>({
     mutationFn: (body) => call(api.PUT("/api/settings", { body })),
@@ -51,48 +89,36 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
       toast("Saved");
     },
   });
-  const nums = [v.percent, v.count, v.accept, v.margin, v.failures, v.cooldown, v.kept].map((s) =>
-    s.trim() === "" ? NaN : Number(s),
-  );
-  const invalid = nums.some(Number.isNaN);
+  const invalid = NUMBER_FIELDS.some((f) => numbers[f.key].trim() === "" || Number.isNaN(Number(numbers[f.key])));
   const errors = save.isError ? fieldErrors(save.error) : {};
-  const known = [
-    "default_schedule",
-    "brake_max_fraction",
-    "brake_max_count",
-    "match_accept_threshold",
-    "match_min_margin",
-    "breaker_failure_threshold",
-    "breaker_cooldown_minutes",
-    "backup_schedule",
-    "backup_versions_kept",
-  ];
+  const known = ["default_schedule", "backup_schedule", ...NUMBER_FIELDS.map((f) => f.key)];
   const unmapped = save.isError && !known.some((k) => k in errors);
 
   function submit() {
+    const parsed = Object.fromEntries(
+      NUMBER_FIELDS.map((f) => [f.key, Number(numbers[f.key]) / (f.percent ? 100 : 1)]),
+    ) as Record<NumberField["key"], number>;
     save.mutate({
+      ...parsed,
       default_schedule: v.default_schedule.trim(),
-      brake_max_fraction: Number(v.percent) / 100,
-      brake_max_count: Number(v.count),
-      match_accept_threshold: Number(v.accept),
-      match_min_margin: Number(v.margin),
-      breaker_failure_threshold: Number(v.failures),
-      breaker_cooldown_minutes: Number(v.cooldown),
       backup_schedule: v.backupOn ? v.backup_schedule.trim() : null,
-      backup_versions_kept: Number(v.kept),
     });
   }
 
-  const num = (id: string, key: keyof typeof v, field: string, attrs: Record<string, number | string>) => (
-    <Input
-      id={id}
-      type="number"
-      className="max-w-40"
-      value={String(v[key])}
-      aria-invalid={errors[field] ? true : undefined}
-      onChange={(e) => set(key, e.target.value as never)}
-      {...attrs}
-    />
+  const numberField = (f: NumberField) => (
+    <Field key={f.key} label={f.label} error={errors[f.key]}>
+      {(id) => (
+        <Input
+          id={id}
+          type="number"
+          className="max-w-40"
+          value={numbers[f.key]}
+          aria-invalid={errors[f.key] ? true : undefined}
+          onChange={(e) => setNumbers((n) => ({ ...n, [f.key]: e.target.value }))}
+          {...f.attrs}
+        />
+      )}
+    </Field>
   );
 
   return (
@@ -114,24 +140,7 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
           />
         )}
       </Field>
-      <Field label="Pause a run that removes more than (%)" error={errors["brake_max_fraction"]}>
-        {(id) => num(id, "percent", "brake_max_fraction", { min: 1, max: 100, step: "any" })}
-      </Field>
-      <Field label="…or more than (songs)" error={errors["brake_max_count"]}>
-        {(id) => num(id, "count", "brake_max_count", { min: 0, step: 1 })}
-      </Field>
-      <Field label="Accept a match from confidence" error={errors["match_accept_threshold"]}>
-        {(id) => num(id, "accept", "match_accept_threshold", { min: 0, max: 1, step: 0.01 })}
-      </Field>
-      <Field label="Minimum lead over the next candidate" error={errors["match_min_margin"]}>
-        {(id) => num(id, "margin", "match_min_margin", { min: 0, max: 1, step: 0.01 })}
-      </Field>
-      <Field label="Pause a service after (failures)" error={errors["breaker_failure_threshold"]}>
-        {(id) => num(id, "failures", "breaker_failure_threshold", { min: 1, step: 1 })}
-      </Field>
-      <Field label="Retry a paused service after (minutes)" error={errors["breaker_cooldown_minutes"]}>
-        {(id) => num(id, "cooldown", "breaker_cooldown_minutes", { min: 1, step: 1 })}
-      </Field>
+      {LIMIT_FIELDS.map(numberField)}
       <div className="flex items-center gap-2">
         <Checkbox
           id="backup-on"
@@ -154,9 +163,7 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
           />
         )}
       </Field>
-      <Field label="Versions kept per playlist" error={errors["backup_versions_kept"]}>
-        {(id) => num(id, "kept", "backup_versions_kept", { min: 1, max: 100, step: 1 })}
-      </Field>
+      {numberField(KEPT_FIELD)}
       <p className="text-sm text-muted-foreground">
         Schedules use {settings.timezone}. Change it with LINERSYNC_TIMEZONE.
       </p>
@@ -169,14 +176,11 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
 }
 
 export function SettingsPage() {
-  const settings = useQuery({
-    queryKey: keys.settings,
-    queryFn: () => call(api.GET("/api/settings")),
-  });
+  const settings = useSettings();
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
-      {settings.isError ? <ErrorNotice error={settings.error} onRetry={() => void settings.refetch()} /> : null}
+      <QueryError query={settings} />
       {settings.data ? <SettingsForm settings={settings.data} /> : null}
       {DONATE_URL ? (
         <footer className="text-sm">

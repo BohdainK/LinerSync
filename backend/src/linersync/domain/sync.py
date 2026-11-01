@@ -23,6 +23,13 @@ class MemberRole(StrEnum):
     PEER = "peer"
 
 
+SOURCE_MEMBER_ID = "src"
+
+
+def destination_member_id(n: int) -> str:
+    return f"dst{n}"
+
+
 class SyncStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"

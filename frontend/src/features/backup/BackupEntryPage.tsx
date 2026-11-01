@@ -4,13 +4,17 @@ import { Link, useNavigate, useParams } from "react-router";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
+import { Section } from "@/components/Section";
 import { TrackList } from "@/components/TrackList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ARCHIVE } from "@/features/pickers/usePlaylists";
 import { useServiceNames } from "@/features/pickers/useServiceNames";
 import { formatDateTime } from "@/lib/format";
+import { linkClass } from "@/lib/styles";
+import { cn } from "@/lib/utils";
 import { RestoreDialog } from "./RestoreDialog";
 
 function VersionTracks({ versionId }: { versionId: string }) {
@@ -19,7 +23,7 @@ function VersionTracks({ versionId }: { versionId: string }) {
     queryFn: () =>
       call(api.GET("/api/backups/versions/{version_id}", { params: { path: { version_id: versionId } } })),
   });
-  if (version.isError) return <ErrorNotice error={version.error} onRetry={() => void version.refetch()} />;
+  if (version.isError) return <QueryError query={version} />;
   if (!version.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   return <TrackList numbered tracks={version.data.tracks.map((t) => t.track)} />;
 }
@@ -50,15 +54,15 @@ export function BackupEntryPage() {
     onSettled: () => setConfirmDelete(false),
   });
 
-  if (entry.isError) return <ErrorNotice error={entry.error} onRetry={() => void entry.refetch()} />;
+  if (entry.isError) return <QueryError query={entry} />;
   const e = entry.data;
   if (!e) return <p className="text-muted-foreground">Loading…</p>;
   const archived = e.archived_at !== null;
-  const source = encodeURIComponent(`backup:${e.entry_id}`).replace("%3A", ":");
+  const source = `${ARCHIVE}:${encodeURIComponent(e.entry_id)}`;
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Link className="text-sm text-primary underline underline-offset-4" to="/backup">
+        <Link className={cn("text-sm", linkClass)} to="/backup">
           Back to Backup
         </Link>
         <h1 className="text-2xl font-semibold">{e.name}</h1>
@@ -88,10 +92,7 @@ export function BackupEntryPage() {
       ) : null}
       {remove.isError ? <ErrorNotice error={remove.error} /> : null}
 
-      <section aria-labelledby="history" className="space-y-3">
-        <h2 id="history" className="text-lg font-semibold">
-          History
-        </h2>
+      <Section title="History">
         <Table>
           <TableHeader>
             <TableRow>
@@ -139,7 +140,7 @@ export function BackupEntryPage() {
           </TableBody>
         </Table>
         {selected ? <VersionTracks versionId={selected} /> : null}
-      </section>
+      </Section>
 
       {restoring ? (
         <RestoreDialog

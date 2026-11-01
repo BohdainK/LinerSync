@@ -43,6 +43,10 @@ class JobGuard:
             self.raised = True
             raise JobCancelled()
 
+    def reset_writes(self) -> None:
+        """Count nothing as written again: a cancel may stop the job now."""
+        self.wrote = not self.cancellable
+
     def record(self, tracks: list[Track]) -> None:
         for t in tracks:
             self.seen[t.key] = t

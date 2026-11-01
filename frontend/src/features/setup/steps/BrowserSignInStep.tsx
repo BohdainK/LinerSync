@@ -23,9 +23,10 @@ export function BrowserSignInStep({
   const queryClient = useQueryClient();
   const handler = signInHandlers[service];
   const secure = window.isSecureContext;
+  const noHandler = NO_SIGN_IN_HANDLER.replace("{name}", name);
   const signIn = useMutation({
     mutationFn: async () => {
-      if (!handler) throw new Error(NO_SIGN_IN_HANDLER.replace("{name}", name));
+      if (!handler) throw new Error(noHandler);
       const path = { params: { path: { service } } };
       const { config } = await call(api.GET("/api/connections/{service}/browser-sign-in", path));
       const result = await handler(config);
@@ -37,7 +38,7 @@ export function BrowserSignInStep({
       onSignedIn();
     },
   });
-  const blocker = !handler ? NO_SIGN_IN_HANDLER.replace("{name}", name) : !secure ? INSECURE_CONTEXT : null;
+  const blocker = !handler ? noHandler : !secure ? INSECURE_CONTEXT : null;
   return (
     <div className="flex flex-col gap-3">
       <StepBody service={service} step={step} />

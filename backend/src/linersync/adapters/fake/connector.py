@@ -3,6 +3,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from linersync.adapters.connectors.kit import PlaylistOp
 from linersync.domain.capabilities import Capability
 from linersync.domain.matching.normalize import normalize_text
 from linersync.domain.operations import AddTracks, RemoveTracks, Reorder, UpdateMetadata
@@ -16,9 +17,7 @@ from linersync.domain.tracks import ServiceId, Track, TrackQuery
 from linersync.ports.connector import ConnectorLimits
 from linersync.ports.errors import PlaylistNotFound, ReadFailed, WriteFailed
 
-_Op = UpdateMetadata | AddTracks | Reorder | RemoveTracks
-
-_DEFAULT_LIMITS = ConnectorLimits(100, 100)
+_DEFAULT_LIMITS = ConnectorLimits(page_size=100, add_batch_size=100)
 
 _REQUIRED: dict[type, Capability] = {
     AddTracks: Capability.ADD,
@@ -146,7 +145,7 @@ class FakeConnector:
         self.playlists[pid] = PlaylistSnapshot(meta, (), 0, datetime.now(UTC))
         return meta
 
-    async def apply(self, playlist_id: str, op: _Op) -> None:
+    async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         self.calls.append(f"apply:{type(op).__name__}:{playlist_id}")
         needed = _REQUIRED[type(op)]
         assert needed in self.capabilities, (
@@ -184,7 +183,7 @@ class FakeConnector:
                     return e.track
         return Track(self.service, track_id, track_id, ("Unknown",))
 
-    def _write(self, playlist_id: str, snap: PlaylistSnapshot, op: _Op) -> None:
+    def _write(self, playlist_id: str, snap: PlaylistSnapshot, op: PlaylistOp) -> None:
         entries = list(snap.entries)
         meta = snap.meta
         now = datetime.now(UTC)

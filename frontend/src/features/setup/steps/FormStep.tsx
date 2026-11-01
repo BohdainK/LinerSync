@@ -18,6 +18,11 @@ function isSavedSecret(field: SetupField, conn: ConnectionOut): boolean {
   return field.kind !== "text" && conn.secrets_set.includes(field.key);
 }
 
+/** Text fields keep their value from `from`; secrets start blank. */
+function blankSecrets(fields: SetupField[], from: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(fields.map((f) => [f.key, f.kind === "text" ? (from[f.key] ?? "") : ""]));
+}
+
 function FieldInput({
   field,
   value,
@@ -85,9 +90,7 @@ export function FormStep({
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(step.fields.map((f) => [f.key, f.kind === "text" ? (conn.values[f.key] ?? "") : ""])),
-  );
+  const [values, setValues] = useState<Record<string, string>>(() => blankSecrets(step.fields, conn.values));
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
@@ -102,7 +105,7 @@ export function FormStep({
     onSuccess: (saved) => {
       queryClient.setQueryData(keys.connection(service), saved);
       void queryClient.invalidateQueries({ queryKey: keys.connections, exact: true });
-      setValues((v) => Object.fromEntries(step.fields.map((f) => [f.key, f.kind === "text" ? (v[f.key] ?? "") : ""])));
+      setValues((v) => blankSecrets(step.fields, v));
       toast.success("Saved");
       onSaved();
     },

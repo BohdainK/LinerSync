@@ -59,22 +59,28 @@ def _split_artists(value: str) -> list[str]:
     return [p for p in parts if p]
 
 
-def _find_tags(segment: str) -> frozenset[str]:
-    text = normalize_text(segment)
+def _featured(segment: str) -> tuple[str, ...] | None:
+    """The featured artists if the segment is a "feat." marker, else None."""
+    feat = _FEAT.match(segment)
+    return tuple(_split_artists(feat.group(1))) if feat else None
+
+
+def _find_tags(text: str) -> tuple[frozenset[str], str]:
+    """The version tags in normalised `text`, and the text left without them."""
     found: set[str] = set()
     for tag, pattern in _TAG_PATTERNS:
         if pattern.search(text):
             found.add(tag)
             text = pattern.sub(" ", text)
-    return frozenset(found)
+    return frozenset(found), text
 
 
 def _classify(segment: str) -> tuple[frozenset[str], tuple[str, ...]] | None:
     """Return (versions, featured) if the segment is a marker, else None."""
-    feat = _FEAT.match(segment)
-    if feat:
-        return frozenset(), tuple(_split_artists(feat.group(1)))
-    tags = _find_tags(segment)
+    featured = _featured(segment)
+    if featured is not None:
+        return frozenset(), featured
+    tags, _ = _find_tags(normalize_text(segment))
     if tags:
         return tags, ()
     return None
@@ -82,17 +88,12 @@ def _classify(segment: str) -> tuple[frozenset[str], tuple[str, ...]] | None:
 
 def _classify_dash(segment: str) -> tuple[frozenset[str], tuple[str, ...]] | None:
     """Like _classify, but a tag segment must contain nothing else meaningful."""
-    feat = _FEAT.match(segment)
-    if feat:
-        return frozenset(), tuple(_split_artists(feat.group(1)))
-    text = _LIVE_LOCATION.sub("live", normalize_text(segment))
-    tags: set[str] = set()
-    for tag, pattern in _TAG_PATTERNS:
-        if pattern.search(text):
-            tags.add(tag)
-            text = pattern.sub(" ", text)
-    if tags and not _FILLER.sub(" ", text).strip():
-        return frozenset(tags), ()
+    featured = _featured(segment)
+    if featured is not None:
+        return frozenset(), featured
+    tags, rest = _find_tags(_LIVE_LOCATION.sub("live", normalize_text(segment)))
+    if tags and not _FILLER.sub(" ", rest).strip():
+        return tags, ()
     return None
 
 

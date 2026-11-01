@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from linersync.adapters.connectors.kit.parsing import attributes, iso_datetime
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -64,14 +65,9 @@ class Included:
         return out
 
 
-def _attributes(resource: Mapping[str, Any]) -> Mapping[str, Any]:
-    attrs = resource.get("attributes")
-    return attrs if isinstance(attrs, Mapping) else {}
-
-
 def _files(artwork: Mapping[str, Any]) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
-    for f in _attributes(artwork).get("files") or []:
+    for f in attributes(artwork).get("files") or []:
         href = f.get("href") if isinstance(f, Mapping) else None
         if href:
             width = (f.get("meta") or {}).get("width") or 0
@@ -98,20 +94,20 @@ def parse_track(
     included: Included,
     artwork_hash: str | None = None,
 ) -> Track:
-    attrs = _attributes(resource)
+    attrs = attributes(resource)
     video = resource.get("type") == "videos"
     rid = str(resource["id"])
     title = str(attrs.get("title") or "")
     if attrs.get("version"):
         title = f"{title} ({attrs['version']})"
     albums = included.related(resource, "albums")
-    album = _attributes(albums[0]).get("title") if albums else None
+    album = attributes(albums[0]).get("title") if albums else None
     return Track(
         service=SERVICE,
         track_id=f"{VIDEO_PREFIX}{rid}" if video else rid,
         title=title,
         artists=tuple(
-            str(_attributes(a).get("name") or "")
+            str(attributes(a).get("name") or "")
             for a in included.related(resource, "artists")
         ),
         album=None if video or album is None else str(album),
@@ -125,7 +121,7 @@ def parse_track(
 def parse_playlist_meta(
     resource: Mapping[str, Any], included: Included
 ) -> PlaylistMeta:
-    attrs = _attributes(resource)
+    attrs = attributes(resource)
     files = _cover_files(resource, included)
     count = attrs.get("numberOfItems")
     return PlaylistMeta(
@@ -155,15 +151,6 @@ class RawItem:
         return f"{prefix}{self.ref_id}"
 
 
-def _added_at(raw: Any) -> datetime | None:
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(str(raw))
-    except ValueError:
-        return None
-
-
 def next_link(doc: Mapping[str, Any]) -> str | None:
     value = (doc.get("links") or {}).get("next")
     return str(value) if value else None
@@ -180,7 +167,7 @@ def parse_items_page(doc: Mapping[str, Any]) -> tuple[list[RawItem], str | None]
                 ref_type,
                 ref_id,
                 str(meta["itemId"]),
-                _added_at(meta.get("addedAt")),
+                iso_datetime(meta.get("addedAt")),
                 included.get(ref_type, ref_id),
             )
         )

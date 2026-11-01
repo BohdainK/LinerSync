@@ -3,12 +3,11 @@ import type { RunOut, UnresolvedOut } from "@/api/types";
 import { ChangesList } from "@/components/ChangesList";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
+import { Section } from "@/components/Section";
 import { TrackList } from "@/components/TrackList";
+import { UnresolvedItem } from "@/components/UnresolvedItem";
+import { formatSongs } from "@/lib/format";
 import type { PreviewState } from "./usePreview";
-
-function songs(n: number): string {
-  return `${n} ${n === 1 ? "song" : "songs"}`;
-}
 
 function Unmatched({ items }: { items: UnresolvedOut[] }) {
   return (
@@ -16,22 +15,7 @@ function Unmatched({ items }: { items: UnresolvedOut[] }) {
       <h4 className="font-medium">Didn't match ({items.length})</h4>
       <ul className="space-y-2">
         {items.map((u, i) => (
-          <li key={`${u.position}:${i}`} className="space-y-1 rounded-md border p-3">
-            <TrackList tracks={[u.source]} />
-            {u.reasons.length > 0 ? (
-              <ul className="list-disc pl-6 text-sm text-muted-foreground">
-                {u.reasons.map((reason, j) => (
-                  <li key={j}>{reason}</li>
-                ))}
-              </ul>
-            ) : null}
-            {u.candidates.length > 0 ? (
-              <div className="text-sm">
-                <p className="text-muted-foreground">Closest matches</p>
-                <TrackList tracks={u.candidates.map((c) => c.track)} />
-              </div>
-            ) : null}
-          </li>
+          <UnresolvedItem key={`${u.position}:${i}`} item={u} candidatesHeading="Closest matches" />
         ))}
       </ul>
     </div>
@@ -52,11 +36,11 @@ function Destination({ run, index, name }: { run: RunOut; index: number; name: s
         {name}
       </h3>
       {member?.error ? <p className="text-sm text-destructive">{member.error}</p> : null}
-      <p>{songs(added.length)} will be added</p>
+      <p>{formatSongs(added.length)} will be added</p>
       {added.length > 0 ? <TrackList tracks={added} /> : null}
       {removed.length > 0 ? (
         <div className="space-y-1">
-          <p>{songs(removed.length)} will be removed</p>
+          <p>{formatSongs(removed.length)} will be removed</p>
           <TrackList tracks={removed} />
         </div>
       ) : null}
@@ -76,10 +60,7 @@ export function PreviewPanel(props: { preview: PreviewState; destinations: { ser
   const { preview } = props;
   const run = preview.status === "ready" ? preview.run : null;
   return (
-    <section aria-labelledby="new-sync-preview" className="space-y-3">
-      <h2 id="new-sync-preview" className="text-lg font-semibold">
-        Preview
-      </h2>
+    <Section title="Preview">
       {preview.status === "idle" ? (
         <p className="text-sm text-muted-foreground">Choose a source playlist and destinations to see a preview.</p>
       ) : null}
@@ -91,6 +72,6 @@ export function PreviewPanel(props: { preview: PreviewState; destinations: { ser
       ) : null}
       {preview.status === "failed" ? <ErrorNotice error={preview.error} /> : null}
       {run ? props.destinations.map((d, i) => <Destination key={i} run={run} index={i} name={d.name} />) : null}
-    </section>
+    </Section>
   );
 }

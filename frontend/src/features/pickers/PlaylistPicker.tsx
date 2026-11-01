@@ -1,8 +1,9 @@
 import { useId, useState } from "react";
-import { ErrorNotice } from "@/components/ErrorNotice";
+import { QueryError } from "@/components/ErrorNotice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CANT_READ, CANT_READ_FALLBACK, NEW_PLAYLIST } from "@/copy";
+import { NEW_PLAYLIST_ID } from "./newPlaylist";
 import { usePlaylists } from "./usePlaylists";
 
 const MAX_SHOWN = 200;
@@ -39,7 +40,7 @@ export function PlaylistPicker(props: {
     <fieldset className="space-y-2">
       <legend className="text-sm font-medium">{props.label}</legend>
       {playlists.isError ? (
-        <ErrorNotice error={playlists.error} onRetry={() => void playlists.refetch()} />
+        <QueryError query={playlists} />
       ) : playlists.isPending ? (
         <p className="text-sm text-muted-foreground">Loading playlists…</p>
       ) : (
@@ -70,8 +71,8 @@ export function PlaylistPicker(props: {
                   <input
                     type="radio"
                     name={name}
-                    checked={value.includes("")}
-                    onChange={() => onChange([""])}
+                    checked={value.includes(NEW_PLAYLIST_ID)}
+                    onChange={() => onChange([NEW_PLAYLIST_ID])}
                   />
                   <span className="font-medium">{NEW_PLAYLIST}</span>
                 </label>

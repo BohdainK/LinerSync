@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from linersync.domain.backups import BackedUpPlaylist, BackupRun
@@ -10,6 +10,7 @@ from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.operations import AddTracks, RemoveTracks
 from linersync.domain.runs import RunKind, RunStatus, SyncRun
 from linersync.domain.tracks import ServiceId
+from linersync.ports.quota import local_midnight
 
 FAILED_STATUSES = frozenset({RunStatus.FAILED, RunStatus.ABORTED})
 WAITING_STATUSES = frozenset(
@@ -122,7 +123,7 @@ def activity(runs: Iterable[SyncRun], backups: Iterable[BackupRun]) -> Activity:
 def window_start(now: datetime, days: int, zone: ZoneInfo) -> datetime:
     """Local midnight starting the last `days` days, today included, in UTC."""
     first = now.astimezone(zone).date() - timedelta(days=days - 1)
-    return datetime(first.year, first.month, first.day, tzinfo=zone).astimezone(UTC)
+    return local_midnight(first, zone)
 
 
 def daily(runs: Iterable[SyncRun], first: date, days: int, zone: ZoneInfo) -> list[Day]:

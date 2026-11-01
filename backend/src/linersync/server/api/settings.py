@@ -2,22 +2,18 @@
 
 from dataclasses import replace
 from datetime import timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
-from linersync.adapters.scheduler import cron_problem
 from linersync.application.config import BreakerConfig
 from linersync.application.settings import AppSettings
 from linersync.domain.planning.brake import BrakeConfig
+from linersync.server.api.common import Services, check_schedule, reconcile_schedule
 from linersync.server.api.schemas import SettingsIn, SettingsOut
-from linersync.server.api.syncs import reconcile_schedule
 from linersync.server.auth import require_session
-from linersync.server.state import AppServices, get_services
+from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/settings", dependencies=[Depends(require_session)])
-
-Services = Annotated[AppServices, Depends(get_services)]
 
 
 def _out(services: AppServices, s: AppSettings) -> SettingsOut:
@@ -43,13 +39,8 @@ async def get_settings(services: Services) -> SettingsOut:
 
 @router.put("")
 async def put_settings(body: SettingsIn, services: Services) -> SettingsOut:
-    problem = cron_problem(body.default_schedule, services.config.timezone)
-    if problem is not None:
-        raise HTTPException(status_code=422, detail=problem)
-    if body.backup_schedule is not None:
-        problem = cron_problem(body.backup_schedule, services.config.timezone)
-        if problem is not None:
-            raise HTTPException(status_code=422, detail=problem)
+    check_schedule(services, body.default_schedule)
+    check_schedule(services, body.backup_schedule)
     current = services.settings_store.get()
     engine = current.engine
     updated = replace(

@@ -11,11 +11,12 @@ from linersync.adapters.connectors.jellyfin.connector import (
 )
 from linersync.adapters.connectors.jellyfin.parse import SERVICE
 from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
-from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
 from linersync.adapters.connectors.kit.plugin import (
     Category,
     ConnectionTest,
     ConnectorContext,
+    artwork_hasher,
+    http_client,
 )
 from linersync.ports.connector import Connector
 from linersync.ports.credentials import CredentialStore
@@ -31,7 +32,6 @@ from linersync.ports.setup import (
     validate_values,
 )
 
-_POLICY = QuotaPolicy()
 _DOCS = "https://jellyfin.org/docs/general/server/settings/api-keys/"
 
 
@@ -64,21 +64,9 @@ async def resolve_user_id(
     raise ReadFailed(SERVICE, f'No Jellyfin user named "{username}"')
 
 
-def _client(ctx: ConnectorContext, *, authenticated: bool) -> HttpClient:
-    auth = None
-    if authenticated:
-        auth = ApiKeyAuth(ctx.credentials.get(SERVICE).get("api_key", ""))
-    return HttpClient(
-        SERVICE,
-        "",
-        settings=ctx.settings.http,
-        quota=ctx.quota,
-        quota_policy=_POLICY,
-        clock=ctx.clock,
-        auth=auth,
-        transport=ctx.transport,
-        sleep=ctx.sleep,
-    )
+def _api_client(ctx: ConnectorContext) -> HttpClient:
+    auth = ApiKeyAuth(ctx.credentials.get(SERVICE).get("api_key", ""))
+    return http_client(ctx, SERVICE, auth=auth)
 
 
 class JellyfinPlugin:
@@ -87,7 +75,7 @@ class JellyfinPlugin:
     category: Category = "self_hosted"
     capabilities = CAPABILITIES
     limits = LIMITS
-    quota_policy = _POLICY
+    quota_policy = QuotaPolicy()
 
     def setup_guide(self) -> SetupGuide:
         return SetupGuide(
@@ -150,23 +138,23 @@ class JellyfinPlugin:
 
     async def test_connection(self, ctx: ConnectorContext) -> ConnectionTest:
         values = ctx.credentials.get(SERVICE)
-        api = _client(ctx, authenticated=True)
-        try:
-            await resolve_user_id(api, base_url(values), ctx.credentials, fresh=True)
-        except HttpFailure as e:
-            if e.auth_required or e.status in (401, 403):
-                return ConnectionTest(False, "Check your Jellyfin API key")
-            if e.status is None:
-                return ConnectionTest(
-                    False, f"Can't reach Jellyfin at {base_url(values)}"
+        async with _api_client(ctx) as api:
+            try:
+                await resolve_user_id(
+                    api, base_url(values), ctx.credentials, fresh=True
                 )
-            return ConnectionTest(False, e.message)
-        except ReadFailed as e:
-            return ConnectionTest(False, e.message)
-        except (KeyError, TypeError, ValueError):
-            return ConnectionTest(False, "Jellyfin's reply was not understood")
-        finally:
-            await api.aclose()
+            except HttpFailure as e:
+                if e.auth_required or e.status in (401, 403):
+                    return ConnectionTest(False, "Check your Jellyfin API key")
+                if e.status is None:
+                    return ConnectionTest(
+                        False, f"Can't reach Jellyfin at {base_url(values)}"
+                    )
+                return ConnectionTest(False, e.message)
+            except ReadFailed as e:
+                return ConnectionTest(False, e.message)
+            except (KeyError, TypeError, ValueError):
+                return ConnectionTest(False, "Jellyfin's reply was not understood")
         return ConnectionTest(True, "Connected", values.get("username", "").strip())
 
     def login_expires_at(self, credentials: Mapping[str, str]) -> datetime | None:
@@ -174,15 +162,13 @@ class JellyfinPlugin:
 
     def create(self, ctx: ConnectorContext) -> Connector:
         base = base_url(ctx.credentials.get(SERVICE))
-        api = _client(ctx, authenticated=True)
+        api = _api_client(ctx)
 
         async def user_id() -> str:
             return await resolve_user_id(api, base, ctx.credentials)
 
-        artwork = None
-        if ctx.settings.hash_artwork:
-            # Jellyfin serves images without auth; keep the key off them.
-            artwork = ArtworkHasher(http_fetcher(_client(ctx, authenticated=False)))
+        # Jellyfin serves images without auth; keep the key off them.
+        artwork = artwork_hasher(ctx, SERVICE)
         return JellyfinConnector(api, base, user_id, artwork, clock=ctx.clock)
 
 

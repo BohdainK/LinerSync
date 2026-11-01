@@ -10,7 +10,8 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC
 from email.utils import parsedate_to_datetime
-from typing import Any, Protocol
+from types import TracebackType
+from typing import Any, Protocol, Self
 
 import httpx
 
@@ -85,6 +86,19 @@ def write_failed(e: HttpFailure, *, maybe_applied: bool | None = None) -> WriteF
     )
 
 
+def nothing_sent(e: HttpFailure | ReadFailed) -> WriteFailed:
+    """A write that failed while reading before it, so nothing was sent."""
+    return WriteFailed(e.service, e.message, False, auth_required=e.auth_required)
+
+
+def json_object(response: httpx.Response) -> Mapping[str, Any]:
+    """The response body, which must be a JSON object; raises ValueError."""
+    body = response.json()
+    if not isinstance(body, Mapping):
+        raise ValueError("not a JSON object")
+    return body
+
+
 async def apply_in_batches[T](
     items: Sequence[T], size: int, send: Callable[[Sequence[T]], Awaitable[None]]
 ) -> None:
@@ -144,6 +158,17 @@ class HttpClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.aclose()
 
     async def request(
         self,

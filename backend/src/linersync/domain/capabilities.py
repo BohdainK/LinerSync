@@ -16,12 +16,11 @@ class Capability(StrEnum):
 
 
 def limitations(
-    service_name: str, caps: frozenset[Capability], mode: "SyncMode"
+    name: str, caps: frozenset[Capability], mode: "SyncMode"
 ) -> tuple[str, ...]:
     # sync.py imports Capability from here, so SyncMode is imported lazily.
     from linersync.domain.sync import SyncMode
 
-    name = service_name
     full = mode is SyncMode.FULL
     if Capability.ADD not in caps:
         return (f"{name} is read-only, so it can't be a destination",)

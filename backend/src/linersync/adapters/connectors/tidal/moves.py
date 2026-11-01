@@ -1,11 +1,10 @@
 """Pure planning for Tidal's move endpoint, which moves selected occurrences
 (by itemId), in order, before another occurrence or to the end."""
 
-from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from linersync.adapters.connectors.kit.ordering import lis_indexes, occurrence_labels
+from linersync.adapters.connectors.kit.ordering import stable_occurrences
 
 MAX_MOVE = 20  # occurrences per PATCH
 
@@ -19,18 +18,9 @@ class Move:
 def plan_moves(current: Sequence[tuple[str, str]], target: Sequence[str]) -> list[Move]:
     """Moves turning ``current`` ((track_id, item_id) per position) into the
     ``target`` order of track ids. The n-th copy of a track stays the n-th."""
-    track_ids = [t for t, _ in current]
-    if Counter(track_ids) != Counter(target):
-        raise ValueError("target is not a permutation of current")
-    cur_labels = occurrence_labels(track_ids)
+    cur_labels, tgt_labels, kept = stable_occurrences([t for t, _ in current], target)
     item_of = {
         label: item for label, (_, item) in zip(cur_labels, current, strict=True)
-    }
-    tgt_labels = occurrence_labels(target)
-    target_index = {label: i for i, label in enumerate(tgt_labels)}
-    kept = {
-        cur_labels[i]
-        for i in lis_indexes([target_index[label] for label in cur_labels])
     }
 
     # Walk the target from the end: each run of moved occurrences goes right

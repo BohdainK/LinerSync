@@ -4,6 +4,8 @@ import { ExternalLink } from "@/components/ExternalLink";
 import { Button } from "@/components/ui/button";
 import { formatDuration } from "@/lib/format";
 
+const LIMIT = 100;
+
 export function TrackRow({ track }: { track: TrackOut }) {
   const details = [track.artists.join(", "), track.album ?? "", formatDuration(track.duration_ms)]
     .filter(Boolean)
@@ -21,14 +23,12 @@ export function TrackRow({ track }: { track: TrackOut }) {
 export function TrackList({
   tracks,
   numbered = false,
-  limit = 100,
 }: {
   tracks: TrackOut[];
   numbered?: boolean;
-  limit?: number;
 }) {
   const [all, setAll] = useState(false);
-  const shown = all ? tracks : tracks.slice(0, limit);
+  const shown = all ? tracks : tracks.slice(0, LIMIT);
   const Tag = numbered ? "ol" : "ul";
   return (
     <div className="space-y-2">
@@ -39,7 +39,7 @@ export function TrackList({
           </li>
         ))}
       </Tag>
-      {!all && tracks.length > limit ? (
+      {!all && tracks.length > LIMIT ? (
         <Button type="button" variant="outline" size="sm" onClick={() => setAll(true)}>
           Show all {tracks.length}
         </Button>

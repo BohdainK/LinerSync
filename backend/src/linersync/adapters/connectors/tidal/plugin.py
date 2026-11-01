@@ -4,13 +4,15 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from linersync.adapters.connectors.kit.http import HttpClient, HttpFailure
-from linersync.adapters.connectors.kit.images import ArtworkHasher, http_fetcher
-from linersync.adapters.connectors.kit.oauth import pkce_pair
+from linersync.adapters.connectors.kit.oauth import pkce_authorize
 from linersync.adapters.connectors.kit.plugin import (
     AuthorizeRequest,
     Category,
     ConnectionTest,
     ConnectorContext,
+    artwork_hasher,
+    connection_failed,
+    http_client,
 )
 from linersync.adapters.connectors.tidal.auth import (
     API_BASE,
@@ -38,29 +40,13 @@ from linersync.ports.setup import (
     validate_values,
 )
 
-_POLICY = QuotaPolicy()
 
-
-def _client(ctx: ConnectorContext, base: str, auth: TidalAuth | None) -> HttpClient:
-    """With auth for the API; without for the token endpoint and for artwork,
-    whose hosts must never see the Tidal token."""
-    return HttpClient(
-        SERVICE,
-        base,
-        settings=ctx.settings.http,
-        quota=ctx.quota,
-        quota_policy=_POLICY,
-        clock=ctx.clock,
-        auth=auth,
-        transport=ctx.transport,
-        sleep=ctx.sleep,
-    )
-
-
-def _clients(ctx: ConnectorContext) -> tuple[HttpClient, HttpClient]:
-    token_client = _client(ctx, "", None)
+def _clients(ctx: ConnectorContext) -> tuple[HttpClient, TidalAuth, HttpClient]:
+    """The token endpoint's client (plain: only the API may see the Tidal
+    token), the sign-in that uses it, and the API client."""
+    token_client = http_client(ctx, SERVICE)
     auth = TidalAuth(ctx.credentials, token_client, ctx.clock)
-    return token_client, _client(ctx, API_BASE, auth)
+    return token_client, auth, http_client(ctx, SERVICE, API_BASE, auth=auth)
 
 
 async def _get_me(api: HttpClient) -> Mapping[str, object]:
@@ -105,7 +91,7 @@ class TidalPlugin:
     category: Category = "streaming"
     capabilities = CAPABILITIES
     limits = LIMITS
-    quota_policy = _POLICY
+    quota_policy = QuotaPolicy()
 
     def setup_guide(self) -> SetupGuide:
         return SetupGuide(
@@ -173,10 +159,13 @@ class TidalPlugin:
     def authorize(
         self, credentials: Mapping[str, str], redirect_uri: str, state: str
     ) -> AuthorizeRequest:
-        check_redirect_uri(redirect_uri)
-        verifier, challenge = pkce_pair()
-        url = authorize_url(credentials["client_id"], redirect_uri, state, challenge)
-        return AuthorizeRequest(url, {"code_verifier": verifier})
+        return pkce_authorize(
+            credentials,
+            redirect_uri,
+            state,
+            check_redirect_uri=check_redirect_uri,
+            authorize_url=authorize_url,
+        )
 
     async def complete(
         self,
@@ -185,26 +174,18 @@ class TidalPlugin:
         code: str,
         keep: Mapping[str, str],
     ) -> None:
-        token_client, api = _clients(ctx)
-        auth = TidalAuth(ctx.credentials, token_client, ctx.clock)
-        try:
+        token_client, auth, api = _clients(ctx)
+        async with token_client, api:
             await auth.exchange_code(code, redirect_uri, keep["code_verifier"])
             ctx.credentials.save(SERVICE, _account(await _get_me(api)))
-        finally:
-            await token_client.aclose()
-            await api.aclose()
 
     async def test_connection(self, ctx: ConnectorContext) -> ConnectionTest:
-        token_client, api = _clients(ctx)
-        try:
-            me = await _get_me(api)
-        except HttpFailure as e:
-            if e.auth_required:
-                return ConnectionTest(False, "Sign in to Tidal again")
-            return ConnectionTest(False, e.message)
-        finally:
-            await token_client.aclose()
-            await api.aclose()
+        token_client, _, api = _clients(ctx)
+        async with token_client, api:
+            try:
+                me = await _get_me(api)
+            except HttpFailure as e:
+                return connection_failed(e, "Sign in to Tidal again")
         account = _account(me)
         ctx.credentials.save(SERVICE, account)
         return ConnectionTest(True, "Connected", account["username"] or None)
@@ -213,13 +194,8 @@ class TidalPlugin:
         return None  # Tidal documents no lifetime for a sign-in
 
     def create(self, ctx: ConnectorContext) -> Connector:
-        _, api = _clients(ctx)
-        artwork_client = _client(ctx, "", None)
-        artwork = (
-            ArtworkHasher(http_fetcher(artwork_client))
-            if ctx.settings.hash_artwork
-            else None
-        )
+        _, _, api = _clients(ctx)
+        artwork = artwork_hasher(ctx, SERVICE)
 
         async def country() -> str:
             return await resolve_country(api, ctx.credentials)

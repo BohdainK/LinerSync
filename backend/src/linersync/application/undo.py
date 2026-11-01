@@ -1,10 +1,10 @@
 from dataclasses import replace
 
-from linersync.application.runner import Deps, SyncRunner
+from linersync.application.runner import Deps, SyncRunner, partly_read
 from linersync.domain.operations import ChangeNotMade
 from linersync.domain.planning.diff import diff_ordered
 from linersync.domain.planning.planner import plan_member
-from linersync.domain.playlists import PlaylistDraft, PlaylistSnapshot
+from linersync.domain.playlists import PlaylistSnapshot
 from linersync.domain.runs import (
     MemberResult,
     MemberStatus,
@@ -15,6 +15,7 @@ from linersync.domain.runs import (
     Trigger,
 )
 from linersync.domain.sync import (
+    SOURCE_MEMBER_ID,
     Direction,
     MemberRole,
     SyncGroup,
@@ -139,22 +140,14 @@ class UndoService:
             current = await connector.read_playlist(member.playlist_id)
         except ConnectorError as e:
             return _unreadable(mid, f"couldn't read this playlist: {e}")
-        if not current.is_complete:
-            return _unreadable(
-                mid,
-                f"this playlist was only partly read {current.shortfall()}",
-            )
+        partial = partly_read(current, "this playlist")
+        if partial is not None:
+            return _unreadable(mid, partial)
         if verified_after is not None and current.track_ids != verified_after:
             return _changed(mid)
-        meta = snap.meta
         caps = connector.capabilities
         plan = plan_member(
-            mid,
-            current,
-            snap.track_ids,
-            PlaylistDraft(meta.name, meta.description, meta.cover_url),
-            caps,
-            SyncMode.FULL,
+            mid, current, snap.track_ids, snap.meta.draft(), caps, SyncMode.FULL
         )
         if effective_mode(SyncMode.FULL, caps) is SyncMode.ADD_ONLY:
             # The planner's add-only flags work on track ids (a set); undo must
@@ -188,7 +181,10 @@ def _target(
         member_id, meta.service, meta.playlist_id, MemberRole.DESTINATION
     )
     source = SyncMember(
-        "src" if member_id != "src" else "src0", meta.service, None, MemberRole.SOURCE
+        SOURCE_MEMBER_ID if member_id != SOURCE_MEMBER_ID else "src0",
+        meta.service,
+        None,
+        MemberRole.SOURCE,
     )
     group = SyncGroup(sync_id, meta.name, Direction.ONE_WAY, (source, member))
     return group, member

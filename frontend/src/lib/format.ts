@@ -33,3 +33,16 @@ export function formatDay(day: string, locale?: string): string {
   const [y, m, d] = day.split("-").map(Number);
   return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(y ?? 0, (m ?? 1) - 1, d ?? 1));
 }
+
+export function formatSongs(n: number): string {
+  return `${n} ${n === 1 ? "song" : "songs"}`;
+}
+
+/** A run's changes as "+2 −1". */
+export function formatChangeCounts({ added, removed }: { added: number; removed: number }): string {
+  return `+${added} −${removed}`;
+}
+
+export function formatBackupResult(r: { saved: number; unchanged: number; archived: number; unreadable: number }): string {
+  return `${r.saved} saved, ${r.unchanged} unchanged, ${r.archived} archived, ${r.unreadable} unreadable`;
+}

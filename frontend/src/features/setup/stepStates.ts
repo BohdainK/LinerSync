@@ -2,7 +2,7 @@ import type { ConnectionOut, SetupGuide, SetupStep } from "@/api/types";
 
 export type StepState = "done" | "current" | "todo";
 
-export type LocalProgress = { acknowledged: Set<string>; signedIn: boolean };
+type LocalProgress = { acknowledged: Set<string>; signedIn: boolean };
 
 function isDone(step: SetupStep, conn: ConnectionOut, local: LocalProgress): boolean {
   switch (step.kind) {
