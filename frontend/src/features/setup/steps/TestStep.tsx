@@ -31,7 +31,7 @@ export function TestStep({
       {result && !pending ? (
         result.ok ? (
           <p role="status" className="flex items-center gap-2 text-sm">
-            <Check aria-hidden className="size-4 text-green-600" />
+            <Check aria-hidden className="size-4 text-green-600 dark:text-green-400" />
             {[result.message, result.account_name].filter(Boolean).join(" — ")}
           </p>
         ) : (

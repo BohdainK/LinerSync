@@ -5,24 +5,51 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Spike: "Driftwood pearl morning" palette (#BC7B6F #5A322A #CCCDC7 #E4A499 #718A9E). */
+  --background: #fafaf8;
+  --foreground: #2b1a16;
+  --card: #ffffff;
+  --card-foreground: #2b1a16;
+  --popover: #ffffff;
+  --popover-foreground: #2b1a16;
+  --primary: #5a322a;
+  --primary-foreground: #f3efec;
+  --secondary: #efefec;
+  --secondary-foreground: #2b1a16;
+  --muted: #efefec;
+  --muted-foreground: #4f5d69;
+  --accent: #f4ddd7;
+  --accent-foreground: #2b1a16;
+  --destructive: #a11d1d;
+  --border: #e3e4df;
+  --input: #d3d5ce;
+  --ring: #bc7b6f;
+  --header: #5a322a;
+  --header-foreground: #f3efec;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #1f1a19;
+  --foreground: #ece6e2;
+  --card: #29221f;
+  --card-foreground: #ece6e2;
+  --popover: #29221f;
+  --popover-foreground: #ece6e2;
+  --primary: #e4a499;
+  --primary-foreground: #2b1a16;
+  --secondary: #342b28;
+  --secondary-foreground: #ece6e2;
+  --muted: #342b28;
+  --muted-foreground: #b5aca7;
+  --accent: #4a302b;
+  --accent-foreground: #ece6e2;
+  --destructive: #e5675c;
+  --border: #3b3230;
+  --input: #4a403d;
+  --ring: #bc7b6f;
+  --header: #3a201b;
+  --header-foreground: #ece6e2;
 }
 
 @theme inline {
@@ -48,6 +75,120 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-header: var(--header);
+  --color-header-foreground: var(--header-foreground);
+}
+
+/* The colour tokens are registered as colours so they can be animated. While the theme switches
+   (see src/lib/theme.ts) they fade over the same 1s as the sunset scene, and everything that uses them,
+   including the scene's sky, changes in step. */
+@property --background {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --card {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --card-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --popover {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --popover-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --primary-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --secondary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --secondary-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --muted {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --muted-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --destructive {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --input {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --ring {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --header {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --header-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .theme-fade {
+    transition-property: --background, --foreground, --card, --card-foreground, --popover, --popover-foreground, --primary, --primary-foreground, --secondary, --secondary-foreground, --muted, --muted-foreground, --accent, --accent-foreground, --destructive, --border, --input, --ring, --header, --header-foreground;
+    transition-duration: 1000ms;
+    transition-timing-function: var(--ease-in-out); /* Tailwind's curve, as the scene uses */
+  }
 }
 
 @layer base {

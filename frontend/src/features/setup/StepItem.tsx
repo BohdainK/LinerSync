@@ -48,7 +48,7 @@ export function StepItem({
           {step.title}
         </h3>
         {done ? (
-          <span className="flex items-center gap-1 text-sm text-green-700">
+          <span className="flex items-center gap-1 text-sm text-green-700 dark:text-green-400">
             <Check aria-hidden className="size-4" />
             <span className="sr-only">Done</span>
           </span>
