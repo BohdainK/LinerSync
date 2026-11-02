@@ -1,0 +1,105 @@
+/* Review drawer. Plain CSS with an rv- prefix so it never mixes with the app's Tailwind. */
+.rv-root {
+  --rv-w: 380px;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #18181b;
+  box-sizing: border-box;
+}
+.rv-root *, .rv-root *::before, .rv-root *::after { box-sizing: border-box; }
+
+@media (min-width: 1100px) {
+  body.rv-open { padding-right: 380px; }
+}
+
+.rv-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--rv-w);
+  z-index: 2147483000; display: flex; flex-direction: column;
+  background: #fff; border-left: 1px solid #e4e4e7; box-shadow: -8px 0 24px rgb(0 0 0 / 0.06);
+}
+@media (max-width: 767px) {
+  .rv-panel { top: auto; left: 0; width: auto; max-height: 55vh; border-left: 0; border-top: 1px solid #e4e4e7; border-radius: 14px 14px 0 0; }
+  body.rv-open { padding-bottom: 55vh; }
+}
+.rv-dim { opacity: 0.35; pointer-events: none; }
+
+.rv-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 8px; }
+.rv-head strong { font-size: 14px; }
+.rv-head .rv-icon { margin-left: auto; }
+.rv-muted { color: #71717a; font-size: 12px; }
+.rv-progress { height: 3px; background: #f4f4f5; margin: 0 14px; border-radius: 2px; overflow: hidden; }
+.rv-progress > div { height: 100%; background: #6d28d9; transition: width 0.2s; }
+
+.rv-tabs { display: flex; gap: 2px; padding: 10px 14px 0; border-bottom: 1px solid #e4e4e7; }
+.rv-tabs button { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 6px 6px 0 0; color: #52525b; }
+.rv-tabs button.rv-on { color: #18181b; font-weight: 600; box-shadow: inset 0 -2px #6d28d9; }
+
+.rv-body { flex: 1; overflow: auto; padding: 12px 14px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+.rv-intro { background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 10px; padding: 10px 12px; }
+.rv-intro p { margin: 0 0 6px; }
+.rv-intro ol { margin: 0 0 8px; padding-left: 18px; }
+
+.rv-screen { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rv-title { font-size: 15px; font-weight: 600; }
+.rv-check { display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+.rv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.rv-btn { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 8px; background: #18181b; color: #fff; font-weight: 500; text-align: center; }
+.rv-btn:disabled { opacity: 0.35; cursor: default; }
+.rv-ghost { background: #f4f4f5; color: #18181b; }
+.rv-danger { background: transparent; color: #b91c1c; align-self: flex-start; padding-left: 0; }
+.rv-icon { all: unset; cursor: pointer; color: #71717a; padding: 0 4px; }
+.rv-icon:hover { color: #18181b; }
+
+.rv-compose { display: flex; flex-direction: column; gap: 8px; border: 1px solid #e4e4e7; border-radius: 10px; padding: 10px; }
+.rv-compose textarea, .rv-export textarea {
+  width: 100%; resize: vertical; font: inherit; padding: 8px; border: 1px solid #e4e4e7; border-radius: 8px; outline: none;
+}
+.rv-compose textarea:focus { border-color: #6d28d9; }
+.rv-export textarea { font: 12px/1.4 ui-monospace, Menlo, monospace; background: #fafafa; }
+.rv-kinds { display: flex; gap: 6px; }
+.rv-chip { all: unset; cursor: pointer; padding: 3px 10px; border-radius: 999px; border: 1px solid #e4e4e7; color: #52525b; }
+.rv-chip.rv-on.rv-issue { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+.rv-chip.rv-on.rv-idea { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.rv-chip.rv-on.rv-praise { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+.rv-target { display: flex; justify-content: space-between; gap: 6px; background: #f5f3ff; color: #5b21b6; padding: 4px 8px; border-radius: 6px; }
+
+.rv-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rv-note { border-left: 3px solid; padding: 6px 10px; background: #fafafa; border-radius: 0 8px 8px 0; }
+.rv-note p { margin: 4px 0 0; white-space: pre-wrap; }
+.rv-note-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 12px; }
+.rv-note.rv-issue { border-color: #ef4444; }
+.rv-note.rv-idea { border-color: #3b82f6; }
+.rv-note.rv-praise { border-color: #22c55e; }
+
+.rv-all h4 { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #71717a; }
+.rv-item { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 6px; }
+.rv-item button { all: unset; cursor: pointer; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-item button:hover { text-decoration: underline; }
+.rv-here { background: #f5f3ff; }
+.rv-count { background: #6d28d9; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; }
+
+.rv-export { display: flex; flex-direction: column; gap: 10px; }
+
+.rv-fab {
+  all: unset; position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; cursor: pointer;
+  background: #6d28d9; color: #fff; padding: 10px 16px; border-radius: 999px; font: 600 13px system-ui, sans-serif;
+  box-shadow: 0 6px 20px rgb(109 40 217 / 0.35);
+}
+.rv-pickbar {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2147483001;
+  background: #18181b; color: #fff; padding: 8px 14px; border-radius: 999px; pointer-events: none;
+}
+body.rv-picking, body.rv-picking * { cursor: crosshair !important; }
+.rv-highlight {
+  position: fixed; z-index: 2147482999; pointer-events: none;
+  outline: 2px solid #6d28d9; background: rgb(109 40 217 / 0.08); border-radius: 4px; transition: all 0.05s;
+}
+.rv-marker {
+  all: unset; position: absolute; z-index: 2147482998; transform: translate(-50%, -50%); cursor: pointer;
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font: 700 11px system-ui, sans-serif; box-shadow: 0 0 0 2px #fff, 0 2px 6px rgb(0 0 0 / 0.3);
+}
+.rv-marker.rv-issue { background: #ef4444; }
+.rv-marker.rv-idea { background: #3b82f6; }
+.rv-marker.rv-praise { background: #22c55e; }

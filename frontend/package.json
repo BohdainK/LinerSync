@@ -17,7 +17,9 @@
     "api:check": "openapi-typescript openapi.json -o src/api/schema.d.ts --check",
     "check": "tsc -b && eslint . && vitest run && npm run api:check",
     "ui:fix": "sed -i.bak 's#from \"cn\"#from \"@/lib/utils\"#' src/components/ui/*.tsx && rm -f src/components/ui/*.bak && npm rm cn --silent 2>/dev/null || true",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "review:record": "node review/record.mjs",
+    "review:build": "vite build --config review/vite.config.ts && node review/inline.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.105.0",

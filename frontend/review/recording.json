@@ -1,0 +1,276 @@
+{
+ "recordedAt": "2026-11-01T16:32:02.324Z",
+ "routes": [
+  "/",
+  "/onboarding",
+  "/connections",
+  "/connections/apple_music",
+  "/connections/jellyfin",
+  "/connections/qobuz",
+  "/connections/spotify",
+  "/connections/tidal",
+  "/connections/youtube_music",
+  "/syncs",
+  "/syncs/new",
+  "/syncs/4f027025ec2b41cd80752e59a803fc2e",
+  "/syncs/c6688ac1c2f04065bdb74255c5481552",
+  "/runs/e037188804954c789e1200669b245e9c",
+  "/runs/7cda6caa45e6446396c1ef719ddae5e7",
+  "/runs/533768adeeff4607a90ef53fc4f108c1",
+  "/runs/11eedf5aa8a84f0983e7cac2aebe5856",
+  "/transfers/new",
+  "/backup",
+  "/backup/playlists/08f96bcae6244ddd9b1538143a32ff30",
+  "/backup/playlists/e6a2965807cf4603b53f533054dedf8b",
+  "/backup/playlists/f71f9e4216bc4cefb4c42784bc3ce3d8",
+  "/backup/playlists/9af609eb1b2944c9a3ef0b264084dd18",
+  "/backup/playlists/0dcfab03d44b416e8ac70cdc4d5d2322",
+  "/backup/playlists/33943aef475243b1a170e8b2f7d70ad2",
+  "/backup/playlists/79ca73a2dbce4113b8fd9f4b363c78a1",
+  "/backup/playlists/7e78554a2dcf44019d36a9753b96fa49",
+  "/settings",
+  "/stats"
+ ],
+ "responses": {
+  "GET /api/auth/session": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"signed_in\":true}",
+   "base64": null
+  },
+  "GET /api/connections": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"services\":[{\"service\":\"apple_music\",\"display_name\":\"Apple Music\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"read_order\"],\"experimental\":false,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{},\"secrets_set\":[]},{\"service\":\"jellyfin\",\"display_name\":\"Jellyfin\",\"category\":\"self_hosted\",\"capabilities\":[\"read_order\"],\"experimental\":false,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{},\"secrets_set\":[]},{\"service\":\"qobuz\",\"display_name\":\"Qobuz\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"edit_metadata\",\"read_order\",\"remove\"],\"experimental\":true,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{},\"secrets_set\":[]},{\"service\":\"spotify\",\"display_name\":\"Spotify\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"delete_playlist\",\"edit_metadata\",\"read_order\",\"remove\",\"reorder\"],\"experimental\":false,\"status\":\"connected\",\"message\":\"Connected\",\"account_name\":\"fake\",\"checked_at\":\"2026-11-01T16:31:34.990316Z\",\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{\"account\":\"sam\"},\"secrets_set\":[]},{\"service\":\"tidal\",\"display_name\":\"Tidal\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"delete_playlist\",\"edit_metadata\",\"read_order\",\"remove\",\"reorder\"],\"experimental\":false,\"status\":\"connected\",\"message\":\"Connected\",\"account_name\":\"fake\",\"checked_at\":\"2026-11-01T16:31:34.996318Z\",\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{\"account\":\"sam\"},\"secrets_set\":[]},{\"service\":\"youtube_music\",\"display_name\":\"YouTube Music\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"edit_metadata\",\"read_order\",\"remove\",\"reorder\"],\"experimental\":false,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":true,\"values\":{},\"secrets_set\":[]}],\"load_errors\":[]}",
+   "base64": null
+  },
+  "GET /api/syncs": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"name\":\"Night Drive\",\"status\":\"active\",\"pause_reason\":null,\"schedule\":null,\"effective_schedule\":\"0 */6 * * *\",\"next_run_at\":\"2026-11-01T18:00:00Z\",\"source\":{\"member_id\":\"src\",\"service\":\"spotify\",\"playlist_id\":\"sp-night\"},\"destinations\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"mode\":\"add_only\",\"effective_mode\":\"add_only\",\"limitations\":[],\"last_synced_at\":\"2026-11-01T16:31:35.022298Z\",\"missing\":false}],\"active_job\":null,\"last_run\":{\"run_id\":\"e037188804954c789e1200669b245e9c\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":true,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.087307Z\",\"finished_at\":\"2026-11-01T16:31:35.089884Z\",\"error\":null,\"added\":0,\"removed\":0,\"not_made\":0,\"unmatched\":0}},{\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"name\":\"Road Trip\",\"status\":\"active\",\"pause_reason\":null,\"schedule\":null,\"effective_schedule\":\"0 */6 * * *\",\"next_run_at\":\"2026-11-01T18:00:00Z\",\"source\":{\"member_id\":\"src\",\"service\":\"spotify\",\"playlist_id\":\"sp-road\"},\"destinations\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-2\",\"mode\":\"full\",\"effective_mode\":\"full\",\"limitations\":[],\"last_synced_at\":\"2026-11-01T16:31:35.034760Z\",\"missing\":false}],\"active_job\":null,\"last_run\":{\"run_id\":\"533768adeeff4607a90ef53fc4f108c1\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.028161Z\",\"finished_at\":\"2026-11-01T16:31:35.036487Z\",\"error\":null,\"added\":9,\"removed\":0,\"not_made\":0,\"unmatched\":2}}]",
+   "base64": null
+  },
+  "GET /api/home": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"running\":[],\"queued\":[],\"next_up\":[{\"kind\":\"sync\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"name\":\"Night Drive\",\"at\":\"2026-11-01T18:00:00Z\"},{\"kind\":\"sync\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"name\":\"Road Trip\",\"at\":\"2026-11-01T18:00:00Z\"},{\"kind\":\"backup\",\"sync_id\":null,\"name\":\"Back up all services\",\"at\":\"2026-11-02T03:00:00Z\"}],\"recent\":[{\"job_id\":\"0af877051b434d9581e4ebbd05b80b9c\",\"kind\":\"sync\",\"status\":\"succeeded\",\"label\":\"Dry run “Night Drive”\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"created_at\":\"2026-11-01T16:31:35.085490Z\",\"started_at\":\"2026-11-01T16:31:35.086011Z\",\"finished_at\":\"2026-11-01T16:31:35.091149Z\",\"run_ids\":[\"e037188804954c789e1200669b245e9c\"],\"backup_ids\":[],\"error\":null,\"progress\":{\"phase\":\"done\",\"done\":1,\"total\":1,\"message\":\"succeeded\"},\"cancel_requested\":false},{\"job_id\":\"392f215aa1324b94b6d179cce81a37a0\",\"kind\":\"backup\",\"status\":\"succeeded\",\"label\":\"Back up all services\",\"sync_id\":null,\"created_at\":\"2026-11-01T16:31:35.060978Z\",\"started_at\":\"2026-11-01T16:31:35.062520Z\",\"finished_at\":\"2026-11-01T16:31:35.080190Z\",\"run_ids\":[],\"backup_ids\":[\"34cf44f7aea945f1aea715feebb42b3a\",\"c2022651478f47d799e722a28ebbc096\"],\"error\":null,\"progress\":{\"phase\":\"backup\",\"done\":3,\"total\":4,\"message\":\"Tidal: Deep Focus\"},\"cancel_requested\":false},{\"job_id\":\"674164ace6344b9da75fa428affb64c9\",\"kind\":\"transfer\",\"status\":\"succeeded\",\"label\":\"Transfer to Tidal\",\"sync_id\":null,\"created_at\":\"2026-11-01T16:31:35.045435Z\",\"started_at\":\"2026-11-01T16:31:35.046023Z\",\"finished_at\":\"2026-11-01T16:31:35.055141Z\",\"run_ids\":[\"11eedf5aa8a84f0983e7cac2aebe5856\"],\"backup_ids\":[],\"error\":null,\"progress\":{\"phase\":\"done\",\"done\":1,\"total\":1,\"message\":\"succeeded\"},\"cancel_requested\":false},{\"job_id\":\"932d828bef07441a9c4faa67c3dd0e6d\",\"kind\":\"sync\",\"status\":\"succeeded\",\"label\":\"Sync “Road Trip”\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"created_at\":\"2026-11-01T16:31:35.026570Z\",\"started_at\":\"2026-11-01T16:31:35.027100Z\",\"finished_at\":\"2026-11-01T16:31:35.038235Z\",\"run_ids\":[\"533768adeeff4607a90ef53fc4f108c1\"],\"backup_ids\":[],\"error\":null,\"progress\":{\"phase\":\"done\",\"done\":1,\"total\":1,\"message\":\"succeeded\"},\"cancel_requested\":false},{\"job_id\":\"c98950f426a243d28cb335a4871ebff2\",\"kind\":\"sync\",\"status\":\"succeeded\",\"label\":\"Sync “Night Drive”\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"created_at\":\"2026-11-01T16:31:35.012726Z\",\"started_at\":\"2026-11-01T16:31:35.013642Z\",\"finished_at\":\"2026-11-01T16:31:35.024775Z\",\"run_ids\":[\"7cda6caa45e6446396c1ef719ddae5e7\"],\"backup_ids\":[],\"error\":null,\"progress\":{\"phase\":\"done\",\"done\":1,\"total\":1,\"message\":\"succeeded\"},\"cancel_requested\":false}],\"attention_count\":2,\"warnings\":[],\"api_limits\":[{\"service\":\"spotify\",\"display_name\":\"Spotify\",\"used\":0,\"limit\":null,\"resets_at\":\"2026-11-02T00:00:00Z\"},{\"service\":\"tidal\",\"display_name\":\"Tidal\",\"used\":0,\"limit\":null,\"resets_at\":\"2026-11-02T00:00:00Z\"}]}",
+   "base64": null
+  },
+  "GET /api/attention": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"item_id\":\"3abb6f9671fa459ea774d1e54e41105c\",\"kind\":\"unmatched\",\"created_at\":\"2026-11-01T16:31:35.035435Z\",\"detail\":\"no results on this service\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"sync_name\":\"Road Trip\",\"member_id\":\"dst0\",\"service\":\"tidal\",\"source\":{\"service\":\"spotify\",\"track_id\":\"s19\",\"title\":\"Live at the Lido (Intro)\",\"artists\":[\"Small Venue Band\"],\"album\":\"Live Tapes\",\"duration_ms\":61000,\"isrc\":null,\"url\":null,\"known\":true},\"target_service\":\"tidal\",\"candidates\":[],\"not_made\":[]},{\"item_id\":\"0e465be3707743ae92122109cf970aba\",\"kind\":\"unmatched\",\"created_at\":\"2026-11-01T16:31:35.034796Z\",\"detail\":\"no results on this service\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"sync_name\":\"Road Trip\",\"member_id\":\"dst0\",\"service\":\"tidal\",\"source\":{\"service\":\"spotify\",\"track_id\":\"s18\",\"title\":\"Loading Screen (Bootleg)\",\"artists\":[\"Unknown DJ\"],\"album\":\"Untitled\",\"duration_ms\":188000,\"isrc\":null,\"url\":null,\"known\":true},\"target_service\":\"tidal\",\"candidates\":[],\"not_made\":[]}]",
+   "base64": null
+  },
+  "GET /api/connections/apple_music": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"apple_music\",\"display_name\":\"Apple Music\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"read_order\"],\"experimental\":false,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{},\"secrets_set\":[]}",
+   "base64": null
+  },
+  "GET /api/connections/apple_music/guide": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"apple_music\",\"display_name\":\"Apple Music\",\"category\":\"streaming\",\"prerequisites\":[\"An Apple Music subscription on the account you sign in with\"],\"steps\":[{\"step_id\":\"web_sign_in\",\"title\":\"Sign in on music.apple.com\",\"kind\":\"info\",\"body\":\"Open Apple Music on the web and sign in with your Apple ID. LinerSync talks to Apple the way that web player does. This is unofficial: it can stop working when Apple changes the web player.\",\"fields\":[],\"links\":[{\"label\":\"Apple Music on the web\",\"url\":\"https://music.apple.com\"}],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"user_token\",\"title\":\"Copy your media-user-token\",\"kind\":\"form\",\"body\":\"In the same browser, open the developer tools. Under Application (Chrome, Edge) or Storage (Firefox, Safari), open Cookies for https://music.apple.com and copy the value of the media-user-token cookie.\",\"fields\":[{\"key\":\"music_user_token\",\"label\":\"media-user-token\",\"kind\":\"secret\",\"help\":\"\",\"pattern\":null,\"pattern_hint\":\"\",\"placeholder\":\"\",\"required\":true}],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"test\",\"title\":\"Test the connection\",\"kind\":\"test\",\"body\":\"\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]}]}",
+   "base64": null
+  },
+  "GET /api/connections/jellyfin": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"jellyfin\",\"display_name\":\"Jellyfin\",\"category\":\"self_hosted\",\"capabilities\":[\"read_order\"],\"experimental\":false,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{},\"secrets_set\":[]}",
+   "base64": null
+  },
+  "GET /api/connections/jellyfin/guide": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"jellyfin\",\"display_name\":\"Jellyfin\",\"category\":\"self_hosted\",\"prerequisites\":[\"A Jellyfin server and an administrator account on it\"],\"steps\":[{\"step_id\":\"before\",\"title\":\"Before you start\",\"kind\":\"info\",\"body\":\"LinerSync reads your Jellyfin playlists with an API key. It never changes anything on your server.\",\"fields\":[],\"links\":[{\"label\":\"Jellyfin API keys\",\"url\":\"https://jellyfin.org/docs/general/server/settings/api-keys/\"}],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"api_key\",\"title\":\"Create an API key\",\"kind\":\"info\",\"body\":\"In Jellyfin, open Dashboard → API Keys, add a key named LinerSync, and copy it.\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"details\",\"title\":\"Enter your server details\",\"kind\":\"form\",\"body\":\"\",\"fields\":[{\"key\":\"server_url\",\"label\":\"Server URL\",\"kind\":\"text\",\"help\":\"\",\"pattern\":\"https?://.+\",\"pattern_hint\":\"Start with http:// or https://\",\"placeholder\":\"http://jellyfin.local:8096\",\"required\":true},{\"key\":\"api_key\",\"label\":\"API key\",\"kind\":\"secret\",\"help\":\"\",\"pattern\":\"[0-9a-f]{32}\",\"pattern_hint\":\"An API key is 32 characters, 0–9 and a–f\",\"placeholder\":\"\",\"required\":true},{\"key\":\"username\",\"label\":\"Jellyfin username\",\"kind\":\"text\",\"help\":\"Whose playlists to read\",\"pattern\":null,\"pattern_hint\":\"\",\"placeholder\":\"\",\"required\":true}],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"test\",\"title\":\"Test the connection\",\"kind\":\"test\",\"body\":\"\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]}]}",
+   "base64": null
+  },
+  "GET /api/connections/qobuz": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"qobuz\",\"display_name\":\"Qobuz\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"edit_metadata\",\"read_order\",\"remove\"],\"experimental\":true,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{},\"secrets_set\":[]}",
+   "base64": null
+  },
+  "GET /api/connections/qobuz/guide": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"qobuz\",\"display_name\":\"Qobuz\",\"category\":\"streaming\",\"prerequisites\":[\"A Qobuz subscription\",\"A desktop browser\"],\"steps\":[{\"step_id\":\"before\",\"title\":\"Before you start\",\"kind\":\"info\",\"body\":\"Experimental: Qobuz has no API for apps like LinerSync, so LinerSync uses the unofficial one behind Qobuz's web player. It may stop working whenever Qobuz updates its web player, and using it is against Qobuz's terms.\\n\\nLinerSync signs in with the token of a web player where you're signed in. Anyone with this token can use your Qobuz account, so it is stored encrypted and never shown again.\",\"fields\":[],\"links\":[{\"label\":\"Qobuz web player\",\"url\":\"https://play.qobuz.com\"}],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"token\",\"title\":\"Paste your app ID and token\",\"kind\":\"form\",\"body\":\"Open play.qobuz.com signed in, open the developer tools (F12), go to Network, and click any request to www.qobuz.com/api.json. Copy the values of its X-App-Id and X-User-Auth-Token request headers.\",\"fields\":[{\"key\":\"app_id\",\"label\":\"App ID\",\"kind\":\"text\",\"help\":\"\",\"pattern\":\"[0-9]{6,12}\",\"pattern_hint\":\"Copy only the number after X-App-Id\",\"placeholder\":\"\",\"required\":true},{\"key\":\"user_auth_token\",\"label\":\"User auth token\",\"kind\":\"secret\",\"help\":\"The value of the X-User-Auth-Token header\",\"pattern\":\"[A-Za-z0-9._~+/=-]{8,}\",\"pattern_hint\":\"Copy only the value after X-User-Auth-Token:\",\"placeholder\":\"\",\"required\":true}],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"test\",\"title\":\"Test the connection\",\"kind\":\"test\",\"body\":\"\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]}]}",
+   "base64": null
+  },
+  "GET /api/connections/spotify": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"spotify\",\"display_name\":\"Spotify\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"delete_playlist\",\"edit_metadata\",\"read_order\",\"remove\",\"reorder\"],\"experimental\":false,\"status\":\"connected\",\"message\":\"Connected\",\"account_name\":\"fake\",\"checked_at\":\"2026-11-01T16:31:34.990316Z\",\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{\"account\":\"sam\"},\"secrets_set\":[]}",
+   "base64": null
+  },
+  "GET /api/connections/spotify/guide": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"spotify\",\"display_name\":\"Spotify\",\"category\":\"streaming\",\"prerequisites\":[],\"steps\":[{\"step_id\":\"account\",\"title\":\"Account\",\"kind\":\"form\",\"body\":\"\",\"fields\":[{\"key\":\"account\",\"label\":\"Account\",\"kind\":\"text\",\"help\":\"\",\"pattern\":null,\"pattern_hint\":\"\",\"placeholder\":\"\",\"required\":true}],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"test\",\"title\":\"Test the connection\",\"kind\":\"test\",\"body\":\"\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]}]}",
+   "base64": null
+  },
+  "GET /api/connections/tidal": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"tidal\",\"display_name\":\"Tidal\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"delete_playlist\",\"edit_metadata\",\"read_order\",\"remove\",\"reorder\"],\"experimental\":false,\"status\":\"connected\",\"message\":\"Connected\",\"account_name\":\"fake\",\"checked_at\":\"2026-11-01T16:31:34.996318Z\",\"login_expires_at\":null,\"login_expiry_estimated\":false,\"values\":{\"account\":\"sam\"},\"secrets_set\":[]}",
+   "base64": null
+  },
+  "GET /api/connections/tidal/guide": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"tidal\",\"display_name\":\"Tidal\",\"category\":\"streaming\",\"prerequisites\":[],\"steps\":[{\"step_id\":\"account\",\"title\":\"Account\",\"kind\":\"form\",\"body\":\"\",\"fields\":[{\"key\":\"account\",\"label\":\"Account\",\"kind\":\"text\",\"help\":\"\",\"pattern\":null,\"pattern_hint\":\"\",\"placeholder\":\"\",\"required\":true}],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"test\",\"title\":\"Test the connection\",\"kind\":\"test\",\"body\":\"\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]}]}",
+   "base64": null
+  },
+  "GET /api/connections/youtube_music": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"youtube_music\",\"display_name\":\"YouTube Music\",\"category\":\"streaming\",\"capabilities\":[\"add\",\"create_playlist\",\"edit_metadata\",\"read_order\",\"remove\",\"reorder\"],\"experimental\":false,\"status\":\"not_set_up\",\"message\":\"\",\"account_name\":null,\"checked_at\":null,\"login_expires_at\":null,\"login_expiry_estimated\":true,\"values\":{},\"secrets_set\":[]}",
+   "base64": null
+  },
+  "GET /api/connections/youtube_music/guide": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"service\":\"youtube_music\",\"display_name\":\"YouTube Music\",\"category\":\"streaming\",\"prerequisites\":[\"A Google account with YouTube Music\",\"A desktop browser\"],\"steps\":[{\"step_id\":\"before\",\"title\":\"Before you start\",\"kind\":\"info\",\"body\":\"LinerSync talks to YouTube Music the way its website does: there is no official API. It can stop working when YouTube changes its site, until LinerSync is updated.\\n\\nLinerSync uses the session of a browser where you're signed in to YouTube Music. Anyone with this cookie can use your Google account on YouTube, so it is stored encrypted and never shown again.\",\"fields\":[],\"links\":[{\"label\":\"YouTube Music\",\"url\":\"https://music.youtube.com\"}],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"cookie\",\"title\":\"Paste your Cookie header\",\"kind\":\"form\",\"body\":\"Open music.youtube.com signed in, open the developer tools (F12), go to Network, click any request to music.youtube.com, and copy the value of the Cookie request header.\",\"fields\":[{\"key\":\"cookie\",\"label\":\"Cookie header\",\"kind\":\"multiline_secret\",\"help\":\"It's long and contains SAPISID=…\",\"pattern\":null,\"pattern_hint\":\"\",\"placeholder\":\"\",\"required\":true},{\"key\":\"auth_user\",\"label\":\"Account number\",\"kind\":\"text\",\"help\":\"Only if this browser is signed in to several Google accounts: the value of the X-Goog-AuthUser request header. Leave it empty for the first account.\",\"pattern\":\"[0-9]{1,2}\",\"pattern_hint\":\"A number, such as 0 or 1\",\"placeholder\":\"0\",\"required\":false}],\"links\":[],\"screenshots\":[],\"copy_values\":[]},{\"step_id\":\"test\",\"title\":\"Test the connection\",\"kind\":\"test\",\"body\":\"\",\"fields\":[],\"links\":[],\"screenshots\":[],\"copy_values\":[]}]}",
+   "base64": null
+  },
+  "GET /api/settings": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"default_schedule\":\"0 */6 * * *\",\"timezone\":\"UTC\",\"brake_max_fraction\":0.2,\"brake_max_count\":50,\"match_accept_threshold\":0.85,\"match_min_margin\":0.05,\"breaker_failure_threshold\":5,\"breaker_cooldown_minutes\":30,\"backup_schedule\":\"0 3 * * *\",\"backup_versions_kept\":5}",
+   "base64": null
+  },
+  "GET /api/syncs/4f027025ec2b41cd80752e59a803fc2e": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"name\":\"Night Drive\",\"status\":\"active\",\"pause_reason\":null,\"schedule\":null,\"effective_schedule\":\"0 */6 * * *\",\"next_run_at\":\"2026-11-01T18:00:00Z\",\"source\":{\"member_id\":\"src\",\"service\":\"spotify\",\"playlist_id\":\"sp-night\"},\"destinations\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"mode\":\"add_only\",\"effective_mode\":\"add_only\",\"limitations\":[],\"last_synced_at\":\"2026-11-01T16:31:35.022298Z\",\"missing\":false}],\"active_job\":null,\"last_run\":{\"run_id\":\"e037188804954c789e1200669b245e9c\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":true,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.087307Z\",\"finished_at\":\"2026-11-01T16:31:35.089884Z\",\"error\":null,\"added\":0,\"removed\":0,\"not_made\":0,\"unmatched\":0}}",
+   "base64": null
+  },
+  "GET /api/syncs/4f027025ec2b41cd80752e59a803fc2e/runs?limit=20": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"run_id\":\"e037188804954c789e1200669b245e9c\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":true,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.087307Z\",\"finished_at\":\"2026-11-01T16:31:35.089884Z\",\"error\":null,\"added\":0,\"removed\":0,\"not_made\":0,\"unmatched\":0},{\"run_id\":\"7cda6caa45e6446396c1ef719ddae5e7\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.014937Z\",\"finished_at\":\"2026-11-01T16:31:35.023237Z\",\"error\":null,\"added\":5,\"removed\":0,\"not_made\":0,\"unmatched\":0}]",
+   "base64": null
+  },
+  "GET /api/syncs/c6688ac1c2f04065bdb74255c5481552": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"name\":\"Road Trip\",\"status\":\"active\",\"pause_reason\":null,\"schedule\":null,\"effective_schedule\":\"0 */6 * * *\",\"next_run_at\":\"2026-11-01T18:00:00Z\",\"source\":{\"member_id\":\"src\",\"service\":\"spotify\",\"playlist_id\":\"sp-road\"},\"destinations\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-2\",\"mode\":\"full\",\"effective_mode\":\"full\",\"limitations\":[],\"last_synced_at\":\"2026-11-01T16:31:35.034760Z\",\"missing\":false}],\"active_job\":null,\"last_run\":{\"run_id\":\"533768adeeff4607a90ef53fc4f108c1\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.028161Z\",\"finished_at\":\"2026-11-01T16:31:35.036487Z\",\"error\":null,\"added\":9,\"removed\":0,\"not_made\":0,\"unmatched\":2}}",
+   "base64": null
+  },
+  "GET /api/syncs/c6688ac1c2f04065bdb74255c5481552/runs?limit=20": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"run_id\":\"533768adeeff4607a90ef53fc4f108c1\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.028161Z\",\"finished_at\":\"2026-11-01T16:31:35.036487Z\",\"error\":null,\"added\":9,\"removed\":0,\"not_made\":0,\"unmatched\":2}]",
+   "base64": null
+  },
+  "GET /api/runs/e037188804954c789e1200669b245e9c": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"run_id\":\"e037188804954c789e1200669b245e9c\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":true,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.087307Z\",\"finished_at\":\"2026-11-01T16:31:35.089884Z\",\"error\":null,\"added\":0,\"removed\":0,\"not_made\":0,\"unmatched\":0,\"members\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"status\":\"nothing_to_do\",\"error\":null,\"rebuilt\":false,\"created_playlist_id\":null,\"operations\":[],\"not_made\":[],\"mismatch\":null}],\"unresolved\":[],\"undoes_run_id\":null,\"undoable\":false}",
+   "base64": null
+  },
+  "GET /api/runs/7cda6caa45e6446396c1ef719ddae5e7": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"run_id\":\"7cda6caa45e6446396c1ef719ddae5e7\",\"sync_id\":\"4f027025ec2b41cd80752e59a803fc2e\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.014937Z\",\"finished_at\":\"2026-11-01T16:31:35.023237Z\",\"error\":null,\"added\":5,\"removed\":0,\"not_made\":0,\"unmatched\":0,\"members\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"status\":\"applied\",\"error\":null,\"rebuilt\":true,\"created_playlist_id\":\"tidal-new-1\",\"operations\":[{\"type\":\"create_playlist\",\"op_id\":\"dst0:0\",\"name\":\"Night Drive\",\"description\":\"\",\"cover_url\":null,\"tracks\":[],\"positions\":[],\"order_length\":null},{\"type\":\"add_tracks\",\"op_id\":\"dst0:1\",\"name\":null,\"description\":null,\"cover_url\":null,\"tracks\":[{\"service\":\"tidal\",\"track_id\":\"Ts01\",\"title\":\"Midnight City\",\"artists\":[\"M83\"],\"album\":\"Hurry Up, We're Dreaming\",\"duration_ms\":243000,\"isrc\":\"FR6V81100011\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts13\",\"title\":\"Nightcall\",\"artists\":[\"Kavinsky\"],\"album\":\"OutRun\",\"duration_ms\":258000,\"isrc\":\"FR0W61000040\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts11\",\"title\":\"Retrograde\",\"artists\":[\"James Blake\"],\"album\":\"Overgrown\",\"duration_ms\":223000,\"isrc\":\"GBUM71300290\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts16\",\"title\":\"Reckoner\",\"artists\":[\"Radiohead\"],\"album\":\"In Rainbows\",\"duration_ms\":290000,\"isrc\":\"GBSTK0700049\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts17a\",\"title\":\"Nude\",\"artists\":[\"Radiohead\"],\"album\":\"In Rainbows\",\"duration_ms\":255000,\"isrc\":null,\"url\":null,\"known\":true}],\"positions\":[],\"order_length\":null}],\"not_made\":[],\"mismatch\":null}],\"unresolved\":[],\"undoes_run_id\":null,\"undoable\":true}",
+   "base64": null
+  },
+  "GET /api/runs/533768adeeff4607a90ef53fc4f108c1": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"run_id\":\"533768adeeff4607a90ef53fc4f108c1\",\"sync_id\":\"c6688ac1c2f04065bdb74255c5481552\",\"kind\":\"sync\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.028161Z\",\"finished_at\":\"2026-11-01T16:31:35.036487Z\",\"error\":null,\"added\":9,\"removed\":0,\"not_made\":0,\"unmatched\":2,\"members\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-2\",\"status\":\"applied\",\"error\":null,\"rebuilt\":true,\"created_playlist_id\":\"tidal-new-2\",\"operations\":[{\"type\":\"create_playlist\",\"op_id\":\"dst0:0\",\"name\":\"Road Trip\",\"description\":\"\",\"cover_url\":null,\"tracks\":[],\"positions\":[],\"order_length\":null},{\"type\":\"add_tracks\",\"op_id\":\"dst0:1\",\"name\":null,\"description\":null,\"cover_url\":null,\"tracks\":[{\"service\":\"tidal\",\"track_id\":\"Ts01\",\"title\":\"Midnight City\",\"artists\":[\"M83\"],\"album\":\"Hurry Up, We're Dreaming\",\"duration_ms\":243000,\"isrc\":\"FR6V81100011\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts02\",\"title\":\"Dreams\",\"artists\":[\"Fleetwood Mac\"],\"album\":\"Rumours\",\"duration_ms\":257000,\"isrc\":\"USWB10400036\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts03\",\"title\":\"Electric Feel\",\"artists\":[\"MGMT\"],\"album\":\"Oracular Spectacular\",\"duration_ms\":229000,\"isrc\":\"USSM10706137\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts04\",\"title\":\"Get Lucky\",\"artists\":[\"Daft Punk\"],\"album\":\"Random Access Memories\",\"duration_ms\":369000,\"isrc\":\"USQX91300108\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts05\",\"title\":\"Mr. Brightside\",\"artists\":[\"The Killers\"],\"album\":\"Hot Fuss\",\"duration_ms\":222000,\"isrc\":\"USIR20400274\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts06\",\"title\":\"Take On Me\",\"artists\":[\"a-ha\"],\"album\":\"Hunting High and Low\",\"duration_ms\":225000,\"isrc\":\"GBAYE8500203\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts07\",\"title\":\"Africa\",\"artists\":[\"Toto\"],\"album\":\"Toto IV\",\"duration_ms\":295000,\"isrc\":\"USSM18200011\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts08\",\"title\":\"Little Talks\",\"artists\":[\"Of Monsters and Men\"],\"album\":\"My Head Is an Animal\",\"duration_ms\":266000,\"isrc\":\"USUM71200171\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts09\",\"title\":\"Dog Days Are Over\",\"artists\":[\"Florence + The Machine\"],\"album\":\"Lungs\",\"duration_ms\":252000,\"isrc\":\"GBUM70900286\",\"url\":null,\"known\":true}],\"positions\":[],\"order_length\":null}],\"not_made\":[],\"mismatch\":null}],\"unresolved\":[{\"member_id\":\"dst0\",\"position\":9,\"source\":{\"service\":\"spotify\",\"track_id\":\"s18\",\"title\":\"Loading Screen (Bootleg)\",\"artists\":[\"Unknown DJ\"],\"album\":\"Untitled\",\"duration_ms\":188000,\"isrc\":null,\"url\":null,\"known\":true},\"reasons\":[\"no results on this service\"],\"candidates\":[]},{\"member_id\":\"dst0\",\"position\":10,\"source\":{\"service\":\"spotify\",\"track_id\":\"s19\",\"title\":\"Live at the Lido (Intro)\",\"artists\":[\"Small Venue Band\"],\"album\":\"Live Tapes\",\"duration_ms\":61000,\"isrc\":null,\"url\":null,\"known\":true},\"reasons\":[\"no results on this service\"],\"candidates\":[]}],\"undoes_run_id\":null,\"undoable\":true}",
+   "base64": null
+  },
+  "GET /api/runs/11eedf5aa8a84f0983e7cac2aebe5856": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"run_id\":\"11eedf5aa8a84f0983e7cac2aebe5856\",\"sync_id\":\"transfer-650d7f649d884886a1b82cb1a7e4fb9a\",\"kind\":\"transfer\",\"trigger\":\"manual\",\"dry_run\":false,\"status\":\"succeeded\",\"started_at\":\"2026-11-01T16:31:35.047641Z\",\"finished_at\":\"2026-11-01T16:31:35.053552Z\",\"error\":null,\"added\":6,\"removed\":0,\"not_made\":0,\"unmatched\":0,\"members\":[{\"member_id\":\"dst0\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-3\",\"status\":\"applied\",\"error\":null,\"rebuilt\":true,\"created_playlist_id\":\"tidal-new-3\",\"operations\":[{\"type\":\"create_playlist\",\"op_id\":\"dst0:0\",\"name\":\"Deep Focus\",\"description\":\"\",\"cover_url\":null,\"tracks\":[],\"positions\":[],\"order_length\":null},{\"type\":\"add_tracks\",\"op_id\":\"dst0:1\",\"name\":null,\"description\":null,\"cover_url\":null,\"tracks\":[{\"service\":\"tidal\",\"track_id\":\"Ts10\",\"title\":\"Holocene\",\"artists\":[\"Bon Iver\"],\"album\":\"Bon Iver, Bon Iver\",\"duration_ms\":336000,\"isrc\":\"US38W1131004\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts11\",\"title\":\"Retrograde\",\"artists\":[\"James Blake\"],\"album\":\"Overgrown\",\"duration_ms\":223000,\"isrc\":\"GBUM71300290\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts12\",\"title\":\"Intro\",\"artists\":[\"The xx\"],\"album\":\"xx\",\"duration_ms\":127000,\"isrc\":\"GBBKS0900001\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts14\",\"title\":\"Breathe\",\"artists\":[\"Télépopmusik\"],\"album\":\"Genetic World\",\"duration_ms\":279000,\"isrc\":\"FRZ110100041\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts15\",\"title\":\"Teardrop\",\"artists\":[\"Massive Attack\"],\"album\":\"Mezzanine\",\"duration_ms\":330000,\"isrc\":\"GBAAA9800145\",\"url\":null,\"known\":true},{\"service\":\"tidal\",\"track_id\":\"Ts20\",\"title\":\"Clair de Lune\",\"artists\":[\"Claude Debussy\"],\"album\":\"Suite bergamasque\",\"duration_ms\":300000,\"isrc\":null,\"url\":null,\"known\":true}],\"positions\":[],\"order_length\":null}],\"not_made\":[],\"mismatch\":null}],\"unresolved\":[],\"undoes_run_id\":null,\"undoable\":true}",
+   "base64": null
+  },
+  "GET /api/backups/playlists?archived=false": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"entry_id\":\"08f96bcae6244ddd9b1538143a32ff30\",\"service\":\"spotify\",\"playlist_id\":\"sp-80s\",\"name\":\"80s Classics\",\"track_count\":3,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.070238Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"e6a2965807cf4603b53f533054dedf8b\",\"service\":\"spotify\",\"playlist_id\":\"sp-focus\",\"name\":\"Deep Focus\",\"track_count\":6,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.067783Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"f71f9e4216bc4cefb4c42784bc3ce3d8\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-3\",\"name\":\"Deep Focus\",\"track_count\":6,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.078009Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"9af609eb1b2944c9a3ef0b264084dd18\",\"service\":\"tidal\",\"playlist_id\":\"td-gym\",\"name\":\"Gym\",\"track_count\":2,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.073800Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"0dcfab03d44b416e8ac70cdc4d5d2322\",\"service\":\"spotify\",\"playlist_id\":\"sp-night\",\"name\":\"Night Drive\",\"track_count\":5,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.069057Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"33943aef475243b1a170e8b2f7d70ad2\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"name\":\"Night Drive\",\"track_count\":5,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.075228Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"79ca73a2dbce4113b8fd9f4b363c78a1\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-2\",\"name\":\"Road Trip\",\"track_count\":9,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.076702Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null},{\"entry_id\":\"7e78554a2dcf44019d36a9753b96fa49\",\"service\":\"spotify\",\"playlist_id\":\"sp-road\",\"name\":\"Road Trip\",\"track_count\":11,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.065883Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null}]",
+   "base64": null
+  },
+  "GET /api/backups": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"services\":[{\"service\":\"spotify\",\"display_name\":\"Spotify\",\"connected\":true,\"playlists\":4,\"archived\":0,\"missing\":0,\"last_run\":{\"backup_id\":\"34cf44f7aea945f1aea715feebb42b3a\",\"service\":\"spotify\",\"started_at\":\"2026-11-01T16:31:35.063324Z\",\"finished_at\":\"2026-11-01T16:31:35.071980Z\",\"status\":\"succeeded\",\"playlists\":4,\"saved\":4,\"unchanged\":0,\"archived\":0,\"unreadable\":0,\"errors\":[],\"error\":null}},{\"service\":\"tidal\",\"display_name\":\"Tidal\",\"connected\":true,\"playlists\":4,\"archived\":0,\"missing\":0,\"last_run\":{\"backup_id\":\"c2022651478f47d799e722a28ebbc096\",\"service\":\"tidal\",\"started_at\":\"2026-11-01T16:31:35.072770Z\",\"finished_at\":\"2026-11-01T16:31:35.079606Z\",\"status\":\"succeeded\",\"playlists\":4,\"saved\":4,\"unchanged\":0,\"archived\":0,\"unreadable\":0,\"errors\":[],\"error\":null}}],\"schedule\":\"0 3 * * *\",\"next_backup_at\":\"2026-11-02T03:00:00Z\",\"active_job\":null}",
+   "base64": null
+  },
+  "GET /api/backups/runs?limit=20": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"backup_id\":\"c2022651478f47d799e722a28ebbc096\",\"service\":\"tidal\",\"started_at\":\"2026-11-01T16:31:35.072770Z\",\"finished_at\":\"2026-11-01T16:31:35.079606Z\",\"status\":\"succeeded\",\"playlists\":4,\"saved\":4,\"unchanged\":0,\"archived\":0,\"unreadable\":0,\"errors\":[],\"error\":null},{\"backup_id\":\"34cf44f7aea945f1aea715feebb42b3a\",\"service\":\"spotify\",\"started_at\":\"2026-11-01T16:31:35.063324Z\",\"finished_at\":\"2026-11-01T16:31:35.071980Z\",\"status\":\"succeeded\",\"playlists\":4,\"saved\":4,\"unchanged\":0,\"archived\":0,\"unreadable\":0,\"errors\":[],\"error\":null}]",
+   "base64": null
+  },
+  "GET /api/backups/playlists/08f96bcae6244ddd9b1538143a32ff30": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"08f96bcae6244ddd9b1538143a32ff30\",\"service\":\"spotify\",\"playlist_id\":\"sp-80s\",\"name\":\"80s Classics\",\"track_count\":3,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.070238Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"c0d397041cb74250b7b81d9cc34f8558\",\"entry_id\":\"08f96bcae6244ddd9b1538143a32ff30\",\"taken_at\":\"2026-01-01T00:00:00Z\",\"name\":\"80s Classics\",\"description\":\"\",\"track_count\":3,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/e6a2965807cf4603b53f533054dedf8b": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"e6a2965807cf4603b53f533054dedf8b\",\"service\":\"spotify\",\"playlist_id\":\"sp-focus\",\"name\":\"Deep Focus\",\"track_count\":6,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.067783Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"9ae64d8db7954e69bd13aff17f9e2a0c\",\"entry_id\":\"e6a2965807cf4603b53f533054dedf8b\",\"taken_at\":\"2026-01-01T00:00:00Z\",\"name\":\"Deep Focus\",\"description\":\"\",\"track_count\":6,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/f71f9e4216bc4cefb4c42784bc3ce3d8": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"f71f9e4216bc4cefb4c42784bc3ce3d8\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-3\",\"name\":\"Deep Focus\",\"track_count\":6,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.078009Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"b1507959427c46508f09539a435cf833\",\"entry_id\":\"f71f9e4216bc4cefb4c42784bc3ce3d8\",\"taken_at\":\"2026-11-01T16:31:35.051839Z\",\"name\":\"Deep Focus\",\"description\":\"\",\"track_count\":6,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/9af609eb1b2944c9a3ef0b264084dd18": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"9af609eb1b2944c9a3ef0b264084dd18\",\"service\":\"tidal\",\"playlist_id\":\"td-gym\",\"name\":\"Gym\",\"track_count\":2,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.073800Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"7609a1c489e840d0ac76dafcb02ede2b\",\"entry_id\":\"9af609eb1b2944c9a3ef0b264084dd18\",\"taken_at\":\"2026-01-01T00:00:00Z\",\"name\":\"Gym\",\"description\":\"\",\"track_count\":2,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/0dcfab03d44b416e8ac70cdc4d5d2322": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"0dcfab03d44b416e8ac70cdc4d5d2322\",\"service\":\"spotify\",\"playlist_id\":\"sp-night\",\"name\":\"Night Drive\",\"track_count\":5,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.069057Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"c5cba61dd2cf47f7bd3fc41b0ed906a6\",\"entry_id\":\"0dcfab03d44b416e8ac70cdc4d5d2322\",\"taken_at\":\"2026-01-01T00:00:00Z\",\"name\":\"Night Drive\",\"description\":\"\",\"track_count\":5,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/33943aef475243b1a170e8b2f7d70ad2": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"33943aef475243b1a170e8b2f7d70ad2\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"name\":\"Night Drive\",\"track_count\":5,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.075228Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"c0a5a3beaee14f6bacc7d9a1cdb4b9ce\",\"entry_id\":\"33943aef475243b1a170e8b2f7d70ad2\",\"taken_at\":\"2026-11-01T16:31:35.020509Z\",\"name\":\"Night Drive\",\"description\":\"\",\"track_count\":5,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/79ca73a2dbce4113b8fd9f4b363c78a1": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"79ca73a2dbce4113b8fd9f4b363c78a1\",\"service\":\"tidal\",\"playlist_id\":\"tidal-new-2\",\"name\":\"Road Trip\",\"track_count\":9,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.076702Z\",\"last_seen_at\":\"2026-11-01T16:31:35.078651Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"68862ae410a94195897b402047f89766\",\"entry_id\":\"79ca73a2dbce4113b8fd9f4b363c78a1\",\"taken_at\":\"2026-11-01T16:31:35.033312Z\",\"name\":\"Road Trip\",\"description\":\"\",\"track_count\":9,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/backups/playlists/7e78554a2dcf44019d36a9753b96fa49": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"entry_id\":\"7e78554a2dcf44019d36a9753b96fa49\",\"service\":\"spotify\",\"playlist_id\":\"sp-road\",\"name\":\"Road Trip\",\"track_count\":11,\"versions\":1,\"first_backed_up_at\":\"2026-11-01T16:31:35.065883Z\",\"last_seen_at\":\"2026-11-01T16:31:35.070869Z\",\"missing_since\":null,\"archived_at\":null,\"cover_url\":null,\"history\":[{\"version_id\":\"832b5068dd79406fa7f5c275ca15b461\",\"entry_id\":\"7e78554a2dcf44019d36a9753b96fa49\",\"taken_at\":\"2026-01-01T00:00:00Z\",\"name\":\"Road Trip\",\"description\":\"\",\"track_count\":11,\"cover_url\":null}]}",
+   "base64": null
+  },
+  "GET /api/stats?days=30": {
+   "status": 200,
+   "type": "application/json",
+   "body": "{\"days\":30,\"since\":\"2026-10-03T00:00:00Z\",\"library\":[{\"service\":\"spotify\",\"display_name\":\"Spotify\",\"playlists\":4,\"songs\":25,\"archived\":0,\"versions\":4},{\"service\":\"tidal\",\"display_name\":\"Tidal\",\"playlists\":4,\"songs\":22,\"archived\":0,\"versions\":4}],\"syncs\":2,\"paused_syncs\":0,\"activity\":{\"sync_runs\":2,\"transfer_runs\":1,\"undo_runs\":0,\"succeeded\":3,\"partial\":0,\"failed\":0,\"waiting\":0,\"skipped\":0,\"songs_added\":20,\"songs_removed\":0,\"backups\":2},\"daily\":[{\"day\":\"2026-10-03\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-04\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-05\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-06\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-07\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-08\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-09\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-10\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-11\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-12\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-13\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-14\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-15\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-16\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-17\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-18\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-19\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-20\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-21\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-22\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-23\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-24\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-25\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-26\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-27\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-28\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-29\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-30\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-10-31\",\"succeeded\":0,\"partial\":0,\"failed\":0},{\"day\":\"2026-11-01\",\"succeeded\":3,\"partial\":0,\"failed\":0}],\"last_backup_at\":\"2026-11-01T16:31:35.072770Z\",\"matching\":{\"remembered\":0,\"not_on_service\":0,\"open_attention\":2}}",
+   "base64": null
+  },
+  "GET /api/connections/spotify/playlists": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"service\":\"spotify\",\"playlist_id\":\"sp-road\",\"name\":\"Road Trip\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":null},{\"service\":\"spotify\",\"playlist_id\":\"sp-focus\",\"name\":\"Deep Focus\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":null},{\"service\":\"spotify\",\"playlist_id\":\"sp-night\",\"name\":\"Night Drive\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":null},{\"service\":\"spotify\",\"playlist_id\":\"sp-80s\",\"name\":\"80s Classics\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":null}]",
+   "base64": null
+  },
+  "GET /api/connections/tidal/playlists": {
+   "status": 200,
+   "type": "application/json",
+   "body": "[{\"service\":\"tidal\",\"playlist_id\":\"td-gym\",\"name\":\"Gym\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":null},{\"service\":\"tidal\",\"playlist_id\":\"tidal-new-1\",\"name\":\"Night Drive\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":5},{\"service\":\"tidal\",\"playlist_id\":\"tidal-new-2\",\"name\":\"Road Trip\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":9},{\"service\":\"tidal\",\"playlist_id\":\"tidal-new-3\",\"name\":\"Deep Focus\",\"description\":\"\",\"cover_url\":null,\"owned\":true,\"readable\":true,\"unreadable_reason\":null,\"track_count\":6}]",
+   "base64": null
+  }
+ }
+}
