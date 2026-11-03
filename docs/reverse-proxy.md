@@ -145,6 +145,45 @@ server {
 }
 ```
 
+## Cloudflare Tunnel
+
+A tunnel needs no open ports and no certificates: Cloudflare serves HTTPS and forwards
+through an outgoing connection. Run `cloudflared` next to LinerSync in the same Compose
+file, and remove LinerSync's `ports` so the tunnel is the only way in:
+
+```yaml
+services:
+  linersync:
+    image: ghcr.io/bohdaink/linersync:latest
+    restart: unless-stopped
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      LINERSYNC_PUBLIC_URL: "https://music.example.com"
+      LINERSYNC_TIMEZONE: "Europe/Amsterdam"
+    volumes:
+      - "./data:/data"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file: cloudflared.env # TUNNEL_TOKEN=<token from the Cloudflare dashboard>
+    depends_on:
+      - linersync
+```
+
+In Cloudflare Zero Trust, create a tunnel (Networks → Tunnels, type Cloudflared) and put
+its token in `cloudflared.env` (keep that file private: `chmod 600`). Start both with
+`docker compose up -d`; the tunnel shows as healthy once `cloudflared` connects. Then add
+a route of type **Published application**: your hostname, service `http://linersync:8000`
+(the Compose service name, not `localhost`). Cloudflare passes the headers LinerSync needs
+and streams `/api/events` unbuffered.
+
+Consider putting a Cloudflare Access application in front (Access → Applications →
+Self-hosted) with a policy that allows only your email address. A Bypass policy with your
+home IP ranges skips that login at home; add both your IPv4 address and your IPv6 prefix.
+
 ## Another proxy
 
 Follow the list under "What any proxy must do".
@@ -152,4 +191,9 @@ Follow the list under "What any proxy must do".
 ## Finish
 
 Then set `LINERSYNC_PUBLIC_URL` to the HTTPS address and register
-`<public URL>/api/connections/oauth/callback` with Spotify.
+`<public URL>/api/connections/oauth/callback` with Spotify (and Tidal, if you use it).
+For `LINERSYNC_PUBLIC_URL=https://music.example.com` that is
+`https://music.example.com/api/connections/oauth/callback`. Spotify keeps several
+redirect URIs per app, so you can add the new one next to an old
+`http://127.0.0.1:8000/...` one; sign-in fails with "Invalid redirect URI" until the
+exact address is registered.

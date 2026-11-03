@@ -69,16 +69,19 @@ matters.
 1. **Only on this computer** at `http://127.0.0.1:8000`. The simplest setup.
 2. **From other devices, with a bundled Caddy proxy** that sets up HTTPS for a domain
    name you own. See [docs/install.md](docs/install.md).
-3. **From other devices, through your own reverse proxy** (Caddy, Traefik, Nginx or
-   another). See [docs/reverse-proxy.md](docs/reverse-proxy.md).
+3. **From other devices, through your own reverse proxy or tunnel** (Caddy, Traefik,
+   Nginx, a Cloudflare Tunnel or another). See [docs/reverse-proxy.md](docs/reverse-proxy.md).
 
 ## Connecting your services
 
 **Spotify.** In the Spotify developer dashboard, create an app. Add the redirect URI
 `<public URL>/api/connections/oauth/callback`, written exactly as the setup steps in the
 app show it. For the same-machine setup that is
-`http://127.0.0.1:8000/api/connections/oauth/callback`. Then enter the app's client ID
-in LinerSync.
+`http://127.0.0.1:8000/api/connections/oauth/callback`. Behind your own tunnel or reverse
+proxy it is the HTTPS address you open LinerSync at, for example
+`https://music.example.com/api/connections/oauth/callback` when `LINERSYNC_PUBLIC_URL` is
+`https://music.example.com`. Spotify accepts several redirect URIs, so after moving
+LinerSync to a new address, add the new one. Then enter the app's client ID in LinerSync.
 
 **Apple Music.** Follow the setup steps in the app. They need the MusicKit key from your
 Apple Developer Program membership, or (the default) a token from the Apple Music web

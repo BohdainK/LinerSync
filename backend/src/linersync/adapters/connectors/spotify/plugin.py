@@ -109,7 +109,12 @@ class SpotifyPlugin:
                     body=(
                         "Open the Spotify developer dashboard and create an app. "
                         "Paste the Redirect URI below into the app's settings, and "
-                        'tick "Web API" when asked which APIs you plan to use.'
+                        'tick "Web API" when asked which APIs you plan to use. '
+                        "Reaching LinerSync through your own tunnel or reverse "
+                        "proxy? The Redirect URI is built from "
+                        "LINERSYNC_PUBLIC_URL, so it must be the HTTPS address you "
+                        "open LinerSync at. If you move LinerSync to a new "
+                        "address, add its Redirect URI to the app as well."
                     ),
                     links=(
                         Link(

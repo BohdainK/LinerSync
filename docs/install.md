@@ -146,7 +146,10 @@ browser. Make them identical, including `https://` and any port, and run
 
 **Spotify says "INVALID_CLIENT: Invalid redirect URI".** The address registered in the
 Spotify dashboard is not the exact sign-in address. Register
-`<public URL>/api/connections/oauth/callback`, as the app's setup step shows it.
+`<public URL>/api/connections/oauth/callback`, as the app's setup step shows it. This
+happens after moving LinerSync behind a tunnel or reverse proxy: the public URL changed,
+so add the new HTTPS redirect URI (for example
+`https://music.example.com/api/connections/oauth/callback`) to the Spotify app.
 
 **The container exits with "can't write to the data folder".** The user in the Compose
 file's `user:` line cannot write to the data folder. Give that user the folder, for
