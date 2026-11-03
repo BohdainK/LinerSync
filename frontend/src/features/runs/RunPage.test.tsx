@@ -92,10 +92,92 @@ describe("RunPage", () => {
       }),
       http.get("*/api/jobs/job-1", () => HttpResponse.json(jobOut({ label: "Undo Road trip" }))),
     );
-    renderRun(runOut({ undoable: true }));
-    await userEvent.click(await screen.findByRole("button", { name: "Undo this run" }));
+    renderRun(
+      runOut({
+        undoable: true,
+        undo_steps: [
+          {
+            member_id: "member-2",
+            action: "restore",
+            by_hand: false,
+            playlist_name: "Mix",
+            service: "tidal",
+            tracks: [],
+          },
+          {
+            member_id: "member-3",
+            action: "delete_playlist",
+            by_hand: true,
+            playlist_name: "Fresh list",
+            service: "apple_music",
+            tracks: [],
+          },
+        ],
+      }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Undo this run…" }));
+    // Nothing happens until the dialog is confirmed; it says what undo will do.
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("LinerSync puts “Mix” on Tidal back the way it was before this run.");
+    expect(dialog).toHaveTextContent("This run created “Fresh list” on apple_music. LinerSync can't delete playlists");
+    expect(posted).toBe(0);
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(await screen.findByText("Undo Road trip")).toBeInTheDocument();
     expect(posted).toBe(1);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+  });
+
+  it("cancelling the undo dialog undoes nothing", async () => {
+    let posted = 0;
+    server.use(
+      http.post("*/api/runs/run-1/undo", () => {
+        posted += 1;
+        return HttpResponse.json(jobOut(), { status: 202 });
+      }),
+    );
+    renderRun(runOut({ undoable: true }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo this run…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(posted).toBe(0);
+  });
+
+  it("says what to do by hand when LinerSync can't undo the run", async () => {
+    const song = trackOut({ service: "tidal", track_id: "t1", title: "Gamma" });
+    renderRun(
+      runOut({
+        undoable: false,
+        undo_steps: [
+          {
+            member_id: "member-2",
+            action: "delete_playlist",
+            by_hand: true,
+            playlist_name: "TwentyOnePilots Mix",
+            service: "tidal",
+            tracks: [],
+          },
+          {
+            member_id: "member-3",
+            action: "remove_songs",
+            by_hand: true,
+            playlist_name: "Old list",
+            service: "tidal",
+            tracks: [song],
+          },
+        ],
+      }),
+    );
+    const box = await screen.findByRole("region", { name: "To undo this run" });
+    await waitFor(() =>
+      expect(box).toHaveTextContent(
+        "This run created “TwentyOnePilots Mix” on Tidal. LinerSync can't delete playlists: delete it in Tidal yourself",
+      ),
+    );
+    expect(box).toHaveTextContent(
+      "Tidal doesn't let LinerSync remove songs. Remove this song from “Old list” in Tidal yourself:",
+    );
+    expect(box).toHaveTextContent("Gamma");
+    expect(screen.queryByRole("button", { name: "Undo this run…" })).not.toBeInTheDocument();
   });
 
   it("disables undo while the undo job runs, then refetches the run and links to the undo run", async () => {
@@ -120,9 +202,10 @@ describe("RunPage", () => {
       </Routes>,
       { route: "/runs/run-1" },
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Undo this run" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo this run…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
     expect(await screen.findByText("Undo Road trip")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Undo this run" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Undo this run…" })).toBeDisabled();
     const before = runGets;
     jobStatus = "succeeded";
     expect(await screen.findByRole("link", { name: "View the undo run" }, { timeout: 5000 })).toHaveAttribute(
@@ -130,13 +213,41 @@ describe("RunPage", () => {
       "/runs/run-9",
     );
     await waitFor(() => expect(runGets).toBeGreaterThan(before));
-    expect(screen.getByRole("button", { name: "Undo this run" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Undo this run…" })).toBeEnabled();
   }, 10000);
+
+  it("the undo run's page starts fresh and links back to the run it undid", async () => {
+    server.use(
+      http.get("*/api/runs/run-1", () => HttpResponse.json(runOut({ undoable: true }))),
+      http.get("*/api/runs/run-9", () =>
+        HttpResponse.json(runOut({ run_id: "run-9", kind: "undo", undoes_run_id: "run-1", status: "partial" })),
+      ),
+      http.post("*/api/runs/run-1/undo", () => HttpResponse.json(jobOut({ label: "Undo Road trip" }), { status: 202 })),
+      http.get("*/api/jobs/job-1", () =>
+        HttpResponse.json(jobOut({ label: "Undo Road trip", status: "succeeded", run_ids: ["run-9"] })),
+      ),
+      http.get("*/api/connections", () => HttpResponse.json({ load_errors: [], services: [] })),
+    );
+    renderWithProviders(
+      <Routes>
+        <Route path="/runs/:runId" element={<RunPage />} />
+      </Routes>,
+      { route: "/runs/run-1" },
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Undo this run…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await userEvent.click(await screen.findByRole("link", { name: "View the undo run" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Undo" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "The run this undid" })).toHaveAttribute("href", "/runs/run-1");
+    expect(screen.queryByRole("link", { name: "View the undo run" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Undo Road trip")).not.toBeInTheDocument();
+    expect(screen.getByText("No songs changed")).toBeInTheDocument();
+  });
 
   it("does not offer undo otherwise", async () => {
     renderRun(runOut({ undoable: false, error: "It broke" }));
     expect(await screen.findByText("It broke")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Undo this run" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Undo this run…" })).not.toBeInTheDocument();
   });
 
   it("shows mismatch and unresolved", async () => {

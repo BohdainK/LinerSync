@@ -81,7 +81,7 @@ def build_app(data_dir: Path, public_url: str) -> FastAPI:
 
     @app.post("/api/e2e/delete-playlist", status_code=204)
     def delete_playlist(body: DeletePlaylist) -> Response:
-        connectors[ServiceId(body.service)].delete_playlist(body.playlist_id)
+        connectors[ServiceId(body.service)].drop_playlist(body.playlist_id)
         return Response(status_code=204)
 
     return app

@@ -102,6 +102,7 @@ export function runOut(o: Partial<RunOut> = {}): RunOut {
     unresolved: [],
     undoes_run_id: null,
     undoable: false,
+    undo_steps: [],
     ...o,
   };
 }

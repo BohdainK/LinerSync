@@ -298,7 +298,18 @@ def test_transfer_creates_playlist(app_factory: AppFactory) -> None:
         )
     assert done["status"] == "succeeded"
     assert run["kind"] == "transfer"
+    # It only created a playlist; Fake B can delete playlists, so undo can.
     assert run["undoable"] is True
+    assert run["undo_steps"] == [
+        {
+            "member_id": "dst0",
+            "action": "delete_playlist",
+            "by_hand": False,
+            "playlist_name": "Mix",
+            "service": "fake_b",
+            "tracks": [],
+        }
+    ]
     dst = member(run, "dst0")
     created = dst["created_playlist_id"]
     assert created is not None and dst["playlist_id"] == created

@@ -5,11 +5,19 @@ import pytest
 from linersync.application.config import EngineConfig
 from linersync.application.runner import SyncRunner
 from linersync.application.transfer import TransferService
-from linersync.application.undo import UndoNotAllowed, UndoService
-from linersync.domain.operations import ChangeNotMade, Reorder
+from linersync.application.undo import (
+    UndoAction,
+    UndoNotAllowed,
+    UndoService,
+    UndoStep,
+    undo_steps,
+)
+from linersync.domain.capabilities import Capability
+from linersync.domain.operations import Reorder
 from linersync.domain.planning.brake import BrakeConfig
-from linersync.domain.runs import MemberStatus, RunKind, RunStatus, Trigger
+from linersync.domain.runs import MemberStatus, RunKind, RunStatus, SyncRun, Trigger
 from linersync.domain.sync import MemberState, SyncMember
+from linersync.domain.tracks import ServiceId
 from tests.application.conftest import APPLE, SPOTIFY, World
 from tests.factories import snapshot
 
@@ -50,53 +58,123 @@ async def test_undo_restores_full_target(world: World) -> None:
     assert world.events.events[-1].run_id == undo.run_id
 
 
-async def test_undo_on_add_only_target_lists_manual_fixes(world: World) -> None:
+def _steps(w: World, run: SyncRun, **services: str) -> tuple[UndoStep, ...]:
+    def caps(service: ServiceId) -> frozenset[Capability]:
+        return w.deps.connectors[service].capabilities
+
+    by_member = {m: ServiceId(s) for m, s in services.items()}
+    return undo_steps(run, w.repos.snapshots, caps, by_member)
+
+
+async def test_add_only_target_lists_the_songs_to_remove_by_hand(
+    world: World,
+) -> None:
     run = await world.runner().run("s1", trigger=MANUAL)
     assert world.apple.playlists["A1"].track_ids == ("A", "B", "C")
 
-    undo = await _undo(world).undo(run.run_id)
-
-    assert undo.status is RunStatus.PARTIAL
-    (member,) = undo.members
-    assert [(c.kind, c.track_id) for c in member.not_made] == [
-        ("remove", "A"),
-        ("remove", "B"),
-        ("remove", "C"),
-    ]
+    assert _steps(world, run) == (
+        UndoStep("dst0", UndoAction.REMOVE_SONGS, True, "Mix", APPLE, ("A", "B", "C")),
+    )
+    with pytest.raises(UndoNotAllowed):  # nothing LinerSync could do
+        await _undo(world).undo(run.run_id)
     assert world.apple.playlists["A1"].track_ids == ("A", "B", "C")
 
 
-async def test_undo_add_only_reports_surplus_repeat(world: World) -> None:
+async def test_add_only_steps_list_a_surplus_repeat(world: World) -> None:
     world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "a"]))
     world.apple.add_playlist(snapshot("apple_music", "A1", ["A"]))
     run = await world.runner().run("s1", trigger=MANUAL)
     assert world.apple.playlists["A1"].track_ids == ("A", "A")
 
-    undo = await _undo(world).undo(run.run_id)
+    (step,) = _steps(world, run)
+    assert (step.action, step.track_ids) == (UndoAction.REMOVE_SONGS, ("A",))
 
-    assert undo.status is RunStatus.PARTIAL
+
+async def test_full_target_step_is_restored_by_linersync(world: World) -> None:
+    world.spotify_to_spotify(("x",), mirror=True)
+    run = await _brakeless(world).run("s2", trigger=MANUAL)
+    assert _steps(world, run) == (
+        UndoStep("dst0", UndoAction.RESTORE, False, "Mix", SPOTIFY),
+    )
+
+
+async def test_created_playlist_step_names_it(unsaved_world: World) -> None:
+    w = unsaved_world
+    run = await TransferService(w.deps, w.runner()).transfer(SPOTIFY, "P1", APPLE)
+    (step,) = _steps(w, run, dst0="apple_music")
+    assert step == UndoStep("dst0", UndoAction.DELETE_PLAYLIST, True, "Mix", APPLE)
+
+
+def _can_delete(w: World) -> None:
+    """Apple with experimental editing: it can delete playlists."""
+    w.apple.capabilities = w.apple.capabilities | {Capability.DELETE_PLAYLIST}
+
+
+async def test_undo_deletes_the_created_playlist_where_the_service_can(
+    unsaved_world: World,
+) -> None:
+    w = unsaved_world
+    _can_delete(w)
+    run = await TransferService(w.deps, w.runner()).transfer(SPOTIFY, "P1", APPLE)
+    (created,) = set(w.apple.playlists) - {"A1"}
+    (step,) = _steps(w, run, dst0="apple_music")
+    assert step.by_hand is False
+
+    undo = await UndoService(w.deps, w.runner(), {"dst0": APPLE}).undo(run.run_id)
+
+    assert undo.status is RunStatus.SUCCEEDED
     (member,) = undo.members
-    assert [(c.kind, c.track_id) for c in member.not_made] == [("remove", "A")]
-    assert world.apple.playlists["A1"].track_ids == ("A", "A")
+    assert member.status is MemberStatus.APPLIED
+    assert created not in w.apple.playlists
+    assert f"delete:{created}" in w.apple.calls
 
 
-async def test_undo_of_created_playlist_does_not_delete(unsaved_world: World) -> None:
+async def test_undo_keeps_a_created_playlist_changed_since(
+    unsaved_world: World,
+) -> None:
+    w = unsaved_world
+    _can_delete(w)
+    run = await TransferService(w.deps, w.runner()).transfer(SPOTIFY, "P1", APPLE)
+    (created,) = set(w.apple.playlists) - {"A1"}
+    before = w.apple.playlists[created]
+    w.apple.add_playlist(  # the user added a song by hand
+        snapshot("apple_music", created, [*before.track_ids, "A"], name="Mix")
+    )
+
+    undo = await UndoService(w.deps, w.runner(), {"dst0": APPLE}).undo(run.run_id)
+
+    (member,) = undo.members
+    assert member.status is MemberStatus.FAILED
+    assert member.error is not None and "changed since" in member.error
+    assert created in w.apple.playlists
+    assert not any(c.startswith("delete:") for c in w.apple.calls)
+
+
+async def test_undo_without_the_service_cant_delete(unsaved_world: World) -> None:
+    # Without knowing the member's service, the created playlist stays by hand.
+    w = unsaved_world
+    _can_delete(w)
+    run = await TransferService(w.deps, w.runner()).transfer(SPOTIFY, "P1", APPLE)
+    with pytest.raises(UndoNotAllowed):
+        await _undo(w).undo(run.run_id)
+
+
+async def test_run_that_only_created_a_playlist_cant_be_undone(
+    unsaved_world: World,
+) -> None:
+    # Apple (without experimental editing) can't delete playlists: there is
+    # nothing an undo could do.
     w = unsaved_world
     run = await TransferService(w.deps, w.runner()).transfer(SPOTIFY, "P1", APPLE)
     created = set(w.apple.playlists) - {"A1"}
     calls = len(w.apple.calls)
 
-    undo = await _undo(w).undo(run.run_id)
+    with pytest.raises(UndoNotAllowed):
+        await _undo(w).undo(run.run_id)
 
-    assert undo.status is RunStatus.PARTIAL
-    (member,) = undo.members
-    assert member.not_made == (
-        ChangeNotMade(
-            "delete", None, "Delete the created playlist by hand if you don't want it"
-        ),
-    )
     assert set(w.apple.playlists) - {"A1"} == created
     assert len(w.apple.calls) == calls  # nothing read, nothing written
+    assert w.repos.runs.list_for_sync(run.sync_id) == [run]  # no undo run saved
 
 
 async def test_undo_rejects_dry_run(world: World) -> None:

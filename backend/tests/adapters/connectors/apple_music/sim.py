@@ -13,6 +13,11 @@ The developer token must be an ES256 JWT signed with the simulator's own key
 It also serves the web player (``music.apple.com``): a page linking a bundle
 that embeds ``web_token``. That token is accepted only with the web player's
 Origin, and stops working after ``rotate_web_token``.
+
+The web player's own host (``amp-api.music.apple.com``) takes the writes the
+documented API lacks, as seen live: replacing a playlist's song list (PUT),
+removing a song (all copies), deleting a playlist. It accepts only the web
+player's token; on ``api.music.apple.com`` those writes answer 401.
 """
 
 import hashlib
@@ -33,6 +38,7 @@ from PIL import Image
 from linersync.domain.tracks import Track
 
 API_HOST = "api.music.apple.com"
+AMP_HOST = "amp-api.music.apple.com"
 WEB_HOST = "music.apple.com"
 WEB_ORIGIN = "https://music.apple.com"
 ART_HOST = "is1-ssl.mzstatic.com"
@@ -246,14 +252,36 @@ class AppleMusicSim:
             return self._image(request)
         if request.url.host == WEB_HOST:
             return self._web_player(path)
-        if request.url.host != API_HOST:
+        if request.url.host not in (API_HOST, AMP_HOST):
             return httpx.Response(404)
         if not self._developer_token_ok(request):
             return _error(401, "Unauthorized", "The developer token is not valid")
-        if path.startswith("/v1/me/") and not self._user_token_ok(request):
-            return _error(403, "Forbidden", "Invalid or missing Music-User-Token")
         method = request.method
         lib = "/v1/me/library/playlists"
+        edits: list[tuple[str, str, Callable[..., httpx.Response]]] = [
+            ("PUT", lib + r"/([^/]+)/tracks", self._replace_tracks),
+            ("DELETE", lib + r"/([^/]+)/tracks", self._remove_tracks),
+            ("DELETE", lib + r"/([^/]+)", self._delete_playlist),
+        ]
+        edit = next(
+            (
+                (fn, match)
+                for m, pattern, fn in edits
+                if m == method and (match := re.fullmatch(pattern, path))
+            ),
+            None,
+        )
+        if edit is not None:
+            if request.url.host != AMP_HOST or not self._is_web_token(request):
+                return _error(401, "Unauthorized", "Not allowed")
+            if not self._user_token_ok(request):
+                return _error(403, "Forbidden", "Invalid or missing Music-User-Token")
+            fn, match = edit
+            return fn(request, *match.groups())
+        if request.url.host == AMP_HOST:
+            return _error(404, "Resource Not Found", "Not simulated on amp-api")
+        if path.startswith("/v1/me/") and not self._user_token_ok(request):
+            return _error(403, "Forbidden", "Invalid or missing Music-User-Token")
         routes: list[tuple[str, str, Callable[..., httpx.Response]]] = [
             ("GET", r"/v1/me/storefront", self._my_storefront),
             ("GET", r"/v1/storefronts/([^/]+)", self._storefront),
@@ -294,6 +322,10 @@ class AppleMusicSim:
         except jwt.PyJWTError:
             return False
         return header.get("kid") == self.key_id and claims.get("iss") == self.team_id
+
+    def _is_web_token(self, request: httpx.Request) -> bool:
+        auth = request.headers.get("authorization", "")
+        return auth.removeprefix("Bearer ") in self._web_tokens
 
     def _user_token_ok(self, request: httpx.Request) -> bool:
         token = request.headers.get("music-user-token")
@@ -492,6 +524,56 @@ class AppleMusicSim:
         p.ids.extend(added)
         self._modify(p)
         return httpx.Response(204)
+
+    def _replace_tracks(self, request: httpx.Request, pid: str) -> httpx.Response:
+        p = self.playlists.get(pid)
+        if p is None:
+            return _error(404, "Resource Not Found", "No such playlist")
+        if not p.can_edit:
+            return _error(403, "Forbidden", "The playlist can't be edited")
+        body = _body(request)
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            return _error(400, "Bad Request", "data is required")
+        new: list[str] = []
+        for item in data:
+            if not isinstance(item, dict) or item.get("type") != "library-songs":
+                return _error(400, "Bad Request", f"Not a library song {item!r}")
+            resolved = self._resolve(item)
+            if resolved is None:
+                return _error(400, "Bad Request", f"Unknown song {item!r}")
+            new.append(resolved)
+        self._lag(p)
+        p.ids = new
+        self._modify(p)
+        return httpx.Response(204)
+
+    def _remove_tracks(self, request: httpx.Request, pid: str) -> httpx.Response:
+        p = self.playlists.get(pid)
+        if p is None:
+            return _error(404, "Resource Not Found", "No such playlist")
+        if not p.can_edit:
+            return _error(403, "Forbidden", "The playlist can't be edited")
+        params = request.url.params
+        resolved = self._resolve(
+            {"id": params.get("ids[library-songs]"), "type": "library-songs"}
+        )
+        if resolved is None or params.get("mode") != "all":
+            return _error(400, "Bad Request", "ids[library-songs] and mode=all")
+        self._lag(p)
+        p.ids = [i for i in p.ids if i != resolved]  # every copy goes
+        self._modify(p)
+        return httpx.Response(204)
+
+    def _delete_playlist(self, request: httpx.Request, pid: str) -> httpx.Response:
+        if self.playlists.pop(pid, None) is None:
+            return _error(404, "Resource Not Found", "No such playlist")
+        return httpx.Response(204)
+
+    def _lag(self, p: _Playlist) -> None:
+        if p.lag_left == 0:
+            p.stale = list(p.ids)
+        p.lag_left = self.lag_reads
 
     def _modify(self, p: _Playlist) -> None:
         """Every write moves lastModifiedDate on."""

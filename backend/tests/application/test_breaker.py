@@ -77,7 +77,7 @@ async def test_runner_skips_tripped_source_without_calls(world: World) -> None:
 async def test_not_found_does_not_count(world: World) -> None:
     for _ in range(4):
         world.deps.breaker.record_failure(SPOTIFY, "boom")
-    world.spotify.delete_playlist("P1")
+    world.spotify.drop_playlist("P1")
     run = await world.runner().run("s1", trigger=Trigger.MANUAL)
     assert run.status is RunStatus.PAUSED_SOURCE_MISSING
     assert world.repos.breakers.get(SPOTIFY).consecutive_failures == 4

@@ -1927,6 +1927,11 @@ export interface components {
             sync_id: string;
             /** Trigger */
             trigger: string;
+            /**
+             * Undo Steps
+             * @default []
+             */
+            undo_steps: components["schemas"]["UndoStepOut"][];
             /** Undoable */
             undoable: boolean;
             /** Undoes Run Id */
@@ -2269,6 +2274,32 @@ export interface components {
             playlist_id: string;
             /** Source Service */
             source_service: string;
+        };
+        /**
+         * UndoAction
+         * @enum {string}
+         */
+        UndoAction: "restore" | "delete_playlist" | "remove_songs";
+        /**
+         * UndoStepOut
+         * @description What undoing the run means for one playlist; `by_hand` steps are the
+         *     user's to do (`tracks`: the songs to remove, for remove_songs).
+         */
+        UndoStepOut: {
+            action: components["schemas"]["UndoAction"];
+            /** By Hand */
+            by_hand: boolean;
+            /** Member Id */
+            member_id: string;
+            /** Playlist Name */
+            playlist_name: string;
+            /** Service */
+            service: string | null;
+            /**
+             * Tracks
+             * @default []
+             */
+            tracks: components["schemas"]["TrackOut"][];
         };
         /** UnresolvedOut */
         UnresolvedOut: {

@@ -22,6 +22,7 @@ from linersync.adapters.connectors.kit.http import (
 )
 from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
 from linersync.adapters.connectors.kit.ordering import at_positions
+from linersync.adapters.connectors.kit.search import merge_hits
 from linersync.adapters.connectors.qobuz.parse import (
     API_BASE,
     SERVICE,
@@ -182,19 +183,18 @@ class QobuzConnector:
 
     async def search(self, query: TrackQuery) -> list[Track]:
         try:
+            hits: list[Track] = []
             if query.isrc:
                 wanted = query.isrc.upper()
                 hits = [
                     t
                     for t in await self._search(query.isrc)
                     if t.isrc is not None and t.isrc.upper() == wanted
-                ]
-                if hits:
-                    return hits[:SEARCH_LIMIT]
+                ][:SEARCH_LIMIT]
             text = query.title
             if query.artists:
                 text = f"{query.artists[0]} {text}"
-            return (await self._search(text))[:SEARCH_LIMIT]
+            return merge_hits(hits, (await self._search(text))[:SEARCH_LIMIT])
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):

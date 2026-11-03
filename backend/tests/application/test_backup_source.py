@@ -90,7 +90,7 @@ async def test_lists_archived_entries_only(world: World) -> None:
     world.spotify.add_playlist(snapshot("spotify", "P2", ["d"], name="Gone"))
     s = await _setup(world)
     assert await s.connector.list_playlists() == []
-    world.spotify.delete_playlist("P2")
+    world.spotify.drop_playlist("P2")
     await s.backups.back_up(world.spotify)
 
     gone = s.entry("P2")
@@ -119,7 +119,7 @@ async def test_restore_preserves_order_and_repeats(world: World) -> None:
     )
     s = await _setup(world)
     version_id = s.entry("P9").latest_version_id
-    world.spotify.delete_playlist("P9")
+    world.spotify.drop_playlist("P9")
     world.spotify.calls.clear()
 
     run = await s.transfer(version_id, SPOTIFY)
@@ -147,7 +147,7 @@ async def test_restore_flags_songs_that_could_not_be_added(world: World) -> None
 
 async def test_archived_playlist_as_source_to_other_service(world: World) -> None:
     s = await _setup(world)
-    world.spotify.delete_playlist("P1")
+    world.spotify.drop_playlist("P1")
     await s.backups.back_up(world.spotify)
     entry = s.entry("P1")
     assert entry.archived

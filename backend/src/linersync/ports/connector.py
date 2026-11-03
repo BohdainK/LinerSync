@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from linersync.domain.capabilities import Capability
 from linersync.domain.operations import PlaylistOp
@@ -33,3 +33,12 @@ class Connector(Protocol):
         playlist_id: str,
         op: PlaylistOp,
     ) -> None: ...
+
+
+@runtime_checkable
+class DeletesPlaylists(Protocol):
+    """A connector that declares DELETE_PLAYLIST implements this too."""
+
+    async def delete_playlist(self, playlist_id: str) -> None:
+        """Delete the playlist; one already missing counts as deleted."""
+        ...

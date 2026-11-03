@@ -51,7 +51,7 @@ async def test_truncated_source_says_why(world: World) -> None:
 
 
 async def test_source_missing_pauses_sync(world: World) -> None:
-    world.spotify.delete_playlist("P1")
+    world.spotify.drop_playlist("P1")
     run = await world.runner().run("s1", trigger=MANUAL)
     assert run.status is RunStatus.PAUSED_SOURCE_MISSING
     saved = world.repos.syncs.get("s1")
@@ -66,7 +66,7 @@ async def test_source_missing_pauses_sync(world: World) -> None:
 
 
 async def test_source_missing_in_dry_run_writes_nothing(world: World) -> None:
-    world.spotify.delete_playlist("P1")
+    world.spotify.drop_playlist("P1")
     run = await world.runner().run("s1", trigger=MANUAL, dry_run=True)
     assert run.status is RunStatus.PAUSED_SOURCE_MISSING
     assert world.repos.syncs.get("s1") == world.group
@@ -75,7 +75,7 @@ async def test_source_missing_in_dry_run_writes_nothing(world: World) -> None:
 
 async def test_source_missing_unpersisted_leaves_no_item(unsaved_world: World) -> None:
     w = unsaved_world
-    w.spotify.delete_playlist("P1")
+    w.spotify.drop_playlist("P1")
     run, g = await w.runner().run_group(
         w.group, kind=RunKind.TRANSFER, trigger=MANUAL, dry_run=False, persist=False
     )
@@ -139,7 +139,7 @@ async def test_matching_failure_skips_destination(world: World) -> None:
 
 
 async def test_missing_destination_is_rebuilt(world: World) -> None:
-    world.apple.delete_playlist("A1")
+    world.apple.drop_playlist("A1")
     run = await world.runner().run("s1", trigger=MANUAL, dry_run=True)
     assert run.status is RunStatus.SUCCEEDED
     (member,) = run.members

@@ -331,14 +331,16 @@ class JobService:
                     # may stop the job before the next one starts.
                     guard.reset_writes()
             case UndoJob():
+                original = self._contexts.get(request.run_id)
+                members = original.members if original is not None else ()
+                services = {m.member_id: m.service for m in members}
                 try:
-                    run = await UndoService(deps, runner).undo(request.run_id)
+                    undo = UndoService(deps, runner, services)
+                    run = await undo.undo(request.run_id)
                 except KeyError:
                     raise _JobFailed(_RUN_GONE) from None
                 except UndoNotAllowed as e:
                     raise _JobFailed(str(e)) from None
-                original = self._contexts.get(request.run_id)
-                members = original.members if original is not None else ()
                 self._record(job.job_id, run, members, guard)
             case BackupJob():
                 await self._back_up(job.job_id, request, connectors, guard)

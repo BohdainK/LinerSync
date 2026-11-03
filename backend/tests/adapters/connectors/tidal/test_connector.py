@@ -207,10 +207,22 @@ async def test_expired_token_is_auth_required(sim: TidalSim) -> None:
 
 async def test_search_by_isrc_first(sim: TidalSim) -> None:
     hits = await make_connector(sim).search(TrackQuery.from_track(CATALOG[1]))
-    assert [t.track_id for t in hits] == [Y]
-    paths = [r.url.path for r in _api_gets(sim)]
-    assert paths == ["/v2/tracks"]
-    assert _api_gets(sim)[0].url.params.get("filter[isrc]") == "NLSIM0000001"
+    assert [t.track_id for t in hits] == [Y]  # the text hit is the same song
+    gets = _api_gets(sim)
+    assert gets[0].url.path == "/v2/tracks"
+    assert gets[0].url.params.get("filter[isrc]") == "NLSIM0000001"
+    assert gets[1].url.path.startswith("/v2/searchResults/")
+
+
+async def test_search_keeps_text_hits_beside_isrc_hits() -> None:
+    # The source's ISRC may be only on compilations; the album copy has
+    # another ISRC and only the text search finds it.
+    comp = track("tidal", "2001", title="Routines", artists=("Band",), isrc="I1")
+    album = track("tidal", "2002", title="Routines", artists=("Band",), isrc="I2")
+    sim = TidalSim(catalog=[comp, album])
+    query = TrackQuery("Routines", ("Band",), isrc="I1")
+    hits = await make_connector(sim).search(query)
+    assert [t.track_id for t in hits] == ["2001", "2002"]
 
 
 async def test_search_falls_back_to_metadata(sim: TidalSim) -> None:

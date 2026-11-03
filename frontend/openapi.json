@@ -2438,6 +2438,14 @@
             "title": "Trigger",
             "type": "string"
           },
+          "undo_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UndoStepOut"
+            },
+            "title": "Undo Steps",
+            "type": "array"
+          },
           "undoable": {
             "title": "Undoable",
             "type": "boolean"
@@ -3432,6 +3440,63 @@
           "destination"
         ],
         "title": "TransferIn",
+        "type": "object"
+      },
+      "UndoAction": {
+        "enum": [
+          "restore",
+          "delete_playlist",
+          "remove_songs"
+        ],
+        "title": "UndoAction",
+        "type": "string"
+      },
+      "UndoStepOut": {
+        "description": "What undoing the run means for one playlist; `by_hand` steps are the\nuser's to do (`tracks`: the songs to remove, for remove_songs).",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/UndoAction"
+          },
+          "by_hand": {
+            "title": "By Hand",
+            "type": "boolean"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "playlist_name": {
+            "title": "Playlist Name",
+            "type": "string"
+          },
+          "service": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service"
+          },
+          "tracks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "member_id",
+          "action",
+          "by_hand",
+          "playlist_name",
+          "service"
+        ],
+        "title": "UndoStepOut",
         "type": "object"
       },
       "UnresolvedOut": {

@@ -276,14 +276,33 @@ async def test_list_playlists_pages_and_marks_unreadable() -> None:
 # -- search ----------------------------------------------------------------
 
 
+async def test_search_keeps_text_hits_beside_isrc_hits() -> None:
+    # The source's ISRC may be only on compilations; the album copy has
+    # another ISRC and only the text search finds it.
+    comp = "spotify:track:" + "c" * 22
+    album = "spotify:track:" + "a" * 22
+    sim = SpotifySim(
+        catalog=(
+            track("spotify", comp, title="Routines", artists=("Band",), isrc="I1"),
+            track("spotify", album, title="Routines", artists=("Band",), isrc="I2"),
+        )
+    )
+    connector, _ = make(sim)
+    found = await connector.search(TrackQuery("Routines", ("Band",), isrc="I1"))
+    assert [t.track_id for t in found] == [comp, album]
+
+
 async def test_search_isrc_first_then_text() -> None:
     sim = SpotifySim(catalog=CATALOG)
     connector, _ = make(sim)
 
     found = await connector.search(TrackQuery.from_track(CATALOG[1]))
-    assert [t.track_id for t in found] == [Y]
+    assert [t.track_id for t in found] == [Y]  # the text hit is the same song
     queries = [r.url.params for r in sent(sim, "GET", "/search")]
-    assert [q["q"] for q in queries] == ["isrc:USY000000002"]
+    assert [q["q"] for q in queries] == [
+        "isrc:USY000000002",
+        'track:"Yellow" artist:"Band Y"',
+    ]
 
     sim.requests.clear()
     miss = TrackQuery('Yel"low', ('Band "Y"', "Other"), isrc="ZZZ000000000")

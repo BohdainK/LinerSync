@@ -26,6 +26,7 @@ from linersync.adapters.connectors.kit.http import (
 )
 from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
 from linersync.adapters.connectors.kit.ordering import at_positions
+from linersync.adapters.connectors.kit.search import merge_hits
 from linersync.adapters.connectors.tidal.moves import Move, plan_moves
 from linersync.adapters.connectors.tidal.parse import (
     API_BASE,
@@ -178,6 +179,7 @@ class TidalConnector:
     async def search(self, query: TrackQuery) -> list[Track]:
         try:
             country = await self._country()
+            hits: list[Track] = []
             if query.isrc:
                 doc = await self._get(
                     f"{API_BASE}/tracks",
@@ -193,8 +195,7 @@ class TidalConnector:
                     for res in doc.get("data") or []
                     if isinstance(res, Mapping)
                 ]
-                if hits:
-                    return hits[:SEARCH_LIMIT]
+                hits = hits[:SEARCH_LIMIT]
             text = query.title
             if query.artists:
                 text += f" {query.artists[0]}"
@@ -208,7 +209,7 @@ class TidalConnector:
                 res = included.get(str(ref.get("type")), str(ref.get("id")))
                 if res is not None:
                     found.append(parse_track(res, included))
-            return found[:SEARCH_LIMIT]
+            return merge_hits(hits, found[:SEARCH_LIMIT])
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):

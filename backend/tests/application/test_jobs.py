@@ -287,7 +287,9 @@ async def test_recover_aborts_running_run_keeping_it_undoable(h: Harness) -> Non
         plan=SyncPlan("s1", (_member_plan("dst0"),), ()),
     )
     repos.runs.save(run)
-    repos.snapshots.save_pre_write("r1", "dst0", snapshot("apple_music", "A1", []))
+    # A Spotify playlist: undo can restore it itself (Apple can't remove).
+    h.world.spotify.add_playlist(snapshot("spotify", "P2", []))
+    repos.snapshots.save_pre_write("r1", "dst0", snapshot("spotify", "P2", []))
     running = Job(
         job_id="j1",
         request=SyncJob("s1", Trigger.MANUAL),

@@ -7,6 +7,11 @@ Two ways to authenticate, chosen with LINERSYNC_APPLE_MUSIC_AUTH:
   Unofficial, but needs no Apple Developer Program membership.
 - ``developer``: a developer token signed with the user's own MusicKit key,
   plus a Music-User-Token from MusicKit JS sign-in in the browser.
+
+LINERSYNC_APPLE_MUSIC_EDITING=on (experimental, ``web`` only) also lets
+LinerSync remove and reorder songs and delete playlists. That only works by
+borrowing the web player's token: Apple's real API (``developer``) has no such
+writes, so with ``developer`` Apple Music stays add-only.
 """
 
 import importlib.metadata
@@ -17,6 +22,7 @@ from enum import StrEnum
 
 from linersync.adapters.connectors.apple_music.connector import (
     CAPABILITIES,
+    EDITING_CAPABILITIES,
     LIMITS,
     AppleMusicConnector,
 )
@@ -64,6 +70,13 @@ _WEB_TOKEN_REJECTED = (
     "Apple rejected the web player's token. Apple may have changed its web player."
 )
 AUTH_MODE_ENV = "LINERSYNC_APPLE_MUSIC_AUTH"
+EDITING_ENV = "LINERSYNC_APPLE_MUSIC_EDITING"
+EDITING_NOTE = (
+    "Experimental: playlist editing is on. LinerSync can remove and reorder "
+    "songs and delete playlists on Apple Music. This only works by borrowing "
+    "the web player's token; Apple's official API can't do it. It may stop "
+    "working, or behave unexpectedly, whenever Apple changes its web player."
+)
 
 
 class AuthMode(StrEnum):
@@ -79,6 +92,23 @@ def auth_mode_from_env() -> AuthMode:
         raise ValueError(
             f"{AUTH_MODE_ENV} must be 'web' or 'developer', got {raw!r}"
         ) from None
+
+
+def editing_from_env(mode: AuthMode) -> bool:
+    """Experimental playlist editing: off unless EDITING_ENV is on, and only
+    possible with the web player's token."""
+    raw = os.environ.get(EDITING_ENV, "off").strip().lower()
+    if raw in ("", "off", "0", "false", "no"):
+        return False
+    if raw not in ("on", "1", "true", "yes"):
+        raise ValueError(f"{EDITING_ENV} must be 'on' or 'off', got {raw!r}")
+    if mode is not AuthMode.WEB:
+        raise ValueError(
+            f"{EDITING_ENV}=on only works with {AUTH_MODE_ENV}=web: removing, "
+            "reordering and deleting go through the web player's token, and "
+            "Apple's official API (developer) can't do them"
+        )
+    return True
 
 
 class AppleMusicAuth:
@@ -179,12 +209,15 @@ class AppleMusicPlugin:
     service = APPLE
     display_name = "Apple Music"
     category: Category = "streaming"
-    capabilities = CAPABILITIES
     limits = LIMITS
     quota_policy = QuotaPolicy()
 
-    def __init__(self, mode: AuthMode = AuthMode.WEB) -> None:
+    def __init__(self, mode: AuthMode = AuthMode.WEB, *, editing: bool = False) -> None:
+        if editing and mode is not AuthMode.WEB:
+            raise ValueError("Apple Music editing needs the web player's token")
         self.mode = mode
+        self.editing = editing
+        self.capabilities = EDITING_CAPABILITIES if editing else CAPABILITIES
 
     def _api(self, ctx: ConnectorContext) -> HttpClient:
         web = None
@@ -216,6 +249,7 @@ class AppleMusicPlugin:
                         "ID. LinerSync talks to Apple the way that web player "
                         "does. This is unofficial: it can stop working when "
                         "Apple changes the web player."
+                        + (f" {EDITING_NOTE}" if self.editing else "")
                     ),
                     links=(Link("Apple Music on the web", WEB_PLAYER),),
                 ),
@@ -406,8 +440,10 @@ class AppleMusicPlugin:
             artwork_hasher(ctx, APPLE),
             ctx.sleep,
             clock=ctx.clock,
+            editing=self.editing,
         )
 
 
-APPLE_MUSIC_PLUGIN = AppleMusicPlugin(auth_mode_from_env())
+_MODE = auth_mode_from_env()
+APPLE_MUSIC_PLUGIN = AppleMusicPlugin(_MODE, editing=editing_from_env(_MODE))
 PLUGIN = APPLE_MUSIC_PLUGIN

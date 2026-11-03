@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from linersync.application.attention import open_items
 from linersync.application.suggestions import find_similar, search_text
+from linersync.application.undo import Capabilities, can_undo, undo_steps
 from linersync.domain.attention import AttentionItem, AttentionKind
+from linersync.domain.capabilities import Capability
 from linersync.domain.jobs import RunContext, UndoJob
 from linersync.domain.operations import (
     AddTracks,
@@ -19,7 +21,7 @@ from linersync.domain.operations import (
     Reorder,
     UpdateMetadata,
 )
-from linersync.domain.runs import MemberResult, RunKind, SyncRun, VerificationMismatch
+from linersync.domain.runs import MemberResult, SyncRun, VerificationMismatch
 from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.errors import ConnectorError
 from linersync.server.api.attention import attention_out
@@ -42,6 +44,7 @@ from linersync.server.api.schemas import (
     RunOut,
     RunSummaryOut,
     TrackOut,
+    UndoStepOut,
     UnresolvedOut,
 )
 from linersync.server.api.views import TrackNames, change_out
@@ -50,7 +53,6 @@ from linersync.server.state import AppServices
 
 router = APIRouter(prefix="/api/runs", dependencies=[Depends(require_session)])
 
-_UNDOABLE_KINDS = frozenset({RunKind.SYNC, RunKind.TRANSFER})
 CANT_UNDO = "This run can't be undone"
 UNKNOWN_RUN = "Unknown run"
 UNKNOWN_SONG = "Unknown song"
@@ -63,14 +65,53 @@ class Place(NamedTuple):
     playlist_id: str | None
 
 
+def _capabilities(services: AppServices) -> Capabilities:
+    def of(service: ServiceId) -> frozenset[Capability]:
+        plugin = services.registry.plugins.get(service)
+        return frozenset() if plugin is None else plugin.capabilities
+
+    return of
+
+
+def _member_services(
+    places: Mapping[str, "Place"],
+) -> dict[str, ServiceId]:
+    return {mid: ServiceId(p.service) for mid, p in places.items() if p.service}
+
+
 def undoable(services: AppServices, run: SyncRun) -> bool:
-    """The rule `UndoService.undo` applies."""
-    snapshots = services.repos.snapshots
-    return (
-        run.kind in _UNDOABLE_KINDS
-        and not run.dry_run
-        and any(snapshots.has_pre_write(run.run_id, m.member_id) for m in run.members)
+    places = _member_places(services, run, services.contexts.get(run.run_id))
+    return can_undo(
+        run,
+        services.repos.snapshots,
+        _capabilities(services),
+        _member_services(places),
     )
+
+
+def _undo_steps(
+    services: AppServices,
+    run: SyncRun,
+    places: Mapping[str, Place],
+    names: TrackNames,
+) -> list[UndoStepOut]:
+    steps = undo_steps(
+        run,
+        services.repos.snapshots,
+        _capabilities(services),
+        _member_services(places),
+    )
+    return [
+        UndoStepOut(
+            member_id=s.member_id,
+            action=s.action,
+            by_hand=s.by_hand,
+            playlist_name=s.playlist_name,
+            service=s.service,
+            tracks=names.tracks(s.service or "", s.track_ids),
+        )
+        for s in steps
+    ]
 
 
 # -- view ---------------------------------------------------------------------
@@ -242,6 +283,7 @@ def run_detail(services: AppServices, run: SyncRun) -> RunOut:
         unresolved=unresolved,
         undoes_run_id=run.undoes_run_id,
         undoable=undoable(services, run),
+        undo_steps=_undo_steps(services, run, places, names),
     )
 
 

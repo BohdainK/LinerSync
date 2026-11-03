@@ -222,9 +222,20 @@ async def test_read_hashes_artwork(sim: QobuzSim) -> None:
 
 async def test_search_by_isrc(sim: QobuzSim) -> None:
     found = await make_connector(sim).search(TrackQuery.from_track(CATALOG[1]))
-    assert [t.track_id for t in found] == [Y]
-    (call,) = _calls(sim, "track/search")
-    assert call.url.params["query"] == "GBSIM0000001"
+    assert [t.track_id for t in found] == [Y]  # the text hit is the same song
+    queries = [r.url.params["query"] for r in _calls(sim, "track/search")]
+    assert queries == ["GBSIM0000001", "Bravo Band Bravo"]
+
+
+async def test_search_keeps_text_hits_beside_isrc_hits() -> None:
+    # The source's ISRC may be only on compilations; the album copy has
+    # another ISRC and only the text search finds it.
+    comp = track("qobuz", "1", title="Routines", artists=("Band",), isrc="I1")
+    album = track("qobuz", "2", title="Routines", artists=("Band",), isrc="I2")
+    sim = QobuzSim(catalog=[comp, album])
+    query = TrackQuery("Routines", ("Band",), isrc="I1")
+    found = await make_connector(sim).search(query)
+    assert [t.track_id for t in found] == ["1", "2"]
 
 
 async def test_search_falls_back_to_metadata(sim: QobuzSim) -> None:

@@ -90,7 +90,7 @@ async def test_approve_then_rerun_applies(world: World) -> None:
 
 
 async def test_resume_sync_unpauses(world: World) -> None:
-    world.spotify.delete_playlist("P1")
+    world.spotify.drop_playlist("P1")
     await world.runner().run("s1", trigger=MANUAL)
     (item,) = _open(world, AttentionKind.SOURCE_MISSING)
     world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "b", "c"]))
@@ -105,7 +105,7 @@ async def test_resume_sync_unpauses(world: World) -> None:
 
 
 async def test_resume_sync_missing_group_raises(world: World) -> None:
-    world.spotify.delete_playlist("P1")
+    world.spotify.drop_playlist("P1")
     await world.runner().run("s1", trigger=MANUAL)
     (item,) = _open(world, AttentionKind.SOURCE_MISSING)
     repos = replace(world.repos, syncs=_NoSyncs())  # type: ignore[arg-type]

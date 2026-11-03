@@ -15,6 +15,7 @@ from linersync.application.settings import (
     DEFAULT_BACKUP_SCHEDULE,
     DEFAULT_VERSIONS_KEPT,
 )
+from linersync.application.undo import UndoAction
 from linersync.domain.attention import AttentionKind
 from linersync.domain.backups import BackedUpPlaylist, BackupRun, PlaylistVersion
 from linersync.domain.jobs import Job, JobProgress
@@ -448,11 +449,24 @@ class MemberOut(BaseModel):
     matches: list[MatchPairOut] = []
 
 
+class UndoStepOut(BaseModel):
+    """What undoing the run means for one playlist; `by_hand` steps are the
+    user's to do (`tracks`: the songs to remove, for remove_songs)."""
+
+    member_id: str
+    action: UndoAction
+    by_hand: bool
+    playlist_name: str
+    service: str | None
+    tracks: list[TrackOut] = []
+
+
 class RunOut(RunSummaryOut):
     members: list[MemberOut]
     unresolved: list[UnresolvedOut]
     undoes_run_id: str | None
     undoable: bool
+    undo_steps: list[UndoStepOut] = []
 
 
 # -- transfers --------------------------------------------------------------

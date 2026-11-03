@@ -107,7 +107,7 @@ def test_failures_search_drop_create() -> None:
         meta = await fc.create_playlist(PlaylistDraft("New"))
         assert meta.playlist_id == "fake-new-1"
         assert (await fc.read_playlist(meta.playlist_id)).entries == ()
-        fc.delete_playlist("A1")
+        fc.drop_playlist("A1")
         with pytest.raises(PlaylistNotFound):
             await fc.read_playlist("A1")
         assert len(await fc.list_playlists()) == 1

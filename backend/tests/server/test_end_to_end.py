@@ -172,7 +172,7 @@ def test_paused_sync_drops_its_scheduled_run(app_factory: AppFactory) -> None:
     with world(app_factory, clock=SystemClock(), start_worker=True) as w:
         sync_id = create(w.client)["sync_id"]
         before = w.client.get(f"/api/syncs/{sync_id}").json()
-        w.a.delete_playlist("P1")
+        w.a.drop_playlist("P1")
         wait_finished(w.client, run_now(w.client, sync_id).json()["job_id"])
         after = w.client.get(f"/api/syncs/{sync_id}").json()
         next_up = w.client.get("/api/home").json()["next_up"]
@@ -361,7 +361,7 @@ def test_backup_archive_restore_and_export_survive_restart(
         assert run_now(first.client, sync_id).status_code == 202
         drain(first.client)
         back_up(first.client)
-        first.a.delete_playlist("P2")
+        first.a.drop_playlist("P2")
         back_up(first.client)
         a, b = first.a, first.b
 

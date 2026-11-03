@@ -200,7 +200,7 @@ def test_approve_runs_braked_sync(app_factory: AppFactory) -> None:
 def test_resume_paused_source(app_factory: AppFactory) -> None:
     with world(app_factory) as w:
         sync_id = create(w.client)["sync_id"]
-        w.a.delete_playlist("P1")
+        w.a.drop_playlist("P1")
         run_now(w.client, sync_id)
         drain(w.client)
         paused = w.client.get(f"/api/syncs/{sync_id}").json()

@@ -384,7 +384,7 @@ def test_missing_after_dry_run_rebuild(app_factory: AppFactory) -> None:
         sync_id = create(w.client)["sync_id"]
         run_now(w.client, sync_id)
         drain(w.client)
-        w.b.delete_playlist("B1")
+        w.b.drop_playlist("B1")
         run_now(w.client, sync_id, dry_run=True)
         drain(w.client)
         missing = w.client.get(f"/api/syncs/{sync_id}").json()["destinations"][0]

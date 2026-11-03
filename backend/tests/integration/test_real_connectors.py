@@ -12,6 +12,10 @@ import httpx
 from linersync.adapters.connectors.apple_music.plugin import (
     PLUGIN as APPLE_PLUGIN,
 )
+from linersync.adapters.connectors.apple_music.plugin import (
+    AppleMusicPlugin,
+    AuthMode,
+)
 from linersync.adapters.connectors.jellyfin.plugin import JELLYFIN_PLUGIN
 from linersync.adapters.connectors.kit.discovery import discover_plugins
 from linersync.adapters.connectors.kit.plugin import ConnectorContext, ConnectorSettings
@@ -97,6 +101,7 @@ class Rig:
     clock: FixedClock = field(default_factory=lambda: FixedClock(NOW))
     sleeps: list[float] = field(default_factory=list)
     transports: dict[str, httpx.AsyncBaseTransport] = field(default_factory=dict)
+    apple_plugin: AppleMusicPlugin = APPLE_PLUGIN
 
     async def _sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
@@ -128,7 +133,7 @@ class Rig:
         spotify = SPOTIFY_PLUGIN.create(
             self._context(creds, self.transports.get("spotify", self.spotify.transport))
         )
-        apple = APPLE_PLUGIN.create(
+        apple = self.apple_plugin.create(
             self._context(creds, self.transports.get("apple", self.apple.transport))
         )
         return SyncRunner(
@@ -144,10 +149,10 @@ class Rig:
             )
         )
 
-    def to_apple(self, source_id: str) -> str:
+    def to_apple(self, source_id: str, mode: SyncMode = SyncMode.ADD_ONLY) -> str:
         g = group(
             source=("spotify", source_id),
-            destinations=[("apple_music", None, SyncMode.ADD_ONLY)],
+            destinations=[("apple_music", None, mode)],
         )
         self.repos.syncs.save(g)
         return g.sync_id
@@ -766,3 +771,25 @@ async def test_spotify_to_youtube_music_matches_by_isrc_search() -> None:
     target = saved.destinations[0].playlist_id
     assert target is not None
     assert youtube.track_ids(target) == [t.track_id for t in yt_catalog]
+
+
+async def test_full_sync_into_apple_with_experimental_editing() -> None:
+    # LINERSYNC_APPLE_MUSIC_EDITING=on: the source's removal and new order
+    # reach Apple, through the web player's host. (Ten songs: removing one
+    # stays under the brake.)
+    r, p1, apple = rig(10)
+    r.apple_plugin = AppleMusicPlugin(AuthMode.WEB, editing=True)
+    sync_id = r.to_apple(p1, SyncMode.FULL)
+    first = await r.run(sync_id)
+    assert first.status is RunStatus.SUCCEEDED, first
+    pid = r.apple_playlist(sync_id)
+    ids = [t.track_id for t in apple]
+
+    uris = r.spotify.playlists[p1].uris
+    uris[:] = [uris[9], *uris[0:4], *uris[5:9]]  # song 4 removed, 9 moved first
+    second = await r.run(sync_id)
+
+    assert second.status is RunStatus.SUCCEEDED, second
+    assert r.apple.ids(pid) == [ids[9], *ids[0:4], *ids[5:9]]
+    edits = [q for q in r.apple.requests if q.method in ("PUT", "DELETE")]
+    assert edits and all(q.url.host == "amp-api.music.apple.com" for q in edits)

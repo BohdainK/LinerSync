@@ -281,7 +281,7 @@ def test_delete_prunes_covers(app_factory: AppFactory) -> None:
         snap = snapshot("fake_a", "P3", ["a"], name="Covered")
         w.a.add_playlist(replace(snap, meta=replace(snap.meta, cover_url=url)))
         back_up(w.client)
-        w.a.delete_playlist("P3")
+        w.a.drop_playlist("P3")
         back_up(w.client)
         archived = w.client.get("/api/backups/playlists?archived=true").json()
         p3 = next(e for e in archived if e["playlist_id"] == "P3")

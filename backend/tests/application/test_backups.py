@@ -168,7 +168,7 @@ async def test_cover_fetch_failure_means_no_cover(env: Env) -> None:
 async def test_gone_playlist_archived(env: Env) -> None:
     svc = env.service()
     await svc.back_up(env.spotify)
-    env.spotify.delete_playlist("P2")
+    env.spotify.drop_playlist("P2")
     run = await svc.back_up(env.spotify)
     entry = env.entry("P2")
     assert entry.archived_at == NOW
@@ -186,7 +186,7 @@ async def test_gone_destination_of_active_sync_not_archived(env: Env) -> None:
     env.repos.syncs.save(g)
     svc = env.service()
     await svc.back_up(env.spotify)
-    env.spotify.delete_playlist("P2")
+    env.spotify.drop_playlist("P2")
     run = await svc.back_up(env.spotify)
     entry = env.entry("P2")
     assert entry.missing_since == NOW
@@ -208,7 +208,7 @@ async def test_gone_source_of_active_sync_archived(env: Env) -> None:
     )
     svc = env.service()
     await svc.back_up(env.spotify)
-    env.spotify.delete_playlist("P2")
+    env.spotify.drop_playlist("P2")
     run = await svc.back_up(env.spotify)
     assert env.entry("P2").archived_at == NOW
     assert run.archived == 1
@@ -217,7 +217,7 @@ async def test_gone_source_of_active_sync_archived(env: Env) -> None:
 async def test_reappearing_playlist_leaves_archive(env: Env) -> None:
     svc = env.service()
     await svc.back_up(env.spotify)
-    env.spotify.delete_playlist("P2")
+    env.spotify.drop_playlist("P2")
     await svc.back_up(env.spotify)
     assert env.entry("P2").archived
     env.spotify.add_playlist(snapshot("spotify", "P2", ["d", "e"]))
@@ -231,7 +231,7 @@ async def test_reappearing_playlist_leaves_archive(env: Env) -> None:
 async def test_failed_listing_changes_nothing(env: Env) -> None:
     svc = env.service()
     await svc.back_up(env.spotify)
-    env.spotify.delete_playlist("P2")
+    env.spotify.drop_playlist("P2")
     env.spotify.fail_list()
     before = env.store.list_entries()
     run = await svc.back_up(env.spotify)
@@ -293,7 +293,7 @@ async def test_partial_read_keeps_existing_entry_present(env: Env) -> None:
 async def test_auth_failure_stops_service(env: Env) -> None:
     svc = env.service()
     await svc.back_up(env.spotify)
-    env.spotify.delete_playlist("P2")
+    env.spotify.drop_playlist("P2")
     env.spotify.fail_reads("P1", auth_required=True)
     run = await svc.back_up(env.spotify)
     assert run.status is BackupStatus.FAILED
@@ -317,7 +317,7 @@ async def test_gone_on_read_is_archived(env: Env) -> None:
 
     async def read(playlist_id: str) -> PlaylistSnapshot:
         if playlist_id == "P2":
-            env.spotify.delete_playlist("P2")
+            env.spotify.drop_playlist("P2")
         return await real_read(playlist_id)
 
     env.spotify.read_playlist = read  # type: ignore[method-assign]

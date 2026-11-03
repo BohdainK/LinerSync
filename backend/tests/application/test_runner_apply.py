@@ -211,7 +211,7 @@ async def test_emptied_source_trips_brake_then_approval_applies(world: World) ->
 
 
 async def test_rebuild_missing_target(world: World) -> None:
-    world.apple.delete_playlist("A1")
+    world.apple.drop_playlist("A1")
     run = await world.runner().run("s1", trigger=MANUAL)
     assert run.status is RunStatus.SUCCEEDED
     (member,) = run.members
@@ -230,7 +230,7 @@ async def test_rebuild_missing_target(world: World) -> None:
 
 
 async def test_failed_create_is_not_replanned(world: World) -> None:
-    world.apple.delete_playlist("A1")
+    world.apple.drop_playlist("A1")
 
     async def broken(draft: PlaylistDraft) -> PlaylistMeta:
         world.apple.calls.append("create:broken")
@@ -332,7 +332,7 @@ async def test_removals_applied_last(world: World) -> None:
 async def test_rebuilt_add_only_target_replan_restores_songs(world: World) -> None:
     first = await world.runner().run("s1", trigger=MANUAL)
     assert first.status is RunStatus.SUCCEEDED
-    world.apple.delete_playlist("A1")
+    world.apple.drop_playlist("A1")
     world.apple.fail_writes(AddTracks)
     run = await world.runner().run("s1", trigger=MANUAL)
     assert run.status is RunStatus.SUCCEEDED
@@ -351,7 +351,7 @@ async def test_rebuilt_add_only_target_replan_restores_songs(world: World) -> No
 
 async def test_rebuilt_target_that_failed_is_filled_next_run(world: World) -> None:
     await world.runner().run("s1", trigger=MANUAL)
-    world.apple.delete_playlist("A1")
+    world.apple.drop_playlist("A1")
     world.apple.fail_writes(AddTracks, times=2)
     failed = await world.runner().run("s1", trigger=MANUAL)
     assert failed.status is RunStatus.FAILED

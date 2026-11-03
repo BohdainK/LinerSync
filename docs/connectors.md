@@ -29,7 +29,9 @@ class Connector(Protocol):
 `ADD`, `REMOVE`, `REORDER`, `EDIT_METADATA`, `CREATE_PLAYLIST`, `DELETE_PLAYLIST`.
 The planner reads them and degrades honestly. For example, Apple Music's public API can
 only add, so it declares `{READ_ORDER, ADD, CREATE_PLAYLIST}` and syncs into Apple run
-as add only. Declare a capability only if `apply` really implements it, and do not
+as add only. (With the experimental `LINERSYNC_APPLE_MUSIC_EDITING=on`, web token only,
+it also declares `REMOVE`, `REORDER` and `DELETE_PLAYLIST`: see the Apple Music notes
+in section 8.) Declare a capability only if `apply` really implements it, and do not
 declare one the service cannot do. The contract suite (section 7) checks both.
 
 **`ConnectorLimits(page_size, add_batch_size, search_cost=1)`** (`ports/connector.py`):
@@ -454,8 +456,6 @@ body.
 - [ ] `lastModifiedDate` is available.
 - [ ] The `ids=` batch limit for catalog lookups.
 - [ ] The Music User Token lifetime (the code assumes 180 days as an estimate).
-- [ ] After adding catalog id X, the library song reports `playParams.catalogId == X`. If
-      Apple maps it to another id, every add-only run would add the song again.
 - [ ] `lastModifiedDate` stays the same across two reads with no edits in between (the
       changed-during-read check, R10, depends on it).
 - [ ] Playlist artwork URLs stay the same across reads. Otherwise the planner sees a new
@@ -463,6 +463,17 @@ body.
       "change not made" note would repeat on every run.
 - [ ] 401 vs 403 semantics: which means a bad developer token, which a missing or expired
       user token.
+- [x] Experimental editing (`LINERSYNC_APPLE_MUSIC_EDITING=on`), measured 2026-11-03 on a
+      throwaway playlist with the web player token. On `amp-api.music.apple.com`:
+      `PUT /v1/me/library/playlists/{id}/tracks` with `{"data": [{id, type:
+      "library-songs"}...]}` replaces the song list (remove and reorder, 204);
+      `DELETE .../tracks?ids[library-songs]=<id>&mode=all` removes every copy of a song;
+      `DELETE /v1/me/library/playlists/{id}` deletes the playlist (it leaves the
+      playlist list at once; a direct GET still answered 200 right after). The same
+      requests on `api.music.apple.com` answer 401: Apple's official API can't edit.
+- [x] Adding catalog id X can come back as another catalog id (seen: `1869042510` read
+      back as `1765135505`, the same song). Verify accepts that substitution
+      (`domain/planning/substitutes.py`) and records the id Apple uses.
 
 **Jellyfin**
 
@@ -586,4 +597,4 @@ and unconfirmed until checked here.
       `tests/fixtures/<service>/recorded/<fixture name>.json`; the shape tests then use it.
 - [ ] Re-run the full check, then `LINERSYNC_LIVE=1 uv run pytest -m live -q`.
 - [ ] Delete the live-test playlists. Apple ones must be deleted by hand in the Music app,
-      because Apple's API cannot delete playlists.
+      because Apple's API cannot delete playlists (unless experimental editing is on).

@@ -79,5 +79,6 @@ export type SyncStartIn = components["schemas"]["SyncStartIn"];
 export type SyncPatchIn = components["schemas"]["SyncPatchIn"];
 export type TrackOut = components["schemas"]["TrackOut"];
 export type TransferIn = components["schemas"]["TransferIn"];
+export type UndoStepOut = components["schemas"]["UndoStepOut"];
 export type UnresolvedOut = components["schemas"]["UnresolvedOut"];
 export type WarningOut = components["schemas"]["WarningOut"];

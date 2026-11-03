@@ -26,6 +26,7 @@ from linersync.adapters.connectors.kit.images import (
     hashes_for,
     jpeg_for_upload,
 )
+from linersync.adapters.connectors.kit.search import merge_hits
 from linersync.adapters.connectors.spotify.moves import Move, plan_moves, plan_removal
 from linersync.adapters.connectors.spotify.parse import (
     API_BASE,
@@ -192,14 +193,11 @@ class SpotifyConnector:
 
     async def search(self, query: TrackQuery) -> list[Track]:
         try:
-            if query.isrc:
-                hits = await self._search(f"isrc:{query.isrc}")
-                if hits:
-                    return hits
+            hits = await self._search(f"isrc:{query.isrc}") if query.isrc else []
             q = f'track:"{_unquote(query.title)}"'
             if query.artists:
                 q += f' artist:"{_unquote(query.artists[0])}"'
-            return await self._search(q)
+            return merge_hits(hits, await self._search(q))
         except HttpFailure as e:
             raise read_failed(e) from None
         except (KeyError, TypeError, ValueError):

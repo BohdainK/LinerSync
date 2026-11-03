@@ -60,7 +60,8 @@ class FakeConnector:
     def add_playlist(self, snapshot: PlaylistSnapshot) -> None:
         self.playlists[snapshot.meta.playlist_id] = snapshot
 
-    def delete_playlist(self, playlist_id: str) -> None:
+    def drop_playlist(self, playlist_id: str) -> None:
+        """Test setup: the playlist disappears (e.g. the user deleted it)."""
         self.playlists.pop(playlist_id, None)
 
     def fail_list(self, times: int = 1, *, auth_required: bool = False) -> None:
@@ -150,6 +151,11 @@ class FakeConnector:
         )
         self.playlists[pid] = PlaylistSnapshot(meta, (), 0, datetime.now(UTC))
         return meta
+
+    async def delete_playlist(self, playlist_id: str) -> None:
+        self.calls.append(f"delete:{playlist_id}")
+        assert Capability.DELETE_PLAYLIST in self.capabilities, "can't delete"
+        self.playlists.pop(playlist_id, None)
 
     async def apply(self, playlist_id: str, op: PlaylistOp) -> None:
         self.calls.append(f"apply:{type(op).__name__}:{playlist_id}")

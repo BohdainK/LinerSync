@@ -81,7 +81,12 @@ app show it. For the same-machine setup that is
 in LinerSync.
 
 **Apple Music.** Follow the setup steps in the app. They need the MusicKit key from your
-Apple Developer Program membership.
+Apple Developer Program membership, or (the default) a token from the Apple Music web
+player. Apple Music is add only: Apple's API can't remove or reorder songs or delete
+playlists. **Experimental:** with the web player token, `LINERSYNC_APPLE_MUSIC_EDITING=on`
+lets LinerSync do all three. That only works by borrowing the web player's token, not
+with Apple's official API, and it can break whenever Apple changes its web player. See
+[docs/server.md](docs/server.md).
 
 **Tidal.** On the Tidal developer dashboard, create an app with the scopes the setup
 steps list, and add the same redirect URI as for Spotify. Then enter the app's client ID

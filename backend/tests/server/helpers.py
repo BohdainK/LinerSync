@@ -111,7 +111,7 @@ def archive_p2(w: World) -> dict[str, Any]:
     back up again; returns P2's archived entry."""
     w.a.add_playlist(snapshot("fake_a", "P2", ROAD_TRIP, name="Road trip"))
     back_up(w.client)
-    w.a.delete_playlist("P2")
+    w.a.drop_playlist("P2")
     back_up(w.client)
     archived = w.client.get("/api/backups/playlists?archived=true").json()
     assert [e["playlist_id"] for e in archived] == ["P2"]

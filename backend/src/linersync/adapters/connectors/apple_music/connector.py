@@ -1,5 +1,11 @@
 """The Apple Music connector: an add-only target (read, add, create).
 
+With ``editing`` (experimental, web player token only) it can also remove and
+reorder songs and delete playlists. Apple's documented API can't: those writes
+go to the web player's own host (amp-api.music.apple.com), which accepts them
+only with the web player's token; api.music.apple.com answers 401. Removing
+and reordering both send the whole new song list (PUT), by library song id.
+
 An error never reads as an empty playlist: an empty library playlist's song
 list answers 404, which can't be told apart from an error, so it is ReadFailed
 (D3). Apple's library lags behind writes, so adds and creates wait for the
@@ -32,6 +38,7 @@ from linersync.adapters.connectors.kit.http import (
 )
 from linersync.adapters.connectors.kit.images import ArtworkHasher, hashes_for
 from linersync.adapters.connectors.kit.parsing import as_mapping, attributes
+from linersync.adapters.connectors.kit.search import merge_hits
 from linersync.domain.capabilities import Capability
 from linersync.domain.operations import AddTracks, RemoveTracks, Reorder, UpdateMetadata
 from linersync.domain.playlists import (
@@ -48,9 +55,17 @@ from linersync.ports.runtime import Clock
 CAPABILITIES = frozenset(
     {Capability.READ_ORDER, Capability.ADD, Capability.CREATE_PLAYLIST}
 )
+# Experimental, through the web player's host (see the module docstring).
+EDITING_CAPABILITIES = CAPABILITIES | {
+    Capability.REMOVE,
+    Capability.REORDER,
+    Capability.DELETE_PLAYLIST,
+}
+AMP_BASE = "https://amp-api.music.apple.com"
 LIMITS = ConnectorLimits(page_size=100, add_batch_size=100, search_cost=2)
 
 _LIBRARY = f"{API_BASE}/v1/me/library/playlists"
+_AMP_LIBRARY = f"{AMP_BASE}/v1/me/library/playlists"
 _CATALOG_CHUNK = 100
 _ART_SIZE = 64
 
@@ -67,6 +82,9 @@ REFUSED = (
     "Apple Music refused the change (the playlist may not be editable, "
     "or the sign-in expired)"
 )
+CHANGED_BEFORE_WRITE = (
+    "Apple Music playlist changed since it was planned; nothing was changed"
+)
 
 _Page = tuple[str, Mapping[str, str | int]]
 
@@ -76,7 +94,6 @@ E = Errors(APPLE, "Apple Music")
 class AppleMusicConnector:
     service = APPLE
     display_name = "Apple Music"
-    capabilities = CAPABILITIES
     limits = LIMITS
 
     def __init__(
@@ -89,7 +106,10 @@ class AppleMusicConnector:
         clock: Clock,
         settle_timeout: float = 10.0,
         settle_interval: float = 1.0,
+        editing: bool = False,
     ) -> None:
+        self.capabilities = EDITING_CAPABILITIES if editing else CAPABILITIES
+        self._editing = editing
         self._api = api
         self._storefront = storefront
         self._artwork = artwork
@@ -234,9 +254,8 @@ class AppleMusicConnector:
         return found
 
     async def search(self, query: TrackQuery) -> list[Track]:
-        """ISRC hits, then term hits not already among them. The term search
-        always runs: a label may give the album copy another ISRC than the
-        source's, leaving only compilations under the source's ISRC."""
+        """ISRC hits, then term hits (see merge_hits). ISRC hits aren't capped:
+        one song can sit on dozens of compilations."""
         try:
             sf = await self._storefront()
             hits: list[Track] = []
@@ -251,12 +270,7 @@ class AppleMusicConnector:
                 {"types": "songs", "term": term, "limit": SEARCH_LIMIT},
             )
             songs = (body.get("results") or {}).get("songs") or {}
-            seen = {t.track_id for t in hits}
-            for t in (parse_catalog_song(obj) for obj in _data(songs)):
-                if t.track_id not in seen:
-                    hits.append(t)
-                    seen.add(t.track_id)
-            return hits
+            return merge_hits(hits, (parse_catalog_song(o) for o in _data(songs)))
         except HttpFailure as e:
             raise _read_failed(e) from None
         except (KeyError, TypeError, ValueError):
@@ -297,6 +311,10 @@ class AppleMusicConnector:
         match op:
             case AddTracks():
                 await self._add(playlist_id, op)
+            case RemoveTracks() if self._editing:
+                await self._rewrite(playlist_id, op)
+            case Reorder() if self._editing:
+                await self._rewrite(playlist_id, op)
             case RemoveTracks():
                 raise WriteFailed(
                     APPLE, "Apple Music can't remove songs from a playlist", False
@@ -357,6 +375,74 @@ class AppleMusicConnector:
             raise error from None
 
         await self._wait_for_total(url, baseline + landed)
+
+    async def delete_playlist(self, playlist_id: str) -> None:
+        """Experimental (`editing`): delete a library playlist. An already
+        missing playlist counts as deleted."""
+        if not self._editing:
+            raise WriteFailed(APPLE, "Apple Music can't delete playlists", False)
+        try:
+            await self._api.request(
+                "DELETE", f"{_AMP_LIBRARY}/{playlist_id}", idempotent=True
+            )
+        except HttpFailure as e:
+            if e.status == 404:
+                return
+            if e.status == 403:
+                raise WriteFailed(APPLE, REFUSED, e.maybe_applied) from None
+            raise write_failed(e) from None
+
+    async def _rewrite(self, playlist_id: str, op: RemoveTracks | Reorder) -> None:
+        """Experimental (`editing`): remove or reorder by sending the whole new
+        song list. The list is re-read first; if it no longer matches what
+        `op` was planned on, nothing is sent."""
+        try:
+            songs, _ = await self._read_songs(playlist_id, playlist_id)
+            ids = [_song_id(s) for s in songs]
+            lib = [str(s["id"]) for s in songs]
+        except HttpFailure as e:
+            raise nothing_sent(_read_failed(e)) from None
+        except ReadFailed as e:
+            raise nothing_sent(e) from None
+        except (KeyError, TypeError, ValueError):
+            raise nothing_sent(E.not_understood(f"playlist {playlist_id}")) from None
+        keep = _new_order(ids, op)
+        if keep is None:
+            raise WriteFailed(APPLE, CHANGED_BEFORE_WRITE, False)
+        want = [ids[i] for i in keep]
+        try:
+            if keep:
+                await self._api.request(
+                    "PUT",
+                    f"{_AMP_LIBRARY}/{playlist_id}/tracks",
+                    idempotent=True,  # the same full list again changes nothing
+                    json={
+                        "data": [{"id": lib[i], "type": "library-songs"} for i in keep]
+                    },
+                )
+            else:  # everything goes: remove each song (all its copies)
+                for song in dict.fromkeys(lib):
+                    await self._api.request(
+                        "DELETE",
+                        f"{_AMP_LIBRARY}/{playlist_id}/tracks",
+                        idempotent=True,
+                        params={"ids[library-songs]": song, "mode": "all"},
+                    )
+        except HttpFailure as e:
+            if e.status == 403:
+                raise WriteFailed(APPLE, REFUSED, e.maybe_applied) from None
+            raise write_failed(e) from None
+        await self._wait_for_songs(playlist_id, want)
+
+    async def _wait_for_songs(self, playlist_id: str, want: list[str]) -> None:
+        async def settled() -> bool | None:
+            if not want:
+                total = await self._song_total(f"{_LIBRARY}/{playlist_id}/tracks")
+                return True if total == 0 else None
+            songs, _ = await self._read_songs(playlist_id, playlist_id)
+            return True if [_song_id(s) for s in songs] == want else None
+
+        await self._settle(settled)
 
     async def _wait_for_total(self, url: str, target: int) -> None:
         async def settled() -> bool | None:
@@ -420,6 +506,38 @@ def _first(body: Mapping[str, Any]) -> Mapping[str, Any]:
 def _catalog_id(song: Mapping[str, Any]) -> str | None:
     value = as_mapping(attributes(song).get("playParams")).get("catalogId")
     return str(value) if value else None
+
+
+def _song_id(song: Mapping[str, Any]) -> str:
+    """The id a library song is known by elsewhere (see parse_library_song)."""
+    return _catalog_id(song) or str(song["id"])
+
+
+def _new_order(ids: Sequence[str], op: RemoveTracks | Reorder) -> list[int] | None:
+    """Indexes into `ids` (the playlist now) giving the list after `op`; None
+    when `op` doesn't fit the playlist (it changed since it was planned)."""
+    match op:
+        case RemoveTracks():
+            drop = {r.position for r in op.removals}
+            if any(
+                not 0 <= r.position < len(ids) or ids[r.position] != r.track_id
+                for r in op.removals
+            ):
+                return None
+            return [i for i in range(len(ids)) if i not in drop]
+        case Reorder():
+            slots: dict[str, list[int]] = {}
+            for i, tid in enumerate(ids):
+                slots.setdefault(tid, []).append(i)
+            out: list[int] = []
+            for tid in op.order:
+                free = slots.get(tid)
+                if not free:
+                    return None
+                out.append(free.pop(0))
+            if any(slots.values()):
+                return None
+            return out
 
 
 def _last_modified(obj: Mapping[str, Any]) -> str | None:
