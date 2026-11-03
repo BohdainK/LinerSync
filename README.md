@@ -5,20 +5,11 @@ streaming services, and keeps a central backup and archive of your library. It r
 one Docker container on your own computer or server. Your credentials and your library
 data stay with you.
 
-LinerSync is a working name.
-
-## Who it is for
-
-LinerSync is for people who are comfortable running a Docker container and registering
-their own developer apps with each music service. It is not a hosted service. Each
-person runs their own copy, which is also why it works around the limits services put on
-shared apps.
-
 Before you start, know what each service asks of you:
 
 - **Spotify:** a Spotify Premium account owns the developer app you register.
-- **Apple Music:** needs a MusicKit key, and that needs the paid Apple Developer Program
-  membership.
+- **Apple Music:** needs a MusicKit key, only available with paid Apple Developer Program
+  membership OR a token from the apple music web player
 - **Tidal:** a Tidal subscription, and a free app you register on the Tidal developer
   dashboard.
 - **YouTube Music:** a signed-in browser to copy a cookie from, or (with
@@ -26,8 +17,7 @@ Before you start, know what each service asks of you:
   public API, so this connection can break when YouTube changes its site.
 - **Qobuz (experimental):** a Qobuz subscription and a signed-in web player to copy two
   values from. Qobuz has no API for apps like LinerSync, so this uses the unofficial one
-  behind its web player: it can break when Qobuz updates the player, and using it is
-  against Qobuz's terms.
+  behind its web player. It can break when Qobuz updates the player.
 - **Jellyfin:** an API key from your server's dashboard (read-only: Jellyfin can be a
   source, not a destination).
 
@@ -136,5 +126,5 @@ nothing re-runs by itself. See [what to expect](docs/server.md#what-to-expect).
 
 ## License
 
-LinerSync is licensed under PolyForm Noncommercial 1.0.0: free to use, modify and share;
-no commercial use or sale. See [LICENSE](LICENSE).
+LinerSync is licensed under PolyForm Noncommercial 1.0.0
+,
