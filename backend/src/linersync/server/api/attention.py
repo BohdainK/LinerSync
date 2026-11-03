@@ -1,14 +1,24 @@
-"""Needs-attention routes: list, pick, not on service, dismiss, approve, resume."""
+"""Needs-attention routes: list, similar songs, pick, not on service, dismiss,
+approve, resume."""
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from linersync.application.attention import AttentionService
+from linersync.application.suggestions import find_similar
 from linersync.domain.attention import AttentionItem, AttentionKind
 from linersync.domain.jobs import SyncJob
 from linersync.domain.runs import Trigger
-from linersync.server.api.common import Services, found, reconcile_schedule
+from linersync.ports.errors import ConnectorError
+from linersync.server.api.common import (
+    Services,
+    connector_failed,
+    display_name,
+    found,
+    reconcile_schedule,
+)
 from linersync.server.api.schemas import (
     ActionOut,
     AttentionOut,
@@ -26,6 +36,7 @@ router = APIRouter(prefix="/api/attention", dependencies=[Depends(require_sessio
 
 NOT_A_CANDIDATE = "Pick one of the suggested songs"
 UNKNOWN_ITEM = "Unknown item"
+NOT_UNMATCHED = "Only an open unmatched song can look for similar songs"
 
 
 def _found(services: AppServices, item_id: str) -> AttentionItem:
@@ -44,7 +55,7 @@ def _attention(services: AppServices) -> AttentionService:
     return AttentionService(services.repos, services.clock)
 
 
-def _attention_out(services: AppServices, item: AttentionItem) -> AttentionOut:
+def attention_out(services: AppServices, item: AttentionItem) -> AttentionOut:
     group = services.repos.syncs.get(item.sync_id) if item.sync_id is not None else None
     tracks = [c.track for c in item.candidates]
     if item.source is not None:
@@ -86,7 +97,33 @@ async def list_attention(services: Services) -> list[AttentionOut]:
         key=lambda i: i.created_at,
         reverse=True,
     )
-    return [_attention_out(services, i) for i in items]
+    return [attention_out(services, i) for i in items]
+
+
+@router.post("/{item_id}/similar")
+async def similar(item_id: str, services: Services) -> AttentionOut:
+    """Search the target service more loosely and keep what scores well enough
+    as extra candidates, so they can be picked."""
+    item = _found(services, item_id)
+    target = item.target_service
+    if (
+        item.kind is not AttentionKind.UNMATCHED
+        or item.resolved_at is not None
+        or item.source is None
+        or target is None
+    ):
+        raise HTTPException(status_code=409, detail=NOT_UNMATCHED)
+    connector = services.connections.connectors().get(target)
+    if connector is None:
+        name = display_name(services, target)
+        raise HTTPException(status_code=409, detail=f"{name} isn't connected")
+    cfg = services.settings_store.get().engine.match
+    try:
+        found_ = await find_similar(item.source, connector, cfg, item.candidates)
+    except ConnectorError as e:
+        raise connector_failed(services.connections, e, target) from None
+    saved = services.repos.attention.upsert(replace(item, candidates=found_))
+    return attention_out(services, saved)
 
 
 @router.post("/{item_id}/pick", status_code=204)

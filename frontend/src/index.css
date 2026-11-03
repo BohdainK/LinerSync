@@ -199,3 +199,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* A faint tint of the service's colour fading down from the top edge. Pair with brandStyle(). */
+@utility brand-wash {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--brand) 16%, transparent),
+    transparent 5rem
+  );
+}

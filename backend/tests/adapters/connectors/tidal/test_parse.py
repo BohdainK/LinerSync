@@ -123,3 +123,12 @@ def test_included_merges_pages() -> None:
     included.add(load_fixture("tidal", "playlist_items"))
     assert included.get("artworks", "art-pl-1") is not None
     assert included.get("artists", "a1") is not None
+
+
+def test_parse_track_artwork_url_is_display_sized() -> None:
+    doc = load_fixture("tidal", "playlist_items")
+    items, _ = parse_items_page(doc)
+    assert items[0].resource is not None and items[1].resource is not None
+    t = parse_track(items[0].resource, Included(doc))
+    assert t.artwork_url == "https://resources.tidal.com/images/al1/640x640.jpg"
+    assert parse_track(items[1].resource, Included(doc)).artwork_url is None

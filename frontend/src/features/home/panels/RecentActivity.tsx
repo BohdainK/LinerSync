@@ -1,13 +1,13 @@
 import { Link } from "react-router";
 import type { JobOut } from "@/api/types";
+import { jobHref } from "@/features/history/jobHref";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDateTime } from "@/lib/format";
 import { linkClass } from "@/lib/styles";
 
 function Label({ job }: { job: JobOut }) {
-  const [runId] = job.run_ids;
-  const to = job.kind === "backup" ? "/backup" : job.run_ids.length === 1 && runId ? `/runs/${runId}` : null;
+  const to = jobHref(job);
   return to ? (
     <Link className={linkClass} to={to}>
       {job.label}

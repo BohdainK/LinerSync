@@ -1,4 +1,15 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Archive,
+  ChartColumn,
+  ChevronDown,
+  ChevronRight,
+  History,
+  House,
+  Plug,
+  RefreshCw,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -13,18 +24,54 @@ import { CONNECTION_STATUS_LABELS } from "@/copy";
 import { readFlag, writeFlag } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 
+// Hover is a neutral wash; selected is the warm accent plus the page's icon, so the two never read the same.
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  cn("flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent", isActive && "bg-accent font-medium");
+  cn(
+    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted",
+    isActive && "bg-accent font-medium text-accent-foreground hover:bg-accent",
+  );
+
+function NavItem({
+  to,
+  end,
+  icon: Icon,
+  trailing,
+  className,
+  children,
+}: {
+  to: string;
+  end?: boolean;
+  icon: LucideIcon;
+  trailing?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <NavLink to={to} end={end} className={(s) => cn(linkClass(s), className)}>
+      {({ isActive }) => (
+        <>
+          <span className="flex min-w-0 items-center gap-2">
+            {isActive && <Icon aria-hidden className="size-4 shrink-0 text-primary" />}
+            {children}
+          </span>
+          {trailing}
+        </>
+      )}
+    </NavLink>
+  );
+}
 
 function Group({
   label,
   to,
+  icon,
   storageKey,
   noun,
   children,
 }: {
   label: string;
   to: string;
+  icon: LucideIcon;
   storageKey: string;
   noun: string;
   children: ReactNode;
@@ -38,15 +85,15 @@ function Group({
   return (
     <div>
       <div className="flex items-center">
-        <NavLink to={to} end className={(s) => cn(linkClass(s), "flex-1")}>
+        <NavItem to={to} end icon={icon} className="flex-1">
           {label}
-        </NavLink>
+        </NavItem>
         <button
           type="button"
           aria-label={`${open ? "Hide" : "Show"} ${noun}`}
           aria-expanded={open}
           onClick={toggle}
-          className="rounded-md p-1.5 hover:bg-accent"
+          className="flex items-center self-stretch rounded-md px-2 hover:bg-muted"
         >
           <Chevron className="size-4" />
         </button>
@@ -66,28 +113,36 @@ export function Sidebar() {
 
   return (
     <nav aria-label="Main" className="flex h-full flex-col gap-2 p-3">
-      <NavLink to="/" end className={linkClass}>
+      <NavItem to="/" end icon={House}>
         Home
-      </NavLink>
-      <Group label="Connections" to="/connections" storageKey="linersync.sidebar.connections" noun="connections">
+      </NavItem>
+      <Group label="Connections" to="/connections" icon={Plug} storageKey="linersync.sidebar.connections" noun="connections">
         {services.map((c) => (
           <li key={c.service}>
-            <NavLink to={`/connections/${c.service}`} className={linkClass}>
+            <NavItem
+              to={`/connections/${c.service}`}
+              icon={Plug}
+              trailing={
+                <Badge variant={c.status === "connected" ? "secondary" : "outline"}>
+                  {CONNECTION_STATUS_LABELS[c.status] ?? c.status}
+                </Badge>
+              }
+            >
               <span className="truncate">{c.display_name}</span>
-              <Badge variant={c.status === "connected" ? "secondary" : "outline"}>
-                {CONNECTION_STATUS_LABELS[c.status] ?? c.status}
-              </Badge>
-            </NavLink>
+            </NavItem>
           </li>
         ))}
       </Group>
-      <Group label="Syncs" to="/syncs" storageKey="linersync.sidebar.syncs" noun="syncs">
+      <Group label="Syncs" to="/syncs" icon={RefreshCw} storageKey="linersync.sidebar.syncs" noun="syncs">
         {(syncs.data ?? []).map((s) => (
           <li key={s.sync_id}>
-            <NavLink to={`/syncs/${s.sync_id}`} className={linkClass}>
+            <NavItem
+              to={`/syncs/${s.sync_id}`}
+              icon={RefreshCw}
+              trailing={s.status === "paused" && <Badge variant="outline">Paused</Badge>}
+            >
               <span className="truncate">{s.name}</span>
-              {s.status === "paused" && <Badge variant="outline">Paused</Badge>}
-            </NavLink>
+            </NavItem>
           </li>
         ))}
       </Group>
@@ -98,20 +153,24 @@ export function Sidebar() {
         <Button variant="outline" className="justify-start" onClick={() => navigate("/transfers/new")}>
           + New transfer
         </Button>
-        <Button variant="ghost" className="justify-start" onClick={() => navigate("/backup")}>
-          Backup
-        </Button>
       </div>
-      <NavLink to="/stats" className={linkClass}>
+      <NavItem to="/backup" icon={Archive}>
+        Backup
+      </NavItem>
+      <NavItem to="/stats" icon={ChartColumn}>
         Stats
-      </NavLink>
+      </NavItem>
       <div className="mt-auto flex flex-col gap-1">
-        <NavLink to="/settings" className={linkClass}>
+        <NavItem to="/history" icon={History}>
+          History
+        </NavItem>
+        <NavItem to="/settings" icon={Settings}>
           Settings
-        </NavLink>
+        </NavItem>
         <Button
           variant="ghost"
-          className="justify-start"
+          // Same padding as the nav links above so the label lines up with theirs.
+          className="h-auto justify-start px-2 py-1.5"
           onClick={() => signOut().catch((e: unknown) => toast.error(errorMessage(e)))}
         >
           Sign out

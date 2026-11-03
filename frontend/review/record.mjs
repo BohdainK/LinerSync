@@ -55,8 +55,10 @@ if (syncs.length === 0) {
   await idle();
   await post("/api/backups/run");
   await idle();
-  // A dry run gives the run page a "preview" state to review.
+  // A dry run gives the run page a "preview" state to review; a dry-run transfer the transfer result.
   await post(`/api/syncs/${syncs[0].sync_id}/run`, { dry_run: true });
+  await idle();
+  await post("/api/transfers", { source_service: "spotify", playlist_id: "sp-80s", destination: "tidal", dry_run: true });
   await idle();
 }
 
@@ -115,6 +117,26 @@ for (const r of routes) await visit(r);
 // so they land in the recording too.
 for (const c of allConnections.filter((c) => c.status === "connected")) {
   await page.evaluate((s) => fetch(`/api/connections/${s}/playlists`), c.service);
+}
+// The resolve dialog: each run's unmatched songs open an item, and each item's similar-song search.
+// Done last: opening items adds them to Needs attention, which the screens above should not show.
+const items = new Set();
+for (const id of runIds) {
+  const run = await get(`/api/runs/${id}`);
+  for (let i = 0; i < run.unresolved.length; i++) {
+    const item = await page.evaluate(
+      (path) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json()),
+      `/api/runs/${id}/unresolved/${i}/attention`,
+    );
+    items.add(item.item_id);
+  }
+}
+for (const item of await get("/api/attention")) if (item.kind === "unmatched") items.add(item.item_id);
+for (const id of items) {
+  await page.evaluate(
+    (path) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }),
+    `/api/attention/${id}/similar`,
+  );
 }
 await page.waitForTimeout(500);
 

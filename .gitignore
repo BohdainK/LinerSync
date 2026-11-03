@@ -32,3 +32,6 @@ frontend/*.tsbuildinfo
 frontend/playwright-report/
 frontend/test-results/
 frontend/e2e/.auth.json
+
+# Local install made by install.sh (secret key, database)
+/linersync/

@@ -115,6 +115,37 @@ def test_pick_candidate_remembers_and_resolves(app_factory: AppFactory) -> None:
     assert run["unresolved"] == []
 
 
+def test_similar_finds_looser_matches_that_can_be_picked(
+    app_factory: AppFactory,
+) -> None:
+    with world(app_factory) as w:
+        w.a.add_playlist(
+            snapshot(
+                "fake_a",
+                "P1",
+                ["a", "rm"],
+                tracks={"rm": track("fake_a", "rm", title="Hidden song (Remastered)")},
+            )
+        )
+        w.b.catalog = (
+            *w.b.catalog,
+            track("fake_b", "H1", title="Hidden song", artists=("Other",)),
+        )
+        run_now(w.client, create(w.client)["sync_id"])
+        drain(w.client)
+        [item] = [i for i in attention(w.client) if i["kind"] == "unmatched"]
+        response = act(w.client, item["item_id"], "similar")
+        assert response.status_code == 200, response.text
+        found = response.json()
+        picked = act(w.client, item["item_id"], "pick", target_track_id="H1")
+        again = act(w.client, item["item_id"], "similar")
+    assert item["candidates"] == []
+    assert [c["track"]["track_id"] for c in found["candidates"]] == ["H1"]
+    assert found["candidates"][0]["confidence"] >= 0.5
+    assert picked.status_code == 204, picked.text
+    assert again.status_code == 409
+
+
 def test_pick_must_be_a_candidate(app_factory: AppFactory) -> None:
     with unmatched_world(app_factory) as (w, _):
         [item] = attention(w.client)

@@ -6,6 +6,8 @@ from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from linersync.application.attention import open_items
+from linersync.domain.attention import AttentionItem, AttentionKind
 from linersync.domain.jobs import RunContext, UndoJob
 from linersync.domain.operations import (
     AddTracks,
@@ -17,10 +19,14 @@ from linersync.domain.operations import (
     UpdateMetadata,
 )
 from linersync.domain.runs import MemberResult, RunKind, SyncRun, VerificationMismatch
+from linersync.domain.tracks import ServiceId
+from linersync.server.api.attention import attention_out
 from linersync.server.api.common import Services, found
 from linersync.server.api.schemas import (
+    AttentionOut,
     CandidateOut,
     JobOut,
+    MatchPairOut,
     MemberOut,
     MismatchOut,
     OperationOut,
@@ -39,6 +45,7 @@ router = APIRouter(prefix="/api/runs", dependencies=[Depends(require_session)])
 _UNDOABLE_KINDS = frozenset({RunKind.SYNC, RunKind.TRANSFER})
 CANT_UNDO = "This run can't be undone"
 UNKNOWN_RUN = "Unknown run"
+UNKNOWN_SONG = "Unknown song"
 
 
 class Place(NamedTuple):
@@ -127,6 +134,24 @@ def _mismatch(m: VerificationMismatch, service: str, names: TrackNames) -> Misma
     )
 
 
+def _matches(plan: MemberPlan, service: str, names: TrackNames) -> list[MatchPairOut]:
+    """Each source song beside the song it became on `service`, in source order."""
+    added = {
+        tid
+        for op in plan.operations
+        if isinstance(op, AddTracks)
+        for tid in op.track_ids
+    }
+    return [
+        MatchPairOut(
+            source=names.track(e.source_key.service, e.source_key.track_id),
+            target=names.track(service, e.target_track_id),
+            added=e.target_track_id in added,
+        )
+        for e in plan.synced
+    ]
+
+
 def _member(
     member_id: str,
     place: Place | None,
@@ -142,6 +167,7 @@ def _member(
         if plan is None
         else [_operation(op, tracks_on, names) for op in plan.operations]
     )
+    matches = [] if plan is None else _matches(plan, tracks_on, names)
     if result is None:  # planned but not applied (a dry run, or never reached)
         not_made = plan.not_made if plan is not None else ()
         return MemberOut(
@@ -155,6 +181,7 @@ def _member(
             operations=operations,
             not_made=[change_out(c, tracks_on, names) for c in not_made],
             mismatch=None,
+            matches=matches,
         )
     return MemberOut(
         member_id=member_id,
@@ -171,6 +198,7 @@ def _member(
         mismatch=None
         if result.mismatch is None
         else _mismatch(result.mismatch, tracks_on, names),
+        matches=matches,
     )
 
 
@@ -221,3 +249,43 @@ async def undo_run(run_id: str, services: Services) -> JobOut:
     if not undoable(services, run):
         raise HTTPException(status_code=409, detail=CANT_UNDO)
     return JobOut.of(services.jobs.submit(UndoJob(run_id), "Undo run"))
+
+
+@router.post("/{run_id}/unresolved/{index}/attention")
+async def unresolved_attention(
+    run_id: str, index: int, services: Services
+) -> AttentionOut:
+    """The open "song didn't match" item for the run's `index`th unresolved
+    song, made now when the run left none (dry runs and transfers don't)."""
+    run = found(services.repos.runs.get(run_id), UNKNOWN_RUN)
+    entries = run.plan.unresolved if run.plan is not None else ()
+    if not 0 <= index < len(entries):
+        raise HTTPException(status_code=404, detail=UNKNOWN_SONG)
+    u = entries[index]
+    place = _member_places(services, run, services.contexts.get(run_id)).get(
+        u.member_id
+    )
+    if place is None:
+        raise HTTPException(status_code=404, detail=UNKNOWN_SONG)
+    repo = services.repos.attention
+    target = ServiceId(place.service)
+    for item in open_items(
+        repo, AttentionKind.UNMATCHED, sync_id=run.sync_id, target_service=target
+    ):
+        if item.source is not None and item.source.key == u.source.key:
+            return attention_out(services, item)
+    item = repo.upsert(
+        AttentionItem(
+            item_id=services.new_id(),
+            kind=AttentionKind.UNMATCHED,
+            created_at=services.clock.now(),
+            detail="; ".join(u.decision.reasons),
+            sync_id=run.sync_id,
+            member_id=u.member_id,
+            service=target,
+            source=u.source,
+            target_service=target,
+            candidates=u.decision.candidates,
+        )
+    )
+    return attention_out(services, item)

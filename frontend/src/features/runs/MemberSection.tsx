@@ -5,19 +5,15 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TrackList } from "@/components/TrackList";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useServiceNames } from "@/features/pickers/useServiceNames";
 import { formatSongs } from "@/lib/format";
+import { MatchList } from "./MatchList";
 
 function Expandable({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="space-y-1">
-      <Button
-        type="button"
-        variant="link"
-        className="h-auto p-0"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
+      <Button type="button" variant="link" className="h-auto p-0" aria-expanded={open} onClick={() => setOpen(!open)}>
         {label}
       </Button>
       {open ? <div className="pl-4">{children}</div> : null}
@@ -25,13 +21,14 @@ function Expandable({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-function Operation({ op }: { op: OperationOut }) {
+function Operation({ op, listed }: { op: OperationOut; listed: boolean }) {
   switch (op.type) {
     case "create_playlist":
       return <p>Created playlist {op.name}</p>;
     case "update_metadata":
       return <p>Updated name and description</p>;
     case "add_tracks":
+      if (listed) return <p>Added {formatSongs(op.tracks.length)}</p>;
       return (
         <Expandable label={`Added ${formatSongs(op.tracks.length)}`}>
           <TrackList tracks={op.tracks} />
@@ -49,7 +46,9 @@ function Operation({ op }: { op: OperationOut }) {
 }
 
 export function MemberSection({ member, serviceName }: { member: MemberOut; serviceName: string }) {
-  const { mismatch } = member;
+  const { mismatch, matches } = member;
+  const nameOf = useServiceNames();
+  const sourceService = matches[0]?.source.service;
   return (
     <section className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -60,9 +59,15 @@ export function MemberSection({ member, serviceName }: { member: MemberOut; serv
       {member.error ? <p className="text-sm text-destructive">{member.error}</p> : null}
       <div className="space-y-1">
         {member.operations.map((op) => (
-          <Operation key={op.op_id} op={op} />
+          <Operation key={op.op_id} op={op} listed={matches.length > 0} />
         ))}
       </div>
+      {matches.length > 0 && sourceService ? (
+        <div className="space-y-2">
+          <h4 className="font-medium">Songs ({matches.length})</h4>
+          <MatchList matches={matches} sourceName={nameOf(sourceService)} targetName={serviceName} />
+        </div>
+      ) : null}
       {member.not_made.length > 0 ? (
         <div className="space-y-1">
           <h4 className="font-medium">Changes not made ({member.not_made.length})</h4>

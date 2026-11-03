@@ -1,6 +1,6 @@
 """Lenient accessors for service JSON and the dates in it."""
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -13,6 +13,19 @@ def as_mapping(value: Any) -> Mapping[str, Any]:
 def attributes(obj: Mapping[str, Any]) -> Mapping[str, Any]:
     """A resource's ``attributes`` object (JSON:API, Apple), else an empty one."""
     return as_mapping(obj.get("attributes"))
+
+
+# The width of the album cover a track shows in the UI (Track.artwork_url).
+DISPLAY_ART_SIZE = 300
+
+
+def display_image(images: Iterable[tuple[int, str]]) -> str | None:
+    """From (width, url) pairs, the smallest at least DISPLAY_ART_SIZE wide,
+    else the largest there is; None when there are none."""
+    sized = sorted(images)
+    if not sized:
+        return None
+    return next((url for w, url in sized if w >= DISPLAY_ART_SIZE), sized[-1][1])
 
 
 def iso_datetime(raw: Any, *, assume_utc: bool = False) -> datetime | None:

@@ -249,3 +249,8 @@ def test_isrc_hit_beside_a_close_non_isrc_candidate_still_needs_margin() -> None
     )
     result = decide_match(src, [_hit(), close], CFG)
     assert isinstance(result, NeedsAttention)
+
+
+def test_artwork_url_ignored_in_equality() -> None:
+    t = track("youtube_music", "v")
+    assert replace(t, artwork_url="https://i/a") == t

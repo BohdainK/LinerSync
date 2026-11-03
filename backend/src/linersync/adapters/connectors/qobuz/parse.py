@@ -105,6 +105,7 @@ def parse_track(item: Mapping[str, Any], artwork_hash: str | None = None) -> Tra
         isrc=str(item["isrc"]) if item.get("isrc") else None,
         artwork_hash=artwork_hash,
         url=f"https://open.qobuz.com/track/{tid}",
+        artwork_url=artwork_url(item),
     )
 
 

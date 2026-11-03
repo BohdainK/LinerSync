@@ -31,14 +31,47 @@ function listHandler(
 beforeEach(() => localStorage.clear());
 
 describe("ConnectionsPage", () => {
-  it("groups services by category", async () => {
-    server.use(listHandler());
+  it("puts set-up services under Connected and groups the rest by category", async () => {
+    server.use(
+      listHandler([
+        connectionOut({ service: "spotify", display_name: "Spotify", status: "connected" }),
+        connectionOut({ service: "tidal", display_name: "Tidal", status: "needs_sign_in" }),
+        connectionOut({ service: "qobuz", display_name: "Qobuz", status: "not_set_up" }),
+        connectionOut({
+          service: "navidrome",
+          display_name: "Navidrome",
+          category: "self_hosted",
+          status: "not_set_up",
+        }),
+      ]),
+    );
     renderWithProviders(<ConnectionsPage />, { route: "/connections" });
     expect(await screen.findByRole("heading", { name: "Connections" })).toBeInTheDocument();
-    const streaming = await screen.findByRole("region", { name: "Streaming" });
-    expect(within(streaming).getByRole("button", { name: /Spotify/ })).toHaveTextContent("Connected");
+    const connected = await screen.findByRole("region", { name: "Connected" });
+    expect(within(connected).getByRole("button", { name: /Spotify/ })).not.toHaveTextContent("Connected");
+    expect(within(connected).getByRole("button", { name: /Tidal/ })).toHaveTextContent("Needs sign-in");
+    const streaming = screen.getByRole("region", { name: "Streaming" });
+    expect(
+      within(streaming)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual([expect.stringContaining("Qobuz")]);
     const hosted = screen.getByRole("region", { name: "Self-hosted" });
     expect(within(hosted).getByRole("button", { name: /Navidrome/ })).toHaveTextContent("Not set up");
+  });
+
+  it("tints only connected services with their brand colour", async () => {
+    server.use(
+      listHandler([
+        connectionOut({ service: "spotify", display_name: "Spotify", status: "connected" }),
+        connectionOut({ service: "tidal", display_name: "Tidal", status: "needs_sign_in" }),
+        connectionOut({ service: "qobuz", display_name: "Qobuz", status: "not_set_up" }),
+      ]),
+    );
+    renderWithProviders(<ConnectionsPage />, { route: "/connections" });
+    expect(await screen.findByRole("button", { name: /Spotify/ })).toHaveClass("brand-wash");
+    expect(screen.getByRole("button", { name: /Tidal/ })).not.toHaveClass("brand-wash");
+    expect(screen.getByRole("button", { name: /Qobuz/ })).not.toHaveClass("brand-wash");
   });
 
   it("labels experimental services", async () => {
@@ -173,7 +206,8 @@ describe("ConnectionPage", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Disconnect…" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Disconnect Spotify?" });
     expect(dialog).toHaveTextContent("Its backups and archive are kept unless you choose otherwise.");
-    if (deleteBackups) await userEvent.click(within(dialog).getByRole("checkbox", { name: "Also delete this service's backups" }));
+    if (deleteBackups)
+      await userEvent.click(within(dialog).getByRole("checkbox", { name: "Also delete this service's backups" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Disconnect" }));
   }
 
@@ -234,7 +268,18 @@ describe("ConnectionPage", () => {
 
 describe("capabilityText", () => {
   it("orders and words capabilities", () => {
-    expect(capabilityText(["delete_playlist", "add", "read_order", "bogus", "create_playlist", "reorder", "remove", "edit_metadata"])).toEqual([
+    expect(
+      capabilityText([
+        "delete_playlist",
+        "add",
+        "read_order",
+        "bogus",
+        "create_playlist",
+        "reorder",
+        "remove",
+        "edit_metadata",
+      ]),
+    ).toEqual([
       "Read song order",
       "Add songs",
       "Remove songs",

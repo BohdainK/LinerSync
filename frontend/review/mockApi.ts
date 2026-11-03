@@ -28,7 +28,17 @@ function recorded(method: string, url: URL): Recorded | undefined {
   return key ? responses[key] : undefined;
 }
 
-function finishedJob(kind: string, label: string): Record<string, unknown> {
+/** A recorded transfer run, a dry one when `dryRun`, so a transfer "finishes" with a real result. */
+function transferRunIds(dryRun: boolean): string[] {
+  const runs = Object.entries(responses)
+    .filter(([key]) => /^GET \/api\/runs\/[^/?]+$/.test(key))
+    .map(([, r]) => JSON.parse(r.body ?? "{}") as { run_id?: string; kind?: string; dry_run?: boolean })
+    .filter((r) => r.kind === "transfer" && r.run_id);
+  const run = runs.find((r) => r.dry_run === dryRun) ?? runs[0];
+  return run?.run_id ? [run.run_id] : [];
+}
+
+function finishedJob(kind: string, label: string, runIds: string[] = []): Record<string, unknown> {
   const now = new Date().toISOString();
   const job = {
     job_id: `review-${jobs.size + 1}`,
@@ -39,7 +49,7 @@ function finishedJob(kind: string, label: string): Record<string, unknown> {
     created_at: now,
     started_at: now,
     finished_at: now,
-    run_ids: [],
+    run_ids: runIds,
     backup_ids: [],
     error: null,
     progress: null,
@@ -57,14 +67,22 @@ async function bodyOf(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
+// Writes that only read (opening a run's unmatched song, searching for similar songs) replay as recorded.
+const RECORDED_WRITES = [/^\/api\/runs\/[^/]+\/unresolved\/\d+\/attention$/, /^\/api\/attention\/[^/]+\/similar$/];
+
 async function write(request: Request, url: URL): Promise<Response> {
   const path = url.pathname;
   if (path === "/api/auth/login" || path === "/api/auth/logout") return json(204, null);
+  const replayed = RECORDED_WRITES.some((r) => r.test(path)) ? responses[`POST ${path}`] : undefined;
+  if (replayed) return replay(replayed);
   toast.info("Review build: this change isn't saved.");
   if (request.method === "DELETE") return json(204, null);
   if (/^\/api\/syncs\/[^/]+\/run$/.test(path)) return json(202, finishedJob("sync", "Sync"));
   if (path === "/api/backups/run") return json(202, finishedJob("backup", "Back up all services"));
-  if (path === "/api/transfers" || path === "/api/transfers/bulk") return json(202, finishedJob("transfer", "Transfer"));
+  if (path === "/api/transfers" || path === "/api/transfers/bulk") {
+    const dryRun = (await bodyOf(request)).dry_run === true;
+    return json(202, finishedJob("transfer", "Transfer", transferRunIds(dryRun)));
+  }
   if (path === "/api/syncs/preview") return json(202, finishedJob("preview", "Preview"));
   if (path === "/api/syncs") {
     const first = JSON.parse(responses["GET /api/syncs"]?.body ?? "[]")[0] ?? {};

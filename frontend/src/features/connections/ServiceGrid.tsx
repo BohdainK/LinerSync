@@ -1,6 +1,8 @@
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import type { ConnectionOut } from "@/api/types";
+import { brandStyle } from "@/lib/brand";
+import { cn } from "@/lib/utils";
 
 const CAPABILITY_TEXT: [string, string][] = [
   ["read_order", "Read song order"],
@@ -18,26 +20,25 @@ export function capabilityText(caps: string[]): string[] {
   return CAPABILITY_TEXT.filter(([key]) => caps.includes(key)).map(([, text]) => text);
 }
 
-const SECTIONS: { category: string; title: string }[] = [
-  { category: "streaming", title: "Streaming" },
-  { category: "self_hosted", title: "Self-hosted" },
+// Anything set up goes under Connected, whatever its health, so a service needing sign-in stays with
+// the user's other accounts. The rest are grouped by category.
+const isSetUp = (s: ConnectionOut) => s.status !== "not_set_up";
+
+const SECTIONS: { key: string; title: string; includes(s: ConnectionOut): boolean }[] = [
+  { key: "connected", title: "Connected", includes: isSetUp },
+  { key: "streaming", title: "Streaming", includes: (s) => !isSetUp(s) && s.category === "streaming" },
+  { key: "self_hosted", title: "Self-hosted", includes: (s) => !isSetUp(s) && s.category === "self_hosted" },
 ];
 
-export function ServiceGrid({
-  services,
-  onPick,
-}: {
-  services: ConnectionOut[];
-  onPick(service: string): void;
-}) {
+export function ServiceGrid({ services, onPick }: { services: ConnectionOut[]; onPick(service: string): void }) {
   return (
     <div className="flex flex-col gap-6">
-      {SECTIONS.map(({ category, title }) => {
-        const items = services.filter((s) => s.category === category);
+      {SECTIONS.map(({ key, title, includes }) => {
+        const items = services.filter(includes);
         if (items.length === 0) return null;
-        const headingId = `services-${category}`;
+        const headingId = `services-${key}`;
         return (
-          <section key={category} aria-labelledby={headingId} className="flex flex-col gap-3">
+          <section key={key} aria-labelledby={headingId} className="flex flex-col gap-3">
             <h2 id={headingId} className="text-lg font-medium">
               {title}
             </h2>
@@ -47,7 +48,11 @@ export function ServiceGrid({
                   key={s.service}
                   type="button"
                   onClick={() => onPick(s.service)}
-                  className="flex items-center justify-between gap-2 rounded-lg border p-4 text-left hover:bg-accent"
+                  style={s.status === "connected" ? brandStyle(s.service) : undefined}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-lg border p-4 text-left hover:bg-accent",
+                    s.status === "connected" && "brand-wash",
+                  )}
                 >
                   <span className="truncate font-medium">{s.display_name}</span>
                   <span className="flex shrink-0 items-center gap-1">
@@ -56,7 +61,8 @@ export function ServiceGrid({
                         Experimental
                       </Badge>
                     )}
-                    <StatusBadge kind="connection" status={s.status} />
+                    {/* A connected card already wears its brand colour, so the pill would only repeat it. */}
+                    {s.status !== "connected" && <StatusBadge kind="connection" status={s.status} />}
                   </span>
                 </button>
               ))}

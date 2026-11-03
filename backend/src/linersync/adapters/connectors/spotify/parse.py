@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from linersync.adapters.connectors.kit.parsing import iso_datetime
+from linersync.adapters.connectors.kit.parsing import display_image, iso_datetime
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -34,6 +34,12 @@ def track_artwork_url(obj: Mapping[str, Any]) -> str | None:
     return str(smallest["url"])
 
 
+def _display_artwork_url(obj: Mapping[str, Any]) -> str | None:
+    return display_image(
+        (int(i.get("width") or 0), str(i["url"])) for i in _images(obj)
+    )
+
+
 def parse_track(
     obj: Mapping[str, Any] | None, artwork_hash: str | None = None
 ) -> Track | None:
@@ -55,6 +61,7 @@ def parse_track(
         isrc=(obj.get("external_ids") or {}).get("isrc"),
         artwork_hash=artwork_hash,
         url=(obj.get("external_urls") or {}).get("spotify"),
+        artwork_url=_display_artwork_url(obj),
     )
 
 

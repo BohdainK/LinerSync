@@ -84,7 +84,8 @@ export function AppShell() {
             {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
           </button>
         </header>
-        <div className="flex flex-1">
+        {/* At least a full window below the 3.5rem top bar, so the scene always starts just under the screen. */}
+        <div className="flex min-h-[calc(100dvh-3.5rem)] flex-1">
           <aside className="hidden w-64 shrink-0 border-r md:block">
             <Sidebar />
           </aside>

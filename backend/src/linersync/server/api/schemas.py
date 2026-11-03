@@ -324,6 +324,7 @@ class TrackOut(BaseModel):
     duration_ms: int | None
     isrc: str | None
     url: str | None
+    artwork_url: str | None = None
     known: bool
 
     @classmethod
@@ -337,6 +338,7 @@ class TrackOut(BaseModel):
             duration_ms=t.duration_ms,
             isrc=t.isrc,
             url=t.url,
+            artwork_url=t.artwork_url,
             known=True,
         )
 
@@ -388,6 +390,14 @@ class MismatchOut(BaseModel):
     unexpected: list[TrackOut]
 
 
+class MatchPairOut(BaseModel):
+    """A source song and the destination song it was matched to."""
+
+    source: TrackOut
+    target: TrackOut
+    added: bool  # this run adds the target (else it was already there)
+
+
 class MemberOut(BaseModel):
     member_id: str
     service: str | None
@@ -399,6 +409,7 @@ class MemberOut(BaseModel):
     operations: list[OperationOut]
     not_made: list[ChangeOut]
     mismatch: MismatchOut | None
+    matches: list[MatchPairOut] = []
 
 
 class RunOut(RunSummaryOut):

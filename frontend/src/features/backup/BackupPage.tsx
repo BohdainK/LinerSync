@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatBackupResult, formatDateTime, formatRelative } from "@/lib/format";
+import { describeCron } from "@/lib/cron";
 import { linkClass } from "@/lib/styles";
 import { isActive, useCancelJob, useJob } from "@/live/useJob";
 import { ImportExport } from "./ImportExport";
@@ -103,7 +104,7 @@ export function BackupPage() {
         {data ? (
           data.schedule ? (
             <p className="text-sm">
-              Scheduled: <code>{data.schedule}</code>
+              Scheduled: {describeCron(data.schedule)}
               {data.next_backup_at ? ` (next ${formatRelative(data.next_backup_at)})` : ""}
             </p>
           ) : (

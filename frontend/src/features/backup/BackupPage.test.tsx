@@ -57,7 +57,7 @@ describe("BackupPage", () => {
     serve(summary({ schedule: "0 3 * * *", next_backup_at: new Date(Date.now() + 3 * 3_600_000 + 60_000).toISOString() }));
     renderWithProviders(<BackupPage />);
     await waitFor(() =>
-      expect(screen.getByText(/^Scheduled:/)).toHaveTextContent("Scheduled: 0 3 * * * (next in 3 hours)"),
+      expect(screen.getByText(/^Scheduled:/)).toHaveTextContent("Scheduled: Every day at 03:00 (next in 3 hours)"),
     );
     expect(screen.getByText("3 playlists, 1 archived, 1 missing")).toBeInTheDocument();
     expect(screen.getByText("Not connected")).toBeInTheDocument();

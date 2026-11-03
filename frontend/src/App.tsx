@@ -10,6 +10,7 @@ import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
 import { BackupEntryPage } from "@/features/backup/BackupEntryPage";
 import { BackupPage } from "@/features/backup/BackupPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { HistoryPage } from "@/features/history/HistoryPage";
 import { HomePage } from "@/features/home/HomePage";
 import { NewSyncPage } from "@/features/new-sync/NewSyncPage";
 import { NewTransferPage } from "@/features/transfers/NewTransferPage";
@@ -38,6 +39,7 @@ export function AppRoutes() {
           <Route path="transfers/new" element={<NewTransferPage />} />
           <Route path="backup" element={<BackupPage />} />
           <Route path="backup/playlists/:entryId" element={<BackupEntryPage />} />
+          <Route path="history" element={<HistoryPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="stats" element={<StatsPage />} />
           <Route path="*" element={<NotFoundPage />} />

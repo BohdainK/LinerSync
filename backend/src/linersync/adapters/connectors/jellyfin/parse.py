@@ -28,6 +28,7 @@ def parse_track(item: Mapping[str, Any], base_url: str) -> Track | None:
         duration_ms=int(ticks) // _TICKS_PER_MS if ticks is not None else None,
         isrc=None,
         url=f"{base_url}/web/#/details?id={item_id}",
+        artwork_url=artwork_url(item, base_url),
     )
 
 

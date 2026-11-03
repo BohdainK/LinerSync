@@ -42,13 +42,9 @@ async function run(itemId: string, a: AttentionAction): Promise<ActionOut> {
       await call(api.POST("/api/attention/{item_id}/dismiss", path));
       return { job: null };
     case "approve":
-      return call(
-        api.POST("/api/attention/{item_id}/approve", { ...path, body: { run_now: a.runNow } }),
-      );
+      return call(api.POST("/api/attention/{item_id}/approve", { ...path, body: { run_now: a.runNow } }));
     case "resume":
-      return call(
-        api.POST("/api/attention/{item_id}/resume", { ...path, body: { run_now: a.runNow } }),
-      );
+      return call(api.POST("/api/attention/{item_id}/resume", { ...path, body: { run_now: a.runNow } }));
   }
 }
 
@@ -66,5 +62,15 @@ export function useAttentionAction(
       if (out.job) toast(`Started: ${out.job.label}`);
       onDone();
     },
+  });
+}
+
+/** Searches the target service more loosely for an unmatched song; the item
+ * comes back with the extra candidates, which can then be picked. */
+export function useSimilarSongs(itemId: string): UseMutationResult<AttentionOut, ApiError, void> {
+  const queryClient = useQueryClient();
+  return useMutation<AttentionOut, ApiError, void>({
+    mutationFn: () => call(api.POST("/api/attention/{item_id}/similar", { params: { path: { item_id: itemId } } })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: keys.attention }),
   });
 }

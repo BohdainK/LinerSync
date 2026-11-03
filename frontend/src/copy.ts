@@ -23,6 +23,14 @@ export const JOB_STATUS_LABELS: Record<string, string> = {
   interrupted: "Interrupted",
 };
 
+export const JOB_KIND_LABELS: Record<string, string> = {
+  sync: "Sync",
+  transfer: "Transfer",
+  bulk_transfer: "Transfer",
+  undo: "Undo",
+  backup: "Backup",
+};
+
 export const RUN_STATUS_LABELS: Record<string, string> = {
   running: "Running",
   succeeded: "Done",

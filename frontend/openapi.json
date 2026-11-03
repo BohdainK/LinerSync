@@ -1688,6 +1688,28 @@
         "title": "LoginBody",
         "type": "object"
       },
+      "MatchPairOut": {
+        "description": "A source song and the destination song it was matched to.",
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TrackOut"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TrackOut"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "added"
+        ],
+        "title": "MatchPairOut",
+        "type": "object"
+      },
       "MatchingOut": {
         "properties": {
           "not_on_service": {
@@ -1752,6 +1774,14 @@
               }
             ],
             "title": "Error"
+          },
+          "matches": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MatchPairOut"
+            },
+            "title": "Matches",
+            "type": "array"
           },
           "member_id": {
             "title": "Member Id",
@@ -3103,6 +3133,17 @@
             "title": "Artists",
             "type": "array"
           },
+          "artwork_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artwork Url"
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -3548,6 +3589,46 @@
           }
         },
         "summary": "Resume"
+      }
+    },
+    "/api/attention/{item_id}/similar": {
+      "post": {
+        "description": "Search the target service more loosely and keep what scores well enough\nas extra candidates, so they can be picked.",
+        "operationId": "similar_api_attention__item_id__similar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Similar"
       }
     },
     "/api/auth/login": {
@@ -5025,6 +5106,55 @@
           }
         },
         "summary": "Undo Run"
+      }
+    },
+    "/api/runs/{run_id}/unresolved/{index}/attention": {
+      "post": {
+        "description": "The open \"song didn't match\" item for the run's `index`th unresolved\nsong, made now when the run left none (dry runs and transfers don't).",
+        "operationId": "unresolved_attention_api_runs__run_id__unresolved__index__attention_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttentionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unresolved Attention"
       }
     },
     "/api/settings": {
