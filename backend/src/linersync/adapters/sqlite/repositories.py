@@ -19,7 +19,7 @@ from linersync.domain.attention import AttentionItem
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.playlists import PlaylistSnapshot
 from linersync.domain.runs import RunStatus, SyncRun
-from linersync.domain.sync import SyncGroup
+from linersync.domain.sync import PriorState, SyncGroup
 from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.repositories import BreakerState, Repositories
 
@@ -113,12 +113,17 @@ class SqliteSnapshots:
         self._engine = engine
 
     def save_pre_write(
-        self, run_id: str, member_id: str, snap: PlaylistSnapshot | None
+        self,
+        run_id: str,
+        member_id: str,
+        snap: PlaylistSnapshot | None,
+        prior: PriorState | None = None,
     ) -> None:
         body = None if snap is None else dumps(PlaylistSnapshot, snap)
+        kept = None if prior is None else dumps(PriorState, prior)
         key = {"run_id": run_id, "member_id": member_id}
         with self._engine.begin() as conn:
-            upsert(conn, t.pre_write_snapshots, key, {"body": body})
+            upsert(conn, t.pre_write_snapshots, key, {"body": body, "prior": kept})
 
     def get_pre_write(self, run_id: str, member_id: str) -> PlaylistSnapshot | None:
         query = sa.select(t.pre_write_snapshots.c.body).where(
@@ -136,6 +141,13 @@ class SqliteSnapshots:
                 )
             ).first()
         return found is not None
+
+    def get_prior_state(self, run_id: str, member_id: str) -> PriorState | None:
+        query = sa.select(t.pre_write_snapshots.c.prior).where(
+            t.pre_write_snapshots.c.run_id == run_id,
+            t.pre_write_snapshots.c.member_id == member_id,
+        )
+        return load_one(self._engine, PriorState, query)
 
 
 class SqliteMatches:

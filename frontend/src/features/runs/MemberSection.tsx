@@ -65,7 +65,12 @@ export function MemberSection({ member, serviceName }: { member: MemberOut; serv
       {matches.length > 0 && sourceService ? (
         <div className="space-y-2">
           <h4 className="font-medium">Songs ({matches.length})</h4>
-          <MatchList matches={matches} sourceName={nameOf(sourceService)} targetName={serviceName} />
+          <MatchList
+            matches={matches}
+            memberId={member.member_id}
+            sourceName={nameOf(sourceService)}
+            targetName={serviceName}
+          />
         </div>
       ) : null}
       {member.not_made.length > 0 ? (

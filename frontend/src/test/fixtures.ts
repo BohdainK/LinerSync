@@ -69,6 +69,9 @@ export function destinationOut(o: Partial<DestinationOut> = {}): DestinationOut 
     limitations: [],
     last_synced_at: T0,
     missing: false,
+    removed_by_you: [],
+    added_by_you: [],
+    can_copy_to_source: true,
     ...o,
   };
 }

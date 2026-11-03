@@ -5,7 +5,7 @@ from linersync.domain.attention import AttentionItem
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.playlists import PlaylistSnapshot
 from linersync.domain.runs import RunStatus, SyncRun
-from linersync.domain.sync import SyncGroup
+from linersync.domain.sync import PriorState, SyncGroup
 from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.repositories import BreakerState, Repositories
 
@@ -59,17 +59,26 @@ class InMemoryRuns:
 class InMemorySnapshots:
     def __init__(self) -> None:
         self._data: dict[tuple[str, str], PlaylistSnapshot | None] = {}
+        self._prior: dict[tuple[str, str], PriorState | None] = {}
 
     def save_pre_write(
-        self, run_id: str, member_id: str, snap: PlaylistSnapshot | None
+        self,
+        run_id: str,
+        member_id: str,
+        snap: PlaylistSnapshot | None,
+        prior: PriorState | None = None,
     ) -> None:
         self._data[(run_id, member_id)] = snap
+        self._prior[(run_id, member_id)] = prior
 
     def get_pre_write(self, run_id: str, member_id: str) -> PlaylistSnapshot | None:
         return self._data.get((run_id, member_id))
 
     def has_pre_write(self, run_id: str, member_id: str) -> bool:
         return (run_id, member_id) in self._data
+
+    def get_prior_state(self, run_id: str, member_id: str) -> PriorState | None:
+        return self._prior.get((run_id, member_id))
 
 
 class InMemoryMatches:

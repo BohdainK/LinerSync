@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 
@@ -23,6 +23,7 @@ from linersync.application.undo import UndoNotAllowed, UndoService
 from linersync.domain.backups import BACKUP_SERVICE, BackupRun, BackupStatus
 from linersync.domain.jobs import (
     BackupJob,
+    BulkPreviewJob,
     BulkTransferJob,
     Job,
     JobStatus,
@@ -217,6 +218,40 @@ async def test_preview_job_writes_nothing(h: Harness) -> None:
     assert run is not None and run.dry_run
 
 
+async def test_bulk_preview_records_one_dry_run_per_group(h: Harness) -> None:
+    other = replace(h.world.group, sync_id="preview-2")
+    job = h.service.submit(BulkPreviewJob((h.world.group, other)), "Preview 2 syncs")
+
+    await h.service.run_next()
+
+    done = _get(h, job.job_id)
+    assert (done.kind, done.status) == ("bulk_preview", JobStatus.SUCCEEDED)
+    assert not any(c.startswith(("apply:", "create:")) for c in h.world.apple.calls)
+    runs = [h.world.repos.runs.get(r) for r in done.run_ids]
+    assert [r.sync_id for r in runs if r is not None] == ["s1", "preview-2"]
+    assert all(r is not None and r.dry_run for r in runs)
+    assert all(h.contexts.get(r) is not None for r in done.run_ids)
+
+
+async def test_bulk_preview_cancel_between_groups(world: World) -> None:
+    apple = _clone_apple(world, _GatedApple)
+    apple.entered, apple.release = asyncio.Event(), asyncio.Event()
+    h = _harness(world)
+    other = replace(world.group, sync_id="preview-2")
+    job = h.service.submit(BulkPreviewJob((world.group, other)), "Preview 2 syncs")
+
+    task = asyncio.create_task(h.service.run_next())
+    async with asyncio.timeout(1):
+        await apple.entered.wait()
+    h.service.cancel(job.job_id)
+    apple.release.set()
+    await task
+
+    done = _get(h, job.job_id)
+    assert done.status is JobStatus.CANCELLED
+    assert len(done.run_ids) == 1
+
+
 class _AuthFailingSpotify(FakeConnector):
     async def read_playlist(self, playlist_id: str) -> PlaylistSnapshot:
         raise ReadFailed(self.service, "token revoked", auth_required=True)
@@ -337,6 +372,57 @@ async def test_run_context_saved_for_sync_and_transfer(h: Harness) -> None:
         ("src", SPOTIFY, "P1"),
         ("dst0", APPLE, created),
     ]
+
+
+async def test_transfer_job_with_preview_run_reuses_its_pairs(h: Harness) -> None:
+    preview = h.service.submit(TransferJob(SPOTIFY, "P1", APPLE, dry_run=True), "Copy")
+    await h.service.run_next()
+    [preview_run] = _get(h, preview.job_id).run_ids
+    h.world.apple.catalog = ()  # a fresh search would now find nothing
+    h.world.apple.calls.clear()
+
+    job = h.service.submit(
+        TransferJob(SPOTIFY, "P1", APPLE, preview_run_id=preview_run), "Copy"
+    )
+    await h.service.run_next()
+
+    done = _get(h, job.job_id)
+    assert done.status is JobStatus.SUCCEEDED
+    assert not [c for c in h.world.apple.calls if c.startswith("search:")]
+    [run_id] = done.run_ids
+    run = h.world.repos.runs.get(run_id)
+    assert run is not None and run.plan is not None
+    assert [e.target_track_id for e in run.plan.member_plans[0].synced] == [
+        "A",
+        "B",
+        "C",
+    ]
+
+
+async def test_bulk_transfer_seeds_each_item_from_its_preview(h: Harness) -> None:
+    preview = h.service.submit(TransferJob(SPOTIFY, "P1", APPLE, dry_run=True), "Copy")
+    await h.service.run_next()
+    [preview_run] = _get(h, preview.job_id).run_ids
+    h.world.apple.catalog = ()
+    h.world.apple.calls.clear()
+
+    item = TransferJob(SPOTIFY, "P1", APPLE, preview_run_id=preview_run)
+    job = h.service.submit(BulkTransferJob((item,)), "Copy")
+    await h.service.run_next()
+
+    assert _get(h, job.job_id).status is JobStatus.SUCCEEDED
+    assert not [c for c in h.world.apple.calls if c.startswith("search:")]
+
+
+async def test_job_with_unknown_preview_run_fails(h: Harness) -> None:
+    job = h.service.submit(
+        TransferJob(SPOTIFY, "P1", APPLE, preview_run_id="nope"), "Copy"
+    )
+    await h.service.run_next()
+
+    done = _get(h, job.job_id)
+    assert done.status is JobStatus.FAILED
+    assert done.error == "The preview is gone; preview again"
 
 
 async def test_serve_wakes_on_submit(h: Harness) -> None:

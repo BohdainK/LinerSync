@@ -77,7 +77,7 @@ async def test_not_on_service_stops_asking(world: World) -> None:
 
 
 async def test_approve_then_rerun_applies(world: World) -> None:
-    world.spotify_to_spotify(("a", "b", "c"))
+    world.spotify_to_spotify(("a", "b", "c"), mirror=True)
     world.spotify.add_playlist(snapshot("spotify", "P1", []))
     run = await world.runner().run("s2", trigger=Trigger.SCHEDULED)
     assert run.status is RunStatus.AWAITING_APPROVAL

@@ -1,27 +1,31 @@
 """JobService: the persisted job queue and its single FIFO worker (D2, D4)."""
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Protocol
 
 from linersync.application.backups import BackupProgress, BackupService
 from linersync.application.breaker import CircuitBreaker
 from linersync.application.config import EngineConfig
+from linersync.application.copy_back import CopyBackService, previewed_track_ids
 from linersync.application.job_guard import (
     GuardedConnector,
     JobCancelled,
     JobGuard,
     referenced_keys,
 )
-from linersync.application.runner import Deps, SyncRunner, fail_unwritten
+from linersync.application.matching_service import MatchingFailed
+from linersync.application.runner import Deps, SyncRunner, fail_unwritten, seed_from_run
 from linersync.application.transfer import TransferService
 from linersync.application.undo import UndoNotAllowed, UndoService
 from linersync.domain.backups import BACKUP_SERVICE, BackupRun
 from linersync.domain.jobs import (
     ACTIVE_STATUSES,
     BackupJob,
+    BulkPreviewJob,
     BulkTransferJob,
+    CopyToSourceJob,
     Job,
     JobProgress,
     JobRequest,
@@ -63,6 +67,8 @@ INTERRUPTED_ERROR = "LinerSync stopped while this was running"
 RUN_INTERRUPTED_ERROR = "LinerSync stopped during this run"
 _SYNC_GONE = "This sync no longer exists"
 _RUN_GONE = "This run no longer exists"
+_PREVIEW_GONE = "The preview is gone; preview again"
+_DESTINATION_GONE = "This destination is no longer part of the sync"
 _NO_BACKUPS = "Backups aren't available"
 
 
@@ -150,7 +156,7 @@ class JobService:
 
     def active_for_sync(self, sync_id: str) -> Job | None:
         return self._find_active(
-            lambda r: isinstance(r, SyncJob) and r.sync_id == sync_id
+            lambda r: isinstance(r, SyncJob | CopyToSourceJob) and r.sync_id == sync_id
         )
 
     def active_backup(self) -> Job | None:
@@ -249,13 +255,17 @@ class JobService:
 
     def _services(self, request: JobRequest) -> list[ServiceId]:
         match request:
-            case SyncJob():
+            case SyncJob() | CopyToSourceJob():
                 group = self._repos.syncs.get(request.sync_id)
                 if group is None:
                     raise _JobFailed(_SYNC_GONE)
                 return [m.service for m in group.members]
             case PreviewJob():
                 return [m.service for m in request.group.members]
+            case BulkPreviewJob():
+                return list(
+                    dict.fromkeys(m.service for g in request.groups for m in g.members)
+                )
             case TransferJob():
                 return [request.source_service, request.destination]
             case BulkTransferJob():
@@ -297,11 +307,18 @@ class JobService:
                     trigger=request.trigger,
                     dry_run=request.dry_run,
                     persist=True,
+                    seed=self._seed(request.preview_run_id),
                 )
                 self._record(job.job_id, run, _group_members(group), guard)
             case PreviewJob():
                 run = await runner.preview(request.group)
                 self._record(job.job_id, run, _group_members(request.group), guard)
+            case BulkPreviewJob():
+                for group in request.groups:
+                    guard.check()
+                    run = await runner.preview(group)
+                    self._record(job.job_id, run, _group_members(group), guard)
+                    guard.reset_writes()
             case TransferJob():
                 transfers = TransferService(deps, runner)
                 await self._transfer(job.job_id, transfers, request, guard)
@@ -325,6 +342,48 @@ class JobService:
                 self._record(job.job_id, run, members, guard)
             case BackupJob():
                 await self._back_up(job.job_id, request, connectors, guard)
+            case CopyToSourceJob():
+                await self._copy_to_source(job.job_id, deps, runner, request, guard)
+
+    async def _copy_to_source(
+        self,
+        job_id: str,
+        deps: Deps,
+        runner: SyncRunner,
+        request: CopyToSourceJob,
+        guard: JobGuard,
+    ) -> None:
+        """The copy run, then (after a real copy) the sync run."""
+        group = self._repos.syncs.get(request.sync_id)
+        if group is None:
+            raise _JobFailed(_SYNC_GONE)
+        dest = next(
+            (m for m in group.destinations if m.member_id == request.member_id), None
+        )
+        if dest is None:
+            raise _JobFailed(_DESTINATION_GONE)
+        members = _group_members(group)
+
+        def recorded(run: SyncRun) -> None:
+            # The copy run names destination songs it couldn't copy on `src`.
+            songs: tuple[TrackKey, ...] = ()
+            if run.kind is RunKind.COPY_TO_SOURCE:
+                songs = tuple(
+                    TrackKey(dest.service, tid) for tid in previewed_track_ids(run)
+                )
+            self._record(job_id, run, members, guard, songs)
+
+        try:
+            await CopyBackService(deps, runner).copy(
+                group,
+                request.member_id,
+                request.track_ids,
+                dry_run=request.dry_run,
+                seed=self._seed(request.preview_run_id),
+                on_run=recorded,
+            )
+        except MatchingFailed as e:
+            raise _JobFailed(f"couldn't match songs: {e}") from None
 
     async def _back_up(
         self,
@@ -372,7 +431,11 @@ class JobService:
         self, job_id: str, transfers: TransferService, t: TransferJob, guard: JobGuard
     ) -> None:
         run = await transfers.transfer(
-            t.source_service, t.playlist_id, t.destination, dry_run=t.dry_run
+            t.source_service,
+            t.playlist_id,
+            t.destination,
+            dry_run=t.dry_run,
+            seed=self._seed(t.preview_run_id),
         )
         members = (
             RunMemberInfo(
@@ -384,14 +447,26 @@ class JobService:
         )
         self._record(job_id, run, members, guard)
 
+    def _seed(self, preview_run_id: str | None) -> dict[ServiceId, dict[TrackKey, str]]:
+        """The pairs of the preview run, or none when there is no preview."""
+        if preview_run_id is None:
+            return {}
+        run = self._repos.runs.get(preview_run_id)
+        context = self._contexts.get(preview_run_id)
+        if run is None or context is None:
+            raise _JobFailed(_PREVIEW_GONE)
+        return seed_from_run(run, {m.member_id: m.service for m in context.members})
+
     def _record(
         self,
         job_id: str,
         run: SyncRun,
         members: tuple[RunMemberInfo, ...],
         guard: JobGuard,
+        songs: Iterable[TrackKey] = (),
     ) -> None:
-        """Note the run on the job and save its context."""
+        """Note the run on the job and save its context (with `songs`, if the
+        guard saw them, besides those the plan names)."""
         self._note_run(job_id, run.run_id)
         created = {
             r.member_id: r.created_playlist_id
@@ -404,7 +479,14 @@ class JobService:
             else m
             for m in members
         )
-        self._contexts.save(RunContext(run.run_id, info, _run_tracks(run, info, guard)))
+        tracks = _run_tracks(run, info, guard)
+        known = {t.key for t in tracks}
+        extra = tuple(
+            guard.seen[k]
+            for k in dict.fromkeys(songs)
+            if k in guard.seen and k not in known
+        )
+        self._contexts.save(RunContext(run.run_id, info, tracks + extra))
 
     # -- helpers ----------------------------------------------------------
     def _deps(

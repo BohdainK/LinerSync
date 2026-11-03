@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from linersync.domain.matching.scoring import decide_match
 from linersync.domain.matching.types import (
     MatchConfig,
@@ -30,6 +32,7 @@ class MatchService:
         source: PlaylistSnapshot,
         target: Connector,
         previous: MemberState | None,
+        seeded: Mapping[TrackKey, str] = {},
     ) -> dict[TrackKey, MatchDecision]:
         paired: dict[TrackKey, str] = {}
         if previous is not None:
@@ -39,11 +42,15 @@ class MatchService:
         for item in source.entries:
             t = item.track
             if t.key not in out:
-                out[t.key] = await self._resolve_one(t, target, paired)
+                out[t.key] = await self._resolve_one(t, target, paired, seeded)
         return out
 
     async def _resolve_one(
-        self, t: Track, target: Connector, paired: dict[TrackKey, str]
+        self,
+        t: Track,
+        target: Connector,
+        paired: dict[TrackKey, str],
+        seeded: Mapping[TrackKey, str],
     ) -> MatchDecision:
         if t.service == target.service:
             return Matched(t.track_id, 1.0, (), MatchVia.SAME_SERVICE)
@@ -54,6 +61,9 @@ class MatchService:
             return Matched(
                 remembered.target_track_id, 1.0, ("your pick",), MatchVia.REMEMBERED
             )
+        pick = seeded.get(t.key)
+        if pick is not None:
+            return Matched(pick, 1.0, (), MatchVia.PREVIOUS_SYNC)
         prior = paired.get(t.key)
         if prior is not None:
             return Matched(prior, 1.0, (), MatchVia.PREVIOUS_SYNC)

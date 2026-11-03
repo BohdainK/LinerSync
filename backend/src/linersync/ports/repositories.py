@@ -6,7 +6,7 @@ from linersync.domain.attention import AttentionItem
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.playlists import PlaylistSnapshot
 from linersync.domain.runs import SyncRun
-from linersync.domain.sync import SyncGroup
+from linersync.domain.sync import PriorState, SyncGroup
 from linersync.domain.tracks import ServiceId, TrackKey
 
 
@@ -49,10 +49,18 @@ class RunRepository(Protocol):
 
 class SnapshotRepository(Protocol):
     def save_pre_write(
-        self, run_id: str, member_id: str, snap: PlaylistSnapshot | None
+        self,
+        run_id: str,
+        member_id: str,
+        snap: PlaylistSnapshot | None,
+        prior: PriorState | None = None,
     ) -> None: ...
     def get_pre_write(self, run_id: str, member_id: str) -> PlaylistSnapshot | None: ...
     def has_pre_write(self, run_id: str, member_id: str) -> bool: ...
+    def get_prior_state(self, run_id: str, member_id: str) -> PriorState | None:
+        """The member's sync memory saved with the pre-write snapshot; None when
+        none was kept (an undo's own write, or a snapshot saved before this)."""
+        ...
 
 
 class MatchRepository(Protocol):

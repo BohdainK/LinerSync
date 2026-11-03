@@ -32,6 +32,7 @@ from linersync.domain.runs import (
 )
 from linersync.domain.sync import (
     MemberState,
+    PriorState,
     SyncedEntry,
     SyncGroup,
     SyncMember,
@@ -74,6 +75,8 @@ class _Work:
     trigger: Trigger
     dry_run: bool
     started_at: datetime
+    # Pairs from a preview run, per target service (see seed_from_run).
+    seed: Mapping[ServiceId, Mapping[TrackKey, str]] = field(default_factory=dict)
     source: PlaylistSnapshot | None = None
     # Destinations still in play, keyed by member_id; None = missing (rebuild).
     snapshots: dict[str, PlaylistSnapshot | None] = field(default_factory=dict)
@@ -152,6 +155,7 @@ class SyncRunner:
         trigger: Trigger,
         dry_run: bool,
         persist: bool,
+        seed: Mapping[ServiceId, Mapping[TrackKey, str]] | None = None,
     ) -> tuple[SyncRun, SyncGroup]:
         """The run is always saved; `persist` only governs saving the group. An
         unexpected exception (not a ConnectorError) ends the run ABORTED."""
@@ -162,6 +166,7 @@ class SyncRunner:
             trigger=trigger,
             dry_run=dry_run,
             started_at=self._deps.clock.now(),
+            seed=seed or {},
         )
         try:
             return await self._run_work(w, persist)
@@ -279,7 +284,10 @@ class SyncRunner:
             w.called.add(service)
             try:
                 w.matches[service] = await self._matcher.resolve(
-                    w.source, self._deps.connectors[service], previous
+                    w.source,
+                    self._deps.connectors[service],
+                    previous,
+                    w.seed.get(service, {}),
                 )
             except MatchingFailed as e:
                 w.errors[service] = str(e)
@@ -350,6 +358,8 @@ class SyncRunner:
                 )
             if outcome.state is not None:
                 member = replace(member, last_synced=outcome.state)
+            if _settled(outcome.result):
+                member = replace(member, mirror_once=False)
             w.group = w.group.with_member(member)
             results.append(outcome.result)
         return tuple(results)
@@ -362,7 +372,7 @@ class SyncRunner:
         rebuilt = mid in w.rebuilt
         if not plan.operations:
             self._supersede_brake(w.group.sync_id, mid)
-            state = None if current is None else self._state(plan, current)
+            state = None if current is None else self._state(plan, current, w.source)
             result = MemberResult(
                 mid, MemberStatus.NOTHING_TO_DO, not_made=plan.not_made, rebuilt=rebuilt
             )
@@ -371,7 +381,8 @@ class SyncRunner:
         if trip is not None:
             return self._hold(w.group, dest, plan, trip, dest.playlist_id, ())
         self._supersede_brake(w.group.sync_id, mid)
-        self._deps.repos.snapshots.save_pre_write(w.run_id, mid, current)
+        prior = PriorState(dest.last_synced, dest.mirror_once)
+        self._deps.repos.snapshots.save_pre_write(w.run_id, mid, current, prior)
 
         def replan(fresh: PlaylistSnapshot, playlist_id: str) -> MemberPlan:
             # A target created in this run has no history: the old pairs refer to
@@ -382,7 +393,14 @@ class SyncRunner:
 
         w.called.add(dest.service)
         outcome = await self._apply_member(
-            w.run_id, w.group, dest, plan, current, replan=replan, errors=w.errors
+            w.run_id,
+            w.group,
+            dest,
+            plan,
+            current,
+            replan=replan,
+            errors=w.errors,
+            source=w.source,
         )
         return replace(outcome, result=replace(outcome.result, rebuilt=rebuilt))
 
@@ -411,6 +429,7 @@ class SyncRunner:
         *,
         replan: Replanner | None,
         errors: dict[ServiceId, str] | None = None,
+        source: PlaylistSnapshot | None = None,
     ) -> _Outcome:
         """Run the plan's ops in order. On a failed write the member's remaining
         ops are dropped (so removals never follow it); with a re-plan left, the
@@ -463,7 +482,9 @@ class SyncRunner:
                         a.created,
                     )
 
-        return await self._verified_outcome(run_id, group, member, plan, a, sink)
+        return await self._verified_outcome(
+            run_id, group, member, plan, a, sink, source
+        )
 
     async def _run_ops(
         self,
@@ -508,6 +529,7 @@ class SyncRunner:
         plan: MemberPlan,
         a: _Applying,
         sink: dict[ServiceId, str],
+        source: PlaylistSnapshot | None,
     ) -> _Outcome:
         """Re-read the target and compare it with what the plan expects. A failed
         read is a mismatch with `actual=()`, never an empty playlist."""
@@ -545,7 +567,7 @@ class SyncRunner:
         )
         state = None
         if snap is not None and mismatch is None:
-            state = self._state(plan, snap)
+            state = self._state(plan, snap, source)
         return _Outcome(result, plan, a.playlist_id, state)
 
     async def _verify(
@@ -614,9 +636,34 @@ class SyncRunner:
         )
         return _Outcome(result, plan, playlist_id)
 
-    def _state(self, plan: MemberPlan, snap: PlaylistSnapshot) -> MemberState:
+    def _state(
+        self,
+        plan: MemberPlan,
+        snap: PlaylistSnapshot,
+        source: PlaylistSnapshot | None,
+    ) -> MemberState:
+        """`snap` is the destination as read after the write (or the current
+        read when nothing was written); `source` resolves the keys the user
+        removed (keys gone from the source are dropped)."""
+        by_key = (
+            {} if source is None else {e.track.key: e.track for e in source.entries}
+        )
+        on_dest = {t.track_id: t for t in (e.track for e in snap.entries)}
         return MemberState(
-            plan.synced, plan.draft, snap.meta.version_token, self._deps.clock.now()
+            plan.synced + plan.held,
+            plan.draft,
+            snap.meta.version_token,
+            self._deps.clock.now(),
+            target_order=snap.track_ids,
+            pinned=plan.pinned,
+            removed_by_you=tuple(
+                by_key[e.source_key]
+                for e in plan.user_removed
+                if e.source_key in by_key
+            ),
+            added_by_you=tuple(
+                on_dest[tid] for tid in plan.user_added if tid in on_dest
+            ),
         )
 
     def _source_state(self, source: PlaylistSnapshot) -> MemberState:
@@ -626,6 +673,7 @@ class SyncRunner:
             meta.draft(),
             meta.version_token,
             self._deps.clock.now(),
+            owned=meta.owned,
         )
 
     def _record_attention(self, w: _Work, results: tuple[MemberResult, ...]) -> None:
@@ -835,6 +883,24 @@ class SyncRunner:
         msg: str,
     ) -> None:
         self._deps.events.publish(RunEvent(run_id, sync_id, phase, done, total, msg))
+
+
+def seed_from_run(
+    run: SyncRun, services: Mapping[str, ServiceId]
+) -> dict[ServiceId, dict[TrackKey, str]]:
+    """The pairs a run's plan settled, per member service (`services` maps
+    member_id to service); the first pair for a key wins."""
+    seed: dict[ServiceId, dict[TrackKey, str]] = {}
+    if run.plan is None:
+        return seed
+    for mp in run.plan.member_plans:
+        service = services.get(mp.member_id)
+        if service is None:
+            continue
+        pairs = seed.setdefault(service, {})
+        for entry in mp.synced:
+            pairs.setdefault(entry.source_key, entry.target_track_id)
+    return seed
 
 
 def partly_read(snap: PlaylistSnapshot, what: str) -> str | None:

@@ -10,8 +10,9 @@ from fastapi import Depends, HTTPException, Response
 from linersync.adapters.scheduler import cron_problem
 from linersync.domain.backups import BACKUP_SERVICE
 from linersync.domain.capabilities import Capability
-from linersync.domain.tracks import ServiceId
+from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.errors import ConnectorError
+from linersync.server.api.schemas import PickChoiceIn
 from linersync.server.connections import ConnectionManager, ConnectionStatus
 from linersync.server.state import AppServices, get_services
 
@@ -118,4 +119,18 @@ def backup_unlocked(services: AppServices) -> None:
 def reconcile_schedule(services: AppServices) -> None:
     services.scheduler.reconcile_all(
         services.repos.syncs.list(), services.settings_store.get()
+    )
+
+
+def pick_tuples(
+    picks: Iterable[PickChoiceIn],
+) -> Iterable[tuple[TrackKey, ServiceId, str]]:
+    """The picks as (source song, target service, chosen target song)."""
+    return (
+        (
+            TrackKey(ServiceId(p.source_service), p.source_track_id),
+            ServiceId(p.target_service),
+            p.target_track_id,
+        )
+        for p in picks
     )

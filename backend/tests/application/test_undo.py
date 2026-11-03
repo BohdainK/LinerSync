@@ -9,6 +9,7 @@ from linersync.application.undo import UndoNotAllowed, UndoService
 from linersync.domain.operations import ChangeNotMade, Reorder
 from linersync.domain.planning.brake import BrakeConfig
 from linersync.domain.runs import MemberStatus, RunKind, RunStatus, Trigger
+from linersync.domain.sync import MemberState, SyncMember
 from tests.application.conftest import APPLE, SPOTIFY, World
 from tests.factories import snapshot
 
@@ -28,10 +29,9 @@ def _brakeless(w: World) -> SyncRunner:
 async def test_undo_restores_full_target(world: World) -> None:
     # The sync removes x and a repeat of a, adds b and c, and reorders; undo
     # must re-add x and the repeat, remove b and c, and restore the order.
-    world.spotify_to_spotify(("x", "a", "a"))
+    before = world.spotify_to_spotify(("x", "a", "a"), mirror=True).destinations
     run = await _brakeless(world).run("s2", trigger=MANUAL)
     assert world.spotify.playlists["P2"].track_ids == tuple("abc")
-    before = world.repos.syncs.get("s2")
 
     undo = await _undo(world).undo(run.run_id)
 
@@ -45,7 +45,7 @@ async def test_undo_restores_full_target(world: World) -> None:
     assert member.mismatch is None
     assert world.spotify.playlists["P2"].track_ids == ("x", "a", "a")
     assert world.repos.runs.get(undo.run_id) == undo
-    assert world.repos.syncs.get("s2") == before  # last_synced unchanged
+    assert _dests(world) == before  # the sync's memory too
     assert world.events.events[-1].phase == "done"
     assert world.events.events[-1].run_id == undo.run_id
 
@@ -218,3 +218,119 @@ async def test_undo_unverified_run_blocked_by_later_write(world: World) -> None:
     (member,) = undo.members
     assert member.status is MemberStatus.FAILED and member.error == _CHANGED
     assert _p2(world) == ("a", "b", "c")
+
+
+def _dests(w: World) -> tuple[SyncMember, ...]:
+    saved = w.repos.syncs.get("s2")
+    assert saved is not None
+    return saved.destinations
+
+
+def _state(w: World) -> MemberState:
+    saved = w.repos.syncs.get("s2")
+    assert saved is not None
+    state = saved.destinations[0].last_synced
+    assert state is not None
+    return state
+
+
+async def test_undo_then_sync_reapplies_source_and_keeps_user_songs(
+    world: World,
+) -> None:
+    # Source a,b,c; destination a,b,c plus the user's own x.
+    world.spotify_to_spotify(("a", "b", "c", "x"))
+    await world.runner().run("s2", trigger=MANUAL)
+    assert _p2(world) == ("a", "b", "c", "x")
+    world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "c", "d"]))
+    run = await _brakeless(world).run("s2", trigger=MANUAL)
+    assert _p2(world) == ("a", "c", "x", "d")
+
+    undo = await _undo(world).undo(run.run_id)
+    assert undo.status is RunStatus.SUCCEEDED
+    assert _p2(world) == ("a", "b", "c", "x")
+
+    again = await _brakeless(world).run("s2", trigger=MANUAL)
+    assert again.status is RunStatus.SUCCEEDED
+    assert _p2(world) == ("a", "c", "x", "d")
+    state = _state(world)
+    assert state.removed_by_you == ()
+    assert [t.track_id for t in state.added_by_you] == ["x"]
+
+
+async def test_undo_restores_previous_sync_memory(world: World) -> None:
+    before = world.spotify_to_spotify(("x", "a", "a"), mirror=True).destinations
+    run = await _brakeless(world).run("s2", trigger=MANUAL)
+    assert _dests(world) != before
+
+    await _undo(world).undo(run.run_id)
+
+    assert _dests(world) == before  # last_synced and mirror_once
+
+
+async def test_undo_newest_then_older_restores_each_memory(world: World) -> None:
+    world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "b"]))
+    before = world.spotify_to_spotify(()).destinations
+    run1 = await world.runner().run("s2", trigger=MANUAL)
+    after1 = _dests(world)
+    world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "b", "c"]))
+    run2 = await world.runner().run("s2", trigger=MANUAL)
+
+    await _undo(world).undo(run2.run_id)
+    assert _dests(world) == after1
+    await _undo(world).undo(run1.run_id)
+    assert _dests(world) == before
+
+
+async def test_undo_restores_memory_past_later_runs_that_wrote_nothing(
+    world: World,
+) -> None:
+    world.spotify_to_spotify(("a", "b", "c", "x"))
+    await world.runner().run("s2", trigger=MANUAL)
+    world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "c", "d"]))
+    run = await _brakeless(world).run("s2", trigger=MANUAL)
+    prior = world.repos.snapshots.get_prior_state(run.run_id, "dst0")
+    assert prior is not None
+    idle = await _brakeless(world).run("s2", trigger=MANUAL)
+    assert not world.repos.snapshots.has_pre_write(idle.run_id, "dst0")
+
+    await _undo(world).undo(run.run_id)
+
+    assert _state(world) == prior.last_synced
+
+
+async def test_failed_undo_leaves_memory(world: World) -> None:
+    run1, _, _ = await _two_adding_runs(world)
+    before = world.repos.syncs.get("s2")
+
+    undo = await _undo(world).undo(run1)
+
+    assert undo.status is RunStatus.FAILED
+    assert world.repos.syncs.get("s2") == before
+
+
+async def test_undo_of_legacy_snapshot_leaves_memory(world: World) -> None:
+    world.spotify_to_spotify(("b", "a"))
+    run = await world.runner().run("s2", trigger=MANUAL)
+    pre = world.repos.snapshots.get_pre_write(run.run_id, "dst0")
+    world.repos.snapshots.save_pre_write(run.run_id, "dst0", pre)  # no prior
+    before = world.repos.syncs.get("s2")
+
+    undo = await _undo(world).undo(run.run_id)
+
+    assert undo.status is RunStatus.SUCCEEDED
+    assert world.repos.syncs.get("s2") == before
+
+
+async def test_undo_keeps_memory_of_a_later_run_that_wrote(world: World) -> None:
+    # Run 2 wrote after run 1 and was never undone. The user reverted run 2's
+    # change by hand, so run 1 can still be undone, but the sync's memory must
+    # not roll back past run 2.
+    run1, _, _ = await _two_adding_runs(world)
+    world.spotify.add_playlist(snapshot("spotify", "P2", ["a", "b"]))
+    before = _dests(world)
+
+    undo = await _undo(world).undo(run1)
+
+    assert undo.status is RunStatus.SUCCEEDED
+    assert _p2(world) == ()
+    assert _dests(world) == before

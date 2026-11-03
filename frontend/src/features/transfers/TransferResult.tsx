@@ -1,16 +1,19 @@
 import { QueryError } from "@/components/ErrorNotice";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
+import { MatchEditingProvider } from "@/features/matches/MatchEditing";
+import type { PicksStore } from "@/features/matches/usePicks";
 import { RunResults } from "@/features/runs/RunResults";
 import { useRun } from "@/features/runs/useRun";
 import { formatChangeCounts } from "@/lib/format";
 
 /** One finished transfer: a summary, its songs side by side and any issues. */
-export function TransferResult({ runId }: { runId: string }) {
+export function TransferResult({ runId, picks }: { runId: string; picks?: PicksStore }) {
   const run = useRun(runId);
   if (run.isError) return <QueryError query={run} />;
   if (!run.data) return <p className="text-sm text-muted-foreground">Loading the result…</p>;
   const r = run.data;
+  const results = <RunResults run={r} />;
   return (
     <article className="space-y-4" aria-label="Transfer result">
       <div className="flex flex-wrap items-center gap-2">
@@ -26,7 +29,13 @@ export function TransferResult({ runId }: { runId: string }) {
         <p className="text-sm text-muted-foreground">Nothing was changed. This is what the transfer would do.</p>
       ) : null}
       {r.error ? <p className="text-sm text-destructive">{r.error}</p> : null}
-      <RunResults run={r} />
+      {r.dry_run && picks ? (
+        <MatchEditingProvider runId={runId} picks={picks}>
+          {results}
+        </MatchEditingProvider>
+      ) : (
+        results
+      )}
     </article>
   );
 }

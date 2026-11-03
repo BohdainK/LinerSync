@@ -1,8 +1,17 @@
+import type { ReactNode } from "react";
 import type { UnresolvedOut } from "@/api/types";
 import { TrackList } from "@/components/TrackList";
 
 /** A song that didn't match: the source track, why, and the closest candidates. Renders an `<li>`. */
-export function UnresolvedItem({ item, candidatesHeading }: { item: UnresolvedOut; candidatesHeading?: string }) {
+export function UnresolvedItem({
+  item,
+  candidatesHeading,
+  action,
+}: {
+  item: UnresolvedOut;
+  candidatesHeading?: string;
+  action?: ReactNode;
+}) {
   const candidates = item.candidates.map((c) => c.track);
   return (
     <li className="space-y-1 rounded-md border p-3">
@@ -24,6 +33,7 @@ export function UnresolvedItem({ item, candidatesHeading }: { item: UnresolvedOu
           <TrackList tracks={candidates} />
         )
       ) : null}
+      {action}
     </li>
   );
 }

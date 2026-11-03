@@ -12,6 +12,20 @@ class TrackNames:
 
     def __init__(self, tracks: Iterable[Track]) -> None:
         self._tracks: dict[TrackKey, Track] = {t.key: t for t in tracks}
+        by_id: dict[str, list[Track]] = {}
+        for t in self._tracks.values():
+            by_id.setdefault(t.track_id, []).append(t)
+        self._by_id = by_id
+
+    def track_named(self, service: str, track_id: str) -> TrackOut:
+        """Like `track`, but an id unknown on `service` takes the one context
+        song with that id on another service (a copy to source reports
+        destination songs it couldn't copy on the source member)."""
+        if TrackKey(ServiceId(service), track_id) not in self._tracks:
+            others = self._by_id.get(track_id, [])
+            if len(others) == 1:
+                return TrackOut.of(others[0])
+        return self.track(service, track_id)
 
     def track(self, service: str, track_id: str) -> TrackOut:
         found = self._tracks.get(TrackKey(ServiceId(service), track_id))
@@ -39,5 +53,5 @@ def change_out(change: ChangeNotMade, service: str, names: TrackNames) -> Change
         detail=change.detail,
         track=None
         if change.track_id is None
-        else names.track(service, change.track_id),
+        else names.track_named(service, change.track_id),
     )

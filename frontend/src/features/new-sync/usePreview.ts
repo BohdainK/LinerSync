@@ -12,6 +12,8 @@ const PREVIEW_DEBOUNCE_MS = 800;
 export type PreviewState = {
   status: "idle" | "waiting" | "running" | "ready" | "failed";
   run: RunOut | null;
+  /** The preview run's id once ready; "Start syncing" runs the sync from it. */
+  runId: string | null;
   job: JobOut | null;
   error: unknown;
 };
@@ -79,19 +81,19 @@ export function usePreview(input: SyncCreateIn | null): PreviewState {
   const runId = job?.status === "succeeded" ? (job.run_ids[0] ?? null) : null;
   const runQuery = useRun(runId);
 
-  if (key === null) return { status: "idle", run: null, job: null, error: null };
-  if (current === null) return { status: "waiting", run: null, job: null, error: null };
-  if (current.error) return { status: "failed", run: null, job: null, error: current.error };
-  if (job === null || job.status === "queued") return { status: "waiting", run: null, job, error: null };
-  if (job.status === "running") return { status: "running", run: null, job, error: null };
+  if (key === null) return { status: "idle", run: null, runId: null, job: null, error: null };
+  if (current === null) return { status: "waiting", run: null, runId: null, job: null, error: null };
+  if (current.error) return { status: "failed", run: null, runId: null, job: null, error: current.error };
+  if (job === null || job.status === "queued") return { status: "waiting", run: null, runId: null, job, error: null };
+  if (job.status === "running") return { status: "running", run: null, runId: null, job, error: null };
   if (job.status !== "succeeded") {
     const reason = job.error || JOB_STATUS_LABELS[job.status] || job.status;
-    return { status: "failed", run: null, job, error: new Error(reason) };
+    return { status: "failed", run: null, runId: null, job, error: new Error(reason) };
   }
   if (runId === null) {
-    return { status: "failed", run: null, job, error: new Error("The preview finished without a result") };
+    return { status: "failed", run: null, runId: null, job, error: new Error("The preview finished without a result") };
   }
-  if (runQuery.isError) return { status: "failed", run: null, job, error: runQuery.error };
-  if (runQuery.data) return { status: "ready", run: runQuery.data, job, error: null };
-  return { status: "running", run: null, job, error: null };
+  if (runQuery.isError) return { status: "failed", run: null, runId: null, job, error: runQuery.error };
+  if (runQuery.data) return { status: "ready", run: runQuery.data, runId, job, error: null };
+  return { status: "running", run: null, runId: null, job, error: null };
 }

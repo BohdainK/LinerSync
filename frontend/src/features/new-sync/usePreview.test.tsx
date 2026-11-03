@@ -15,7 +15,7 @@ function input(dst: string): SyncCreateIn {
   return {
     name: "Road Trip",
     source: { service: "fake_a", playlist_id: "P1" },
-    destinations: [{ service: dst, playlist_id: null, mode: "full" }],
+    destinations: [{ service: dst, playlist_id: null, mode: "full", existing: "merge" }],
     schedule: null,
   };
 }
@@ -228,7 +228,7 @@ describe("usePreview", () => {
   it("null input is idle and submits nothing", async () => {
     const world = serve();
     const { result } = setup(null);
-    expect(result.current).toEqual({ status: "idle", run: null, job: null, error: null });
+    expect(result.current).toEqual({ status: "idle", run: null, runId: null, job: null, error: null });
     await advance(2000);
     expect(world.previews).toHaveLength(0);
     expect(result.current.status).toBe("idle");

@@ -29,6 +29,8 @@ pre_write_snapshots = sa.Table(
     sa.Column("run_id", sa.String, primary_key=True),
     sa.Column("member_id", sa.String, primary_key=True),
     sa.Column("body", sa.Text, nullable=True),
+    # PriorState codec JSON; NULL = none kept (undo writes, older snapshots).
+    sa.Column("prior", sa.Text, nullable=True),
 )
 
 remembered_matches = sa.Table(

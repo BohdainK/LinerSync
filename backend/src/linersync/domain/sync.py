@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from linersync.domain.capabilities import Capability
 from linersync.domain.playlists import PlaylistDraft
-from linersync.domain.tracks import ServiceId, TrackKey
+from linersync.domain.tracks import ServiceId, Track, TrackKey
 
 
 class SyncMode(StrEnum):
@@ -47,6 +47,21 @@ class MemberState:
     draft: PlaylistDraft
     version_token: str | None
     synced_at: datetime
+    # The destination's ids as verified after the write; () = legacy/unknown.
+    target_order: tuple[str, ...] = ()
+    pinned: tuple[str, ...] = ()
+    removed_by_you: tuple[Track, ...] = ()  # source tracks
+    added_by_you: tuple[Track, ...] = ()  # destination tracks
+    owned: bool = True  # the account owns the playlist (sources only)
+
+
+@dataclass(frozen=True, slots=True)
+class PriorState:
+    """A destination member's sync memory just before a run wrote to it, kept
+    with the pre-write snapshot so an undo can restore it too."""
+
+    last_synced: MemberState | None
+    mirror_once: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +72,8 @@ class SyncMember:
     role: MemberRole
     mode: SyncMode = SyncMode.FULL
     last_synced: MemberState | None = None
+    # Full mode plans a strict mirror for the next run only.
+    mirror_once: bool = False
 
 
 @dataclass(frozen=True, slots=True)

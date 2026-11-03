@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from linersync.adapters.memory.runtime import FixedClock
+from linersync.application.suggestions import SUGGEST_FLOOR
 from linersync.domain.jobs import JobStatus
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId
@@ -431,3 +432,109 @@ def test_runs_jobs_transfers_require_session(app_factory: AppFactory) -> None:
         assert client.get("/api/runs/x").status_code == 401
         assert client.get("/api/jobs").status_code == 401
         assert client.post("/api/transfers/estimate", json={}).status_code == 401
+
+
+def test_alternatives_lists_similar_then_searches_text(
+    app_factory: AppFactory,
+) -> None:
+    with world(app_factory) as w:
+        w.a.add_playlist(
+            snapshot(
+                "fake_a",
+                "P1",
+                ["a", "dup"],
+                tracks={"dup": track("fake_a", "dup", title="Dup song")},
+            )
+        )
+        w.b.catalog = (
+            *w.b.catalog,
+            track("fake_b", "D1", title="Dup song"),
+            track("fake_b", "D2", title="Dup song"),
+            track("fake_b", "L1", title="Dup song live at nowhere"),
+        )
+        sync_id = create(w.client)["sync_id"]
+        run_now(w.client, sync_id, dry_run=True)
+        drain(w.client)
+        run_id = last_run_id(w.client, sync_id)
+        body = {
+            "member_id": "dst0",
+            "source_service": "fake_a",
+            "source_track_id": "dup",
+        }
+        similar = w.client.post(f"/api/runs/{run_id}/alternatives", json=body)
+        w.b.calls.clear()
+        searched = w.client.post(
+            f"/api/runs/{run_id}/alternatives", json={**body, "query": "Song B live"}
+        )
+        unknown = w.client.post(
+            f"/api/runs/{run_id}/alternatives",
+            json={**body, "source_track_id": "zzz"},
+        )
+        calls = list(w.b.calls)
+    assert similar.status_code == 200, similar.text
+    ids = [c["track"]["track_id"] for c in similar.json()]
+    assert {"D1", "D2"} <= set(ids)
+    assert all(c["confidence"] >= SUGGEST_FLOOR for c in similar.json())
+    assert searched.status_code == 200
+    assert calls == ["search:Song B live"]
+    assert unknown.status_code == 404
+
+
+def test_alternatives_on_a_copy_to_source_preview(app_factory: AppFactory) -> None:
+    with world(app_factory) as w:
+        w.a.catalog = (
+            track("fake_a", "z1", title="z song"),
+            track("fake_a", "z2", title="z song"),
+        )
+        sync_id = create(w.client)["sync_id"]
+        run_now(w.client, sync_id)
+        drain(w.client)
+        z = track("fake_b", "Z", title="z song")
+        w.b.add_playlist(
+            snapshot("fake_b", "B1", ["A", "B", "C", "Z"], tracks={"Z": z})
+        )
+        run_now(w.client, sync_id)
+        drain(w.client)
+        url = f"/api/syncs/{sync_id}/destinations/dst0/copy-to-source"
+        job_id = w.client.post(url, json={}).json()["job_id"]
+        drain(w.client)
+        (run_id,) = job(w.client, job_id)["run_ids"]
+        run = get_run(w.client, run_id)
+        w.a.calls.clear()
+        found = w.client.post(
+            f"/api/runs/{run_id}/alternatives",
+            json={
+                "member_id": "src",
+                "source_service": "fake_b",
+                "source_track_id": "Z",
+            },
+        )
+        calls = list(w.a.calls)
+    assert run["kind"] == "copy_to_source"
+    assert [u["source"]["track_id"] for u in run["unresolved"]] == ["Z"]
+    assert run["unresolved"][0]["member_id"] == "src"
+    assert found.status_code == 200, found.text
+    assert {c["track"]["track_id"] for c in found.json()} == {"z1", "z2"}
+    assert all(c.startswith("search:") for c in calls) and calls
+
+
+def test_copy_to_source_names_the_song_not_found(app_factory: AppFactory) -> None:
+    with world(app_factory) as w:
+        sync_id = create(w.client)["sync_id"]
+        run_now(w.client, sync_id)
+        drain(w.client)
+        z = track("fake_b", "Z", title="Zed song")
+        w.b.add_playlist(
+            snapshot("fake_b", "B1", ["A", "B", "C", "Z"], tracks={"Z": z})
+        )
+        run_now(w.client, sync_id)
+        drain(w.client)
+        url = f"/api/syncs/{sync_id}/destinations/dst0/copy-to-source"
+        job_id = w.client.post(url, json={}).json()["job_id"]
+        drain(w.client)
+        (run_id,) = job(w.client, job_id)["run_ids"]
+        run = get_run(w.client, run_id)
+    (row,) = member(run, "src")["not_made"]
+    assert row["detail"] == "not found on Fake A"
+    assert (row["track"]["title"], row["track"]["known"]) == ("Zed song", True)
+    assert run["unresolved"] == []

@@ -31,6 +31,15 @@ function Probe() {
   return <output aria-label="location">{location.pathname}</output>;
 }
 
+const previewJob = jobOut({ job_id: "pv", kind: "preview", status: "succeeded", sync_id: null, run_ids: ["pr1"] });
+
+/** "Start syncing" unlocks once the (debounced) preview is ready. */
+async function startButton() {
+  const button = screen.getByRole("button", { name: "Start syncing" });
+  await waitFor(() => expect(button).toBeEnabled(), { timeout: 3000 });
+  return button;
+}
+
 function serve() {
   server.use(
     http.get("*/api/connections", () =>
@@ -59,11 +68,10 @@ function serve() {
     http.get("*/api/connections/fake_c/playlists", () =>
       HttpResponse.json([playlistOut({ service: "fake_c", playlist_id: "C1", name: "Other" })]),
     ),
-    // The live preview may start while a test runs; it stays queued.
-    http.post("*/api/syncs/preview", () =>
-      HttpResponse.json(jobOut({ job_id: "pv", kind: "preview", status: "queued", sync_id: null }), { status: 202 }),
-    ),
-    http.get("*/api/jobs/pv", () => HttpResponse.json(jobOut({ job_id: "pv", kind: "preview", status: "queued", sync_id: null }))),
+    // The live preview finishes at once with an empty run (tests replace it to show songs).
+    http.post("*/api/syncs/preview", () => HttpResponse.json(previewJob, { status: 202 })),
+    http.get("*/api/jobs/pv", () => HttpResponse.json(previewJob)),
+    http.get("*/api/runs/pr1", () => HttpResponse.json(runOut({ run_id: "pr1", dry_run: true }))),
   );
 }
 
@@ -106,7 +114,7 @@ describe("NewSyncPage", () => {
     );
     const user = userEvent.setup();
     renderPage();
-    const create = await screen.findByRole("button", { name: "Create sync" });
+    const create = await screen.findByRole("button", { name: "Start syncing" });
     expect(create).toBeDisabled();
 
     await chooseSource(user, "Road Trip");
@@ -122,6 +130,7 @@ describe("NewSyncPage", () => {
     await pick(user, "Mode for destination 2", "Add only");
 
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Road Trip");
+    await startButton();
     await user.click(create);
     await waitFor(() => expect(screen.getByRole("status", { name: "location" })).toHaveTextContent("/syncs/s1"));
     expect(bodies).toEqual([
@@ -129,10 +138,11 @@ describe("NewSyncPage", () => {
         name: "Road Trip",
         source: { service: "fake_a", playlist_id: "P1" },
         destinations: [
-          { service: "fake_b", playlist_id: "B1", mode: "full" },
-          { service: "fake_c", playlist_id: null, mode: "add_only" },
+          { service: "fake_b", playlist_id: "B1", mode: "full", existing: "merge" },
+          { service: "fake_c", playlist_id: null, mode: "add_only", existing: "merge" },
         ],
         schedule: null,
+        start: { preview_run_id: "pr1", picks: [] },
       },
     ]);
     expect(toast).toHaveBeenCalledWith("Sync created. It runs on its schedule, or press Sync now.");
@@ -167,10 +177,10 @@ describe("NewSyncPage", () => {
     await pick(user, "Destination 1", "Fake A");
     const dst1 = await screen.findByRole("group", { name: "Playlist on destination 1" });
     await user.click(await within(dst1).findByRole("radio", { name: /Gym/ }));
-    expect(screen.getByRole("button", { name: "Create sync" })).toBeEnabled();
+    await startButton();
     await user.click(within(dst1).getByRole("radio", { name: /Road Trip/ }));
     expect(screen.getByText("Pick a different playlist than the source")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create sync" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start syncing" })).toBeDisabled();
   });
 
   it("name follows the source until edited", async () => {
@@ -223,15 +233,23 @@ describe("NewSyncPage", () => {
     expect(screen.getByRole("combobox", { name: "Source service" })).toHaveValue("backup");
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Old mix");
     await pick(user, "Destination 1", "Fake C");
-    await user.click(screen.getByRole("button", { name: "Create sync" }));
+    await user.click(await startButton());
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ name: "Old mix", source: { service: "backup", playlist_id: "e1" } });
   });
 
-  it("all playlists: estimate, warn, then bulk create", async () => {
+  it("bulk previews each sync then starts them", async () => {
     serve();
     const estimates: unknown[] = [];
     const bulks: unknown[] = [];
+    const previews: unknown[] = [];
+    const bulkJob = jobOut({
+      job_id: "bj",
+      kind: "preview",
+      status: "succeeded",
+      sync_id: null,
+      run_ids: ["r0", "r1", "r2"],
+    });
     const estimate: EstimateOut = {
       playlists: 3,
       songs: 120,
@@ -244,6 +262,14 @@ describe("NewSyncPage", () => {
         estimates.push(await request.json());
         return HttpResponse.json(estimate);
       }),
+      http.post("*/api/syncs/preview/bulk", async ({ request }) => {
+        previews.push(await request.json());
+        return HttpResponse.json(bulkJob, { status: 202 });
+      }),
+      http.get("*/api/jobs/bj", () => HttpResponse.json(bulkJob)),
+      http.get("*/api/runs/:id", ({ params }) =>
+        HttpResponse.json(runOut({ run_id: String(params.id), dry_run: true })),
+      ),
       http.post("*/api/syncs/bulk", async ({ request }) => {
         bulks.push(await request.json());
         return HttpResponse.json([], { status: 201 });
@@ -262,7 +288,7 @@ describe("NewSyncPage", () => {
 
     await pick(user, "Destination 1", "Fake B");
     expect(screen.queryByRole("group", { name: "Playlist on destination 1" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Create 4 syncs…" }));
+    await user.click(screen.getByRole("button", { name: "Preview 4 syncs…" }));
 
     let dialog = await screen.findByRole("alertdialog", { name: "Sync 3 playlists?" });
     expect(within(dialog).getByText("120 songs")).toBeInTheDocument();
@@ -284,19 +310,23 @@ describe("NewSyncPage", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(bulks).toEqual([]);
 
-    await user.click(screen.getByRole("button", { name: "Create 4 syncs…" }));
+    await user.click(screen.getByRole("button", { name: "Preview 4 syncs…" }));
     dialog = await screen.findByRole("alertdialog", { name: "Sync 3 playlists?" });
     await user.click(within(dialog).getByRole("button", { name: "Start" }));
+    const dst = [{ service: "fake_b", playlist_id: null, mode: "full", existing: "merge" }];
+    const syncs = [
+      { name: "Road Trip", source: { service: "fake_a", playlist_id: "P1" }, destinations: dst, schedule: null },
+      { name: "Gym", source: { service: "fake_a", playlist_id: "P2" }, destinations: dst, schedule: null },
+      { name: "Chill", source: { service: "fake_a", playlist_id: "P3" }, destinations: dst, schedule: null },
+    ];
+    expect(await screen.findByRole("heading", { name: "Preview “Gym”" })).toBeInTheDocument();
+    expect(previews).toEqual([{ syncs }]);
+    expect(bulks).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "Start syncing" }));
     await waitFor(() => expect(screen.getByRole("status", { name: "location" })).toHaveTextContent("/syncs"));
-    const dst = [{ service: "fake_b", playlist_id: null, mode: "full" }];
     expect(bulks).toEqual([
-      {
-        syncs: [
-          { name: "Road Trip", source: { service: "fake_a", playlist_id: "P1" }, destinations: dst, schedule: null },
-          { name: "Gym", source: { service: "fake_a", playlist_id: "P2" }, destinations: dst, schedule: null },
-          { name: "Chill", source: { service: "fake_a", playlist_id: "P3" }, destinations: dst, schedule: null },
-        ],
-      },
+      { syncs: syncs.map((s, i) => ({ ...s, start: { preview_run_id: `r${i}`, picks: [] } })) },
     ]);
   });
 
@@ -311,7 +341,7 @@ describe("NewSyncPage", () => {
     renderPage();
     await chooseSource(user, "Road Trip");
     await pick(user, "Destination 1", "Fake C");
-    await user.click(screen.getByRole("button", { name: "Create sync" }));
+    await user.click(await startButton());
     expect(await screen.findByText("Connect Fake C first")).toBeInTheDocument();
   });
 
@@ -331,7 +361,7 @@ describe("NewSyncPage", () => {
     await screen.findByRole("option", { name: "Default (Every day at 03:00)" });
     await user.selectOptions(screen.getByRole("combobox", { name: "Schedule" }), "Every day");
     await user.selectOptions(screen.getByRole("combobox", { name: "Time" }), "05:00");
-    await user.click(screen.getByRole("button", { name: "Create sync" }));
+    await user.click(await startButton());
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ schedule: "0 5 * * *" });
   });
@@ -351,7 +381,7 @@ describe("NewSyncPage", () => {
     renderPage();
     await chooseSource(user, "Road Trip");
     await pick(user, "Destination 1", "Fake C");
-    const create = screen.getByRole("button", { name: "Create sync" });
+    const create = await startButton();
     await user.click(create);
     await waitFor(() => expect(create).toBeDisabled());
     await user.click(create);
@@ -361,10 +391,180 @@ describe("NewSyncPage", () => {
   });
 });
 
+describe("NewSyncPage existing destination playlists", () => {
+  /** Serves fake_b with a "Car" playlist of `count` songs and records every preview body. */
+  function serveCar(count: number) {
+    serve();
+    const bodies: { destinations: { existing: string }[] }[] = [];
+    server.use(
+      http.get("*/api/connections/fake_b/playlists", () =>
+        HttpResponse.json([playlistOut({ service: "fake_b", playlist_id: "B1", name: "Car", track_count: count })]),
+      ),
+      http.post("*/api/syncs/preview", async ({ request }) => {
+        bodies.push((await request.json()) as { destinations: { existing: string }[] });
+        return HttpResponse.json(previewJob, { status: 202 });
+      }),
+    );
+    return bodies;
+  }
+
+  async function chooseCar(user: ReturnType<typeof userEvent.setup>) {
+    await chooseSource(user, "Road Trip");
+    await pick(user, "Destination 1", "Fake B");
+    const dst = await screen.findByRole("group", { name: "Playlist on destination 1" });
+    await user.click(await within(dst).findByRole("radio", { name: /Car/ }));
+  }
+
+  it("existing playlist with songs asks merge or overwrite", async () => {
+    const bodies = serveCar(12);
+    const user = userEvent.setup();
+    renderPage();
+    await chooseCar(user);
+    expect(await screen.findByText("This playlist already has 12 songs.")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Merge/ })).toBeChecked();
+    expect(screen.getByText("Keep its songs; they\u2019ll count as yours")).toBeInTheDocument();
+    expect(screen.getByText("Make it match the source on the first run")).toBeInTheDocument();
+    await waitFor(() => expect(bodies.at(-1)?.destinations[0]?.existing).toBe("merge"));
+  });
+
+  it("overwrite is sent and re-previews", async () => {
+    const bodies = serveCar(12);
+    const user = userEvent.setup();
+    renderPage();
+    await chooseCar(user);
+    await waitFor(() => expect(bodies.at(-1)?.destinations[0]?.existing).toBe("merge"));
+    const before = bodies.length;
+    await user.click(await screen.findByRole("radio", { name: /Overwrite/ }));
+    await waitFor(() => expect(bodies.length).toBeGreaterThan(before), { timeout: 3000 });
+    expect(bodies.at(-1)?.destinations[0]?.existing).toBe("overwrite");
+  });
+
+  it("empty existing playlist shows no warning", async () => {
+    serveCar(0);
+    const user = userEvent.setup();
+    renderPage();
+    await chooseCar(user);
+    expect(screen.queryByText(/already has/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Merge/ })).not.toBeInTheDocument();
+  });
+});
+
+const swapSource = trackOut({ service: "fake_a", track_id: "s1", title: "Road song" });
+const swapTarget = trackOut({ service: "fake_b", track_id: "t1", title: "Matched song" });
+const swapOther = trackOut({ service: "fake_b", track_id: "t2", title: "Better song" });
+
+/** A preview whose destination adds one linked song that can be swapped. */
+function servePreviewWithSong() {
+  server.use(
+    http.get("*/api/runs/pr1", () =>
+      HttpResponse.json(
+        runOut({
+          run_id: "pr1",
+          dry_run: true,
+          members: [
+            {
+              member_id: "dst0",
+              service: "fake_b",
+              playlist_id: null,
+              status: "dry_run",
+              error: null,
+              rebuilt: false,
+              created_playlist_id: null,
+              operations: [{ type: "add_tracks", op_id: "o1", tracks: [swapTarget], positions: [] }],
+              not_made: [],
+              mismatch: null,
+              matches: [{ source: swapSource, target: swapTarget, added: true }],
+            },
+          ],
+        }),
+      ),
+    ),
+    http.post("*/api/runs/pr1/alternatives", () =>
+      HttpResponse.json([{ track: swapOther, confidence: 0.7, reasons: [] }]),
+    ),
+  );
+}
+
+async function swapSong(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Change match for Road song" }, { timeout: 3000 }));
+  await user.click(await screen.findByRole("button", { name: /^Use this/ }));
+  expect(await screen.findByText("Your pick")).toBeInTheDocument();
+}
+
+describe("NewSyncPage preview swaps", () => {
+  it("start syncing sends the preview run and picks", async () => {
+    serve();
+    servePreviewWithSong();
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("*/api/syncs", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(syncOut({ sync_id: "s1" }), { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await chooseSource(user, "Road Trip");
+    await pick(user, "Destination 1", "Fake B");
+    await swapSong(user);
+    await user.click(await startButton());
+    await waitFor(() => expect(screen.getByRole("status", { name: "location" })).toHaveTextContent("/syncs/s1"));
+    expect(bodies).toMatchObject([
+      {
+        start: {
+          preview_run_id: "pr1",
+          picks: [
+            { source_service: "fake_a", source_track_id: "s1", target_service: "fake_b", target_track_id: "t2" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("start syncing waits for the preview", async () => {
+    serve();
+    const running = jobOut({ job_id: "pv", kind: "preview", status: "running", sync_id: null });
+    server.use(
+      http.post("*/api/syncs/preview", () => HttpResponse.json(running, { status: 202 })),
+      http.get("*/api/jobs/pv", () => HttpResponse.json(running)),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await chooseSource(user, "Road Trip");
+    await pick(user, "Destination 1", "Fake B");
+    expect(await screen.findByText("Preparing preview…", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start syncing" })).toBeDisabled();
+  });
+
+  it("changing the source clears picks", async () => {
+    serve();
+    servePreviewWithSong();
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("*/api/syncs", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(syncOut({ sync_id: "s1" }), { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await chooseSource(user, "Road Trip");
+    await pick(user, "Destination 1", "Fake B");
+    await swapSong(user);
+
+    const group = screen.getByRole("group", { name: "Source playlist" });
+    await user.click(within(group).getByRole("radio", { name: /Gym/ }));
+    expect(screen.queryByText("Your pick")).not.toBeInTheDocument();
+    await user.click(await startButton());
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ start: { preview_run_id: "pr1", picks: [] } });
+  });
+});
+
 type Preview = ReturnType<typeof usePreview>;
 
 function previewOf(o: Partial<Preview>): Preview {
-  return { status: "idle", run: null, job: null, error: null, ...o };
+  return { status: "idle", run: null, runId: null, job: null, error: null, ...o };
 }
 
 describe("PreviewPanel", () => {

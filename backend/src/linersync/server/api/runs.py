@@ -7,6 +7,7 @@ from typing import NamedTuple
 from fastapi import APIRouter, Depends, HTTPException
 
 from linersync.application.attention import open_items
+from linersync.application.suggestions import find_similar, search_text
 from linersync.domain.attention import AttentionItem, AttentionKind
 from linersync.domain.jobs import RunContext, UndoJob
 from linersync.domain.operations import (
@@ -19,10 +20,17 @@ from linersync.domain.operations import (
     UpdateMetadata,
 )
 from linersync.domain.runs import MemberResult, RunKind, SyncRun, VerificationMismatch
-from linersync.domain.tracks import ServiceId
+from linersync.domain.tracks import ServiceId, TrackKey
+from linersync.ports.errors import ConnectorError
 from linersync.server.api.attention import attention_out
-from linersync.server.api.common import Services, found
+from linersync.server.api.common import (
+    Services,
+    connector_failed,
+    display_name,
+    found,
+)
 from linersync.server.api.schemas import (
+    AlternativesIn,
     AttentionOut,
     CandidateOut,
     JobOut,
@@ -289,3 +297,32 @@ async def unresolved_attention(
         )
     )
     return attention_out(services, item)
+
+
+@router.post("/{run_id}/alternatives")
+async def alternatives(
+    run_id: str, body: AlternativesIn, services: Services
+) -> list[CandidateOut]:
+    """Other songs on a member's service that a source song could become:
+    looser matches, or what a text search finds when `query` is given."""
+    found(services.repos.runs.get(run_id), UNKNOWN_RUN)
+    ctx = found(services.contexts.get(run_id), UNKNOWN_RUN)
+    member = found(
+        next((m for m in ctx.members if m.member_id == body.member_id), None),
+        UNKNOWN_SONG,
+    )
+    key = TrackKey(ServiceId(body.source_service), body.source_track_id)
+    source = found(next((t for t in ctx.tracks if t.key == key), None), UNKNOWN_SONG)
+    connector = services.connections.connectors().get(member.service)
+    if connector is None:
+        name = display_name(services, member.service)
+        raise HTTPException(status_code=409, detail=f"{name} isn't connected")
+    cfg = services.settings_store.get().engine.match
+    try:
+        if body.query is None:
+            found_ = await find_similar(source, connector, cfg)
+        else:
+            found_ = await search_text(source, connector, cfg, body.query)
+    except ConnectorError as e:
+        raise connector_failed(services.connections, e, member.service) from None
+    return [CandidateOut.of(c) for c in found_]

@@ -4,7 +4,9 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
-import type { BulkItemIn, DestinationIn, PlaylistOut, SyncBulkIn, SyncCreateIn, SyncOut } from "@/api/types";
+import type { BulkItemIn, DestinationIn, JobOut, PlaylistOut, SyncBulkIn, SyncCreateIn, SyncOut } from "@/api/types";
+import { usePicks } from "@/features/matches/usePicks";
+import { useJob } from "@/live/useJob";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,7 @@ import { useSourceSelection } from "@/features/pickers/useSourceSelection";
 import { useSettings } from "@/features/settings/useSettings";
 import { ScheduleField } from "@/features/syncs/ScheduleField";
 import { DestinationRows, newRow, type Row } from "./DestinationRows";
+import { BulkPreview } from "./BulkPreview";
 import { PreviewPanel } from "./PreviewPanel";
 import { ScopeChoice, type Scope } from "./ScopeChoice";
 import { usePreview } from "./usePreview";
@@ -44,6 +47,7 @@ export function NewSyncPage() {
   const [customName, setCustomName] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<string | null>(null);
   const nameId = useId();
+  const picks = usePicks();
 
   const playlists = usePlaylists(service);
   const settings = useSettings();
@@ -61,6 +65,8 @@ export function NewSyncPage() {
     service: r.service ?? "",
     playlist_id: scope === "one" ? chosenPlaylistId(r.selection) : null,
     mode: r.mode,
+    // Bulk syncs always create new playlists, so there is nothing to merge into.
+    existing: scope === "one" ? r.existing : "merge",
   }));
   const oneReady = service !== null && sourceId !== null && servicesChosen && !conflicts.some(Boolean);
   const cron = schedule === null ? null : schedule.trim();
@@ -70,6 +76,15 @@ export function NewSyncPage() {
       ? { name: nameFor(byId.get(sourceId), sourceId), source: { service, playlist_id: sourceId }, destinations, schedule: null }
       : null;
   const preview = usePreview(previewInput);
+
+  // Everything the previews were made from. When it changes the old previews and their picks are dropped.
+  const bulkKey = JSON.stringify([service, allIds, destinations]);
+  const formKey = JSON.stringify([scope, previewInput, bulkKey]);
+  const [picksKey, setPicksKey] = useState(formKey);
+  if (picksKey !== formKey) {
+    setPicksKey(formKey);
+    picks.clear();
+  }
 
   const create = useMutation<SyncOut, ApiError, SyncCreateIn>({
     mutationFn: (body) => call(api.POST("/api/syncs", { body })),
@@ -93,8 +108,21 @@ export function NewSyncPage() {
       void queryClient.invalidateQueries({ queryKey: keys.syncs });
       navigate("/syncs");
     },
+  });
+
+  // The bulk preview job and the syncs it previews (`run_ids[i]` belongs to `syncs[i]`).
+  const [bulkPreview, setBulkPreview] = useState<{ key: string; jobId: string; syncs: SyncCreateIn[] } | null>(null);
+  const previewBulk = useMutation<JobOut, ApiError, { key: string; body: SyncBulkIn }>({
+    mutationFn: ({ body }) => call(api.POST("/api/syncs/preview/bulk", { body })),
+    onSuccess: (job, { key, body }) => {
+      queryClient.setQueryData(keys.job(job.job_id), job);
+      picks.clear();
+      setBulkPreview({ key, jobId: job.job_id, syncs: body.syncs });
+    },
     onSettled: () => bulkEstimate.setWarnOpen(false),
   });
+  const currentBulk = scope === "all" && bulkPreview?.key === bulkKey ? bulkPreview : null;
+  const bulkJob = useJob(currentBulk?.jobId ?? null).data;
 
   function submitOne() {
     if (!oneReady) return;
@@ -103,31 +131,55 @@ export function NewSyncPage() {
       source: { service, playlist_id: sourceId },
       destinations,
       schedule: cron,
+      ...(preview.runId ? { start: { preview_run_id: preview.runId, picks: picks.toApi() } } : {}),
+    });
+  }
+
+  function previewAll() {
+    if (service === null || bulkEstimate.estimate === null || bulkEstimate.nothingToStart) return;
+    previewBulk.mutate({
+      key: bulkKey,
+      body: {
+        syncs: bulkEstimate.readable.map(({ playlist_id: id }) => ({
+          name: nameFor(byId.get(id), id),
+          source: { service, playlist_id: id },
+          destinations,
+          schedule: null,
+        })),
+      },
     });
   }
 
   function startBulk() {
-    if (service === null || bulkEstimate.estimate === null || bulkEstimate.nothingToStart) return;
+    if (!currentBulk) return;
+    const all = picks.toApi(); // picks are global per song and service, so every sync gets them all
     bulk.mutate({
-      syncs: bulkEstimate.readable.map(({ playlist_id: id }) => ({
-        name: nameFor(byId.get(id), id),
-        source: { service, playlist_id: id },
-        destinations,
-        schedule: cron,
-      })),
+      syncs: currentBulk.syncs.map((s, i) => {
+        const runId = bulkJob?.run_ids[i];
+        return runId ? { ...s, schedule: cron, start: { preview_run_id: runId, picks: all } } : s;
+      }),
     });
   }
 
   const scheduleOk = cron !== "";
-  const canCreate = oneReady && name.trim() !== "" && scheduleOk && !create.isPending;
+  const canCreate =
+    oneReady && name.trim() !== "" && scheduleOk && preview.status === "ready" && !create.isPending;
+  const bulkReady =
+    currentBulk !== null &&
+    bulkJob?.status === "succeeded" &&
+    bulkJob.run_ids.length === currentBulk.syncs.length &&
+    scheduleOk &&
+    !bulk.isPending;
   const canBulk =
     service !== null &&
     allIds.length > 0 &&
     servicesChosen &&
     scheduleOk &&
     !bulkEstimate.request.isPending &&
+    !previewBulk.isPending &&
     !bulk.isPending;
   const n = allIds.length;
+  const previewDestinations = rows.map((r) => ({ service: r.service ?? "", name: r.service ? nameOf(r.service) : "" }));
 
   return (
     <div className="space-y-8">
@@ -201,22 +253,42 @@ export function NewSyncPage() {
       {scope === "one" ? (
         <PreviewPanel
           preview={preview}
-          destinations={rows.map((r) => ({ service: r.service ?? "", name: r.service ? nameOf(r.service) : "" }))}
+          destinations={previewDestinations}
+          picks={picks}
+        />
+      ) : currentBulk ? (
+        <BulkPreview
+          jobId={currentBulk.jobId}
+          names={currentBulk.syncs.map((s) => s.name)}
+          destinations={previewDestinations}
+          picks={picks}
         />
       ) : null}
 
       <div className="space-y-3">
-        {[create.error, bulkEstimate.request.error, bulk.error].map((error, i) =>
+        {[create.error, bulkEstimate.request.error, previewBulk.error, bulk.error].map((error, i) =>
           error ? <ErrorNotice key={i} error={error} /> : null,
         )}
         {scope === "one" ? (
           <Button type="button" disabled={!canCreate} onClick={submitOne}>
-            Create sync
+            Start syncing
           </Button>
         ) : (
-          <Button type="button" disabled={!canBulk} onClick={() => bulkEstimate.request.mutate()}>
-            {n === 1 ? "Create 1 sync…" : `Create ${n} syncs…`}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={currentBulk ? "outline" : "default"}
+              disabled={!canBulk}
+              onClick={() => bulkEstimate.request.mutate()}
+            >
+              {n === 1 ? "Preview 1 sync…" : `Preview ${n} syncs…`}
+            </Button>
+            {currentBulk ? (
+              <Button type="button" disabled={!bulkReady} onClick={startBulk}>
+                Start syncing
+              </Button>
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -226,8 +298,8 @@ export function NewSyncPage() {
         estimate={bulkEstimate.estimate}
         verb="Sync"
         nothingToStart={bulkEstimate.nothingToStart}
-        onStart={startBulk}
-        pending={bulk.isPending}
+        onStart={previewAll}
+        pending={previewBulk.isPending}
       />
     </div>
   );

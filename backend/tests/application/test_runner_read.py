@@ -6,8 +6,8 @@ from linersync.domain.attention import AttentionKind
 from linersync.domain.operations import AddTracks, CreatePlaylist
 from linersync.domain.runs import MemberStatus, RunKind, RunStatus, Trigger
 from linersync.domain.sync import SyncMode, SyncStatus
-from tests.application.conftest import World
-from tests.factories import group, snapshot
+from tests.application.conftest import APPLE, World
+from tests.factories import group, snapshot, track
 
 MANUAL = Trigger.MANUAL
 
@@ -190,3 +190,23 @@ async def test_preview_unsaved_group(unsaved_world: World) -> None:
     assert [m.status for m in run.members] == [MemberStatus.DRY_RUN]
     assert w.repos.syncs.list() == []
     assert _writes(w) == []
+
+
+async def test_seeded_run_matches_new_source_songs_normally(world: World) -> None:
+    keys = [e.track.key for e in snapshot("spotify", "P1", ["a", "b", "c"]).entries]
+    world.apple.catalog = (
+        *world.apple.catalog,
+        track("apple_music", "A2", title="a"),
+    )
+    run, _ = await world.runner().run_group(
+        world.group,
+        kind=RunKind.SYNC,
+        trigger=MANUAL,
+        dry_run=True,
+        persist=False,
+        seed={APPLE: {keys[0]: "A2"}},
+    )
+    assert run.plan is not None
+    synced = {e.source_key: e.target_track_id for e in run.plan.member_plans[0].synced}
+    assert synced[keys[0]] == "A2"
+    assert synced[keys[1]] == "B" and synced[keys[2]] == "C"

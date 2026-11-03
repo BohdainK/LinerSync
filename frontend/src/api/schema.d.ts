@@ -731,6 +731,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/alternatives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Alternatives
+         * @description Other songs on a member's service that a source song could become:
+         *     looser matches, or what a text search finds when `query` is given.
+         */
+        post: operations["alternatives_api_runs__run_id__alternatives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/undo": {
         parameters: {
             query?: never;
@@ -856,6 +877,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/syncs/preview/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Syncs */
+        post: operations["preview_syncs_api_syncs_preview_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/syncs/{sync_id}": {
         parameters: {
             query?: never;
@@ -873,6 +911,47 @@ export interface paths {
         head?: never;
         /** Patch Sync */
         patch: operations["patch_sync_api_syncs__sync_id__patch"];
+        trace?: never;
+    };
+    "/api/syncs/{sync_id}/destinations/{member_id}/copy-to-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy To Source
+         * @description Preview copying songs the user added on the destination into the source,
+         *     or (with that preview) copy them; the sync then runs.
+         */
+        post: operations["copy_to_source_api_syncs__sync_id__destinations__member_id__copy_to_source_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/syncs/{sync_id}/destinations/{member_id}/re-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re Add
+         * @description Put a song the user removed from the destination back on the next run.
+         */
+        post: operations["re_add_api_syncs__sync_id__destinations__member_id__re_add_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/syncs/{sync_id}/run": {
@@ -960,6 +1039,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers/from-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * From Preview
+         * @description Start the real transfer for a finished preview, reusing its matches and
+         *     applying the person's swaps.
+         */
+        post: operations["from_preview_api_transfers_from_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -992,6 +1092,17 @@ export interface components {
             undo_runs: number;
             /** Waiting */
             waiting: number;
+        };
+        /** AlternativesIn */
+        AlternativesIn: {
+            /** Member Id */
+            member_id: string;
+            /** Query */
+            query?: string | null;
+            /** Source Service */
+            source_service: string;
+            /** Source Track Id */
+            source_track_id: string;
         };
         /**
          * Annotation
@@ -1305,6 +1416,25 @@ export interface components {
             /** Ok */
             ok: boolean;
         };
+        /**
+         * CopyToSourceIn
+         * @description Copy songs the user added on a destination into the source: first a
+         *     dry run, then the real copy from that preview (with the person's swaps).
+         *     No `track_ids` means every song they added there.
+         */
+        CopyToSourceIn: {
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+            /** Picks */
+            picks?: components["schemas"]["PickChoiceIn"][];
+            /** Preview Job Id */
+            preview_job_id?: string | null;
+            /** Track Ids */
+            track_ids?: string[];
+        };
         /** CopyValue */
         CopyValue: {
             /** Label */
@@ -1335,6 +1465,12 @@ export interface components {
         };
         /** DestinationIn */
         DestinationIn: {
+            /**
+             * Existing
+             * @default merge
+             * @enum {string}
+             */
+            existing: "merge" | "overwrite";
             /** @default full */
             mode: components["schemas"]["SyncMode"];
             /** Playlist Id */
@@ -1344,6 +1480,16 @@ export interface components {
         };
         /** DestinationOut */
         DestinationOut: {
+            /**
+             * Added By You
+             * @default []
+             */
+            added_by_you: components["schemas"]["TrackOut"][];
+            /**
+             * Can Copy To Source
+             * @default false
+             */
+            can_copy_to_source: boolean;
             effective_mode: components["schemas"]["SyncMode"];
             /** Last Synced At */
             last_synced_at: string | null;
@@ -1356,6 +1502,11 @@ export interface components {
             mode: components["schemas"]["SyncMode"];
             /** Playlist Id */
             playlist_id: string | null;
+            /**
+             * Removed By You
+             * @default []
+             */
+            removed_by_you: components["schemas"]["TrackOut"][];
             /** Service */
             service: string;
         };
@@ -1427,6 +1578,13 @@ export interface components {
          * @enum {string}
          */
         FieldKind: "text" | "secret" | "multiline_secret";
+        /** FromPreviewIn */
+        FromPreviewIn: {
+            /** Picks */
+            picks?: components["schemas"]["PickChoiceIn"][];
+            /** Preview Job Id */
+            preview_job_id: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1655,6 +1813,17 @@ export interface components {
              */
             type: "create_playlist" | "update_metadata" | "add_tracks" | "reorder" | "remove_tracks";
         };
+        /** PickChoiceIn */
+        PickChoiceIn: {
+            /** Source Service */
+            source_service: string;
+            /** Source Track Id */
+            source_track_id: string;
+            /** Target Service */
+            target_service: string;
+            /** Target Track Id */
+            target_track_id: string;
+        };
         /** PickIn */
         PickIn: {
             /** Target Track Id */
@@ -1680,6 +1849,13 @@ export interface components {
             track_count: number | null;
             /** Unreadable Reason */
             unreadable_reason: string | null;
+        };
+        /** ReAddIn */
+        ReAddIn: {
+            /** Source Service */
+            source_service: string;
+            /** Source Track Id */
+            source_track_id: string;
         };
         /** RestoreIn */
         RestoreIn: {
@@ -1998,6 +2174,7 @@ export interface components {
             /** Schedule */
             schedule?: string | null;
             source: components["schemas"]["MemberIn"];
+            start?: components["schemas"]["SyncStartIn"] | null;
         };
         /**
          * SyncMode
@@ -2045,6 +2222,16 @@ export interface components {
             remove_member_ids?: string[] | null;
             /** Schedule */
             schedule?: string | null;
+        };
+        /**
+         * SyncStartIn
+         * @description Run the new sync for real from this preview run, applying these swaps.
+         */
+        SyncStartIn: {
+            /** Picks */
+            picks?: components["schemas"]["PickChoiceIn"][];
+            /** Preview Run Id */
+            preview_run_id: string;
         };
         /** TrackOut */
         TrackOut: {
@@ -3446,6 +3633,41 @@ export interface operations {
             };
         };
     };
+    alternatives_api_runs__run_id__alternatives_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlternativesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     undo_run_api_runs__run_id__undo_post: {
         parameters: {
             query?: never;
@@ -3712,6 +3934,39 @@ export interface operations {
             };
         };
     };
+    preview_syncs_api_syncs_preview_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncBulkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_sync_api_syncs__sync_id__get: {
         parameters: {
             query?: never;
@@ -3794,6 +4049,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_to_source_api_syncs__sync_id__destinations__member_id__copy_to_source_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_id: string;
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyToSourceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    re_add_api_syncs__sync_id__destinations__member_id__re_add_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sync_id: string;
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReAddIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
                 };
             };
             /** @description Validation Error */
@@ -3961,6 +4288,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EstimateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    from_preview_api_transfers_from_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FromPreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
                 };
             };
             /** @description Validation Error */

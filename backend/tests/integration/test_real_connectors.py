@@ -4,7 +4,7 @@ Jellyfin connectors, each talking to its simulator."""
 import re
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -152,11 +152,15 @@ class Rig:
         self.repos.syncs.save(g)
         return g.sync_id
 
-    def to_spotify(self, source_id: str, target_id: str) -> str:
+    def to_spotify(
+        self, source_id: str, target_id: str, *, mirror: bool = False
+    ) -> str:
         g = group(
             source=("spotify", source_id),
             destinations=[("spotify", target_id, SyncMode.FULL)],
         )
+        if mirror:
+            g = g.with_member(replace(g.destinations[0], mirror_once=True))
         self.repos.syncs.save(g)
         return g.sync_id
 
@@ -331,7 +335,8 @@ async def test_spotify_full_sync_removes_one_copy() -> None:
     source = sim.add_playlist("Mix", [a, b, c])
     target = sim.add_playlist("Mix", [a, b, a, c])
     r = Rig(sim, AppleMusicSim(catalog=()))
-    sync_id = r.to_spotify(source, target)
+    # A strict first mirror: the extra copy predates the sync.
+    sync_id = r.to_spotify(source, target, mirror=True)
     # Removing 1 of 4 songs trips the removal brake: nothing is written until
     # the user approves this exact plan.
     held = await r.run(sync_id)

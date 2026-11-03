@@ -1,11 +1,15 @@
+from typing import Any
+
 from linersync.application.attention import AttentionService
 from linersync.domain.attention import AttentionKind
+from linersync.domain.matching.types import MatchDecision, NeedsAttention
 from linersync.domain.operations import AddTracks, Operation, RemoveTracks
 from linersync.domain.playlists import PlaylistDraft, PlaylistMeta, PlaylistSnapshot
 from linersync.domain.runs import MemberStatus, RunStatus, Trigger
-from linersync.domain.sync import SyncMode
+from linersync.domain.sync import SyncedEntry, SyncMode
+from linersync.domain.tracks import TrackKey
 from linersync.ports.errors import WriteFailed
-from tests.application.conftest import World
+from tests.application.conftest import SPOTIFY, World
 from tests.factories import group, snapshot, track
 
 MANUAL = Trigger.MANUAL
@@ -140,7 +144,7 @@ async def test_unmatched_item_not_duplicated_across_runs(world: World) -> None:
 
 
 async def test_emptied_source_trips_brake_then_approval_applies(world: World) -> None:
-    world.spotify_to_spotify(("a", "b", "c"))
+    world.spotify_to_spotify(("a", "b", "c"), mirror=True)
     world.spotify.add_playlist(snapshot("spotify", "P1", []))
     run = await world.runner().run("s2", trigger=Trigger.SCHEDULED)
     assert run.status is RunStatus.AWAITING_APPROVAL
@@ -247,7 +251,7 @@ async def test_nothing_to_do_updates_last_synced(world: World) -> None:
 
 async def test_replan_respects_brake(world: World) -> None:
     world.spotify.add_playlist(snapshot("spotify", "P1", list("abcdef")))
-    world.spotify_to_spotify(tuple("abcdex"))
+    world.spotify_to_spotify(tuple("abcdex"), mirror=True)
     world.spotify.fail_writes(AddTracks)
     # the failed add is followed by the user emptying the target's other songs
     original = world.spotify.read_playlist
@@ -276,7 +280,7 @@ async def test_progress_events_published(world: World) -> None:
 
 async def test_removals_applied_last(world: World) -> None:
     world.spotify.add_playlist(snapshot("spotify", "P1", list("abcdef")))
-    world.spotify_to_spotify(tuple("abcdex"))
+    world.spotify_to_spotify(tuple("abcdex"), mirror=True)
     run = await world.runner().run("s2", trigger=MANUAL)
     assert run.status is RunStatus.SUCCEEDED
     writes = [c for c in world.spotify.calls if c.startswith("apply:")]
@@ -325,7 +329,7 @@ async def test_rebuilt_target_that_failed_is_filled_next_run(world: World) -> No
 
 async def test_full_replan_then_applies_removals(world: World) -> None:
     world.spotify.add_playlist(snapshot("spotify", "P1", list("abcdef")))
-    world.spotify_to_spotify(tuple("abcdex"))
+    world.spotify_to_spotify(tuple("abcdex"), mirror=True)
     world.spotify.fail_writes(AddTracks)
     run = await world.runner().run("s2", trigger=MANUAL)
     assert run.status is RunStatus.SUCCEEDED
@@ -349,7 +353,7 @@ def _p2(w: World) -> tuple[str, ...]:
 
 
 async def test_approval_covers_one_pass_only(world: World) -> None:
-    world.spotify_to_spotify(("a", "b", "c"))
+    world.spotify_to_spotify(("a", "b", "c"), mirror=True)
     world.spotify.add_playlist(snapshot("spotify", "P1", []))
     held = await world.runner().run("s2", trigger=Trigger.SCHEDULED)
     assert held.status is RunStatus.AWAITING_APPROVAL
@@ -375,7 +379,7 @@ async def test_approval_covers_one_pass_only(world: World) -> None:
 
 
 async def test_brake_item_superseded_when_plan_no_longer_trips(world: World) -> None:
-    world.spotify_to_spotify(("a", "b", "c"))
+    world.spotify_to_spotify(("a", "b", "c"), mirror=True)
     world.spotify.add_playlist(snapshot("spotify", "P1", []))
     await world.runner().run("s2", trigger=Trigger.SCHEDULED)
     (item,) = [
@@ -452,3 +456,89 @@ async def test_unexpected_exception_saves_aborted_run(world: World) -> None:
     ]
     saved = world.repos.syncs.get("s1")
     assert saved == world.group
+
+
+async def test_unresolved_pair_survives_applied_run(world: World) -> None:
+    await world.runner().run("s1", trigger=MANUAL)
+    world.apple.catalog += (track("apple_music", "D", title="d"),)
+    world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "b", "c", "d"]))
+    runner = world.runner()
+    resolve = runner._matcher.resolve
+    b = TrackKey(SPOTIFY, "b")
+
+    async def b_needs_attention(
+        *args: Any, **kwargs: Any
+    ) -> dict[TrackKey, MatchDecision]:
+        out = await resolve(*args, **kwargs)
+        out[b] = NeedsAttention(("low confidence",), ())
+        return out
+
+    runner._matcher.resolve = b_needs_attention  # type: ignore[method-assign]
+    run = await runner.run("s1", trigger=MANUAL)
+    (member,) = run.members
+    assert member.status is MemberStatus.APPLIED
+    assert world.apple.playlists["A1"].track_ids == ("A", "B", "C", "D")
+    saved = world.repos.syncs.get("s1")
+    assert saved is not None
+    state = saved.members[1].last_synced
+    assert state is not None
+    assert SyncedEntry(b, "B") in state.entries
+    assert [e.target_track_id for e in state.entries if e.source_key != b] == [
+        "A",
+        "C",
+        "D",
+    ]
+
+
+async def test_brake_trips_for_owned_removals_without_mirror(world: World) -> None:
+    world.spotify_to_spotify(())
+    first = await world.runner().run("s2", trigger=MANUAL)
+    assert first.status is RunStatus.SUCCEEDED
+    assert _p2(world) == ("a", "b", "c")
+    world.spotify.add_playlist(snapshot("spotify", "P1", []))
+    run = await world.runner().run("s2", trigger=Trigger.SCHEDULED)
+    assert run.status is RunStatus.AWAITING_APPROVAL
+    assert [m.status for m in run.members] == [MemberStatus.AWAITING_APPROVAL]
+    assert _p2(world) == ("a", "b", "c")
+    (item,) = [
+        i for i in world.repos.attention.list_open() if i.kind is AttentionKind.BRAKE
+    ]
+    assert item.detail == "This run would remove 3 of 3 songs"
+
+
+async def test_applied_run_records_user_lists_and_order(world: World) -> None:
+    world.spotify_to_spotify(())
+    await world.runner().run("s2", trigger=MANUAL)
+    world.spotify.add_playlist(snapshot("spotify", "P2", ["a", "c", "X"]))
+    world.spotify.add_playlist(snapshot("spotify", "P1", ["a", "b", "c", "d"]))
+    run = await world.runner().run("s2", trigger=MANUAL)
+    assert run.status is RunStatus.SUCCEEDED
+    saved = world.repos.syncs.get("s2")
+    assert saved is not None
+    state = saved.destinations[0].last_synced
+    assert state is not None
+    assert [t.track_id for t in state.removed_by_you] == ["b"]
+    assert [t.track_id for t in state.added_by_you] == ["X"]
+    assert state.target_order == world.spotify.playlists["P2"].track_ids
+    assert SyncedEntry(TrackKey(SPOTIFY, "b"), "b") in state.entries
+
+
+async def test_mirror_once_cleared_after_settled_run(world: World) -> None:
+    many = tuple("abcdefghij")
+    g = world.spotify_to_spotify((*many, "x"), mirror=True)
+    world.spotify.add_playlist(snapshot("spotify", "P1", many))
+    assert g.destinations[0].mirror_once
+    run = await world.runner().run("s2", trigger=MANUAL)
+    assert run.status is RunStatus.SUCCEEDED
+    assert world.spotify.playlists["P2"].track_ids == many
+    saved = world.repos.syncs.get("s2")
+    assert saved is not None
+    assert not saved.destinations[0].mirror_once
+
+
+async def test_dry_run_leaves_state_untouched(world: World) -> None:
+    g = world.spotify_to_spotify(("a", "b", "c", "x"), mirror=True)
+    run = await world.runner().run("s2", trigger=MANUAL, dry_run=True)
+    assert run.dry_run
+    assert world.repos.syncs.get("s2") == g
+    assert world.spotify.playlists["P2"].track_ids == ("a", "b", "c", "x")

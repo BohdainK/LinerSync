@@ -77,6 +77,20 @@ async def test_previous_pair_reused_without_search() -> None:
     assert target.calls == []
 
 
+async def test_seeded_pair_beats_search_but_not_remembered() -> None:
+    repos = in_memory_repositories()
+    src = snapshot("spotify", "P1", ["a", "b"])
+    key_a, key_b = (e.track.key for e in src.entries)
+    repos.matches.remember(RememberedMatch(key_b, APPLE, "B9"))
+    target = _target([track("apple_music", "A", title="a")])
+    out = await MatchService(repos.matches, MatchConfig()).resolve(
+        src, target, None, seeded={key_a: "A2", key_b: "B2"}
+    )
+    assert out[key_a] == Matched("A2", 1.0, (), MatchVia.PREVIOUS_SYNC)
+    assert out[key_b] == Matched("B9", 1.0, ("your pick",), MatchVia.REMEMBERED)
+    assert _searches(target) == []
+
+
 async def test_duplicates_resolved_once() -> None:
     svc, target = _service()
     src = snapshot("spotify", "P1", ["a", "b", "a"])

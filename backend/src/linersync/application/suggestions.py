@@ -55,3 +55,17 @@ async def find_similar(
     out = [c for c in ranked if c.track.key in keep]
     out += [c for c in ranked if c.track.key not in keep][:MAX_SUGGESTIONS]
     return tuple(sorted(out, key=lambda c: c.confidence, reverse=True))
+
+
+async def search_text(
+    source: Track, target: Connector, cfg: MatchConfig, text: str
+) -> tuple[ScoredCandidate, ...]:
+    """Songs on `target` found by searching `text`, each scored against
+    `source`, best first. No floor: the person is looking on purpose. Raises
+    ConnectorError when the search fails."""
+    scored = {
+        t.key: score_candidate(source, t, cfg)
+        for t in await target.search(TrackQuery(text, ()))
+    }
+    ranked = sorted(scored.values(), key=lambda c: c.confidence, reverse=True)
+    return tuple(ranked[:MAX_SUGGESTIONS])

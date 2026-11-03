@@ -83,6 +83,40 @@
         "title": "ActivityOut",
         "type": "object"
       },
+      "AlternativesIn": {
+        "properties": {
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "source_service": {
+            "title": "Source Service",
+            "type": "string"
+          },
+          "source_track_id": {
+            "title": "Source Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "source_service",
+          "source_track_id"
+        ],
+        "title": "AlternativesIn",
+        "type": "object"
+      },
       "Annotation": {
         "description": "A highlighted region, as fractions (0..1) of the image.",
         "properties": {
@@ -1026,6 +1060,43 @@
         "title": "ConnectionTestOut",
         "type": "object"
       },
+      "CopyToSourceIn": {
+        "description": "Copy songs the user added on a destination into the source: first a\ndry run, then the real copy from that preview (with the person's swaps).\nNo `track_ids` means every song they added there.",
+        "properties": {
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "picks": {
+            "items": {
+              "$ref": "#/components/schemas/PickChoiceIn"
+            },
+            "title": "Picks",
+            "type": "array"
+          },
+          "preview_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Job Id"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "title": "CopyToSourceIn",
+        "type": "object"
+      },
       "CopyValue": {
         "properties": {
           "label": {
@@ -1091,6 +1162,15 @@
       },
       "DestinationIn": {
         "properties": {
+          "existing": {
+            "default": "merge",
+            "enum": [
+              "merge",
+              "overwrite"
+            ],
+            "title": "Existing",
+            "type": "string"
+          },
           "mode": {
             "$ref": "#/components/schemas/SyncMode",
             "default": "full"
@@ -1119,6 +1199,19 @@
       },
       "DestinationOut": {
         "properties": {
+          "added_by_you": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TrackOut"
+            },
+            "title": "Added By You",
+            "type": "array"
+          },
+          "can_copy_to_source": {
+            "default": false,
+            "title": "Can Copy To Source",
+            "type": "boolean"
+          },
           "effective_mode": {
             "$ref": "#/components/schemas/SyncMode"
           },
@@ -1162,6 +1255,14 @@
               }
             ],
             "title": "Playlist Id"
+          },
+          "removed_by_you": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TrackOut"
+            },
+            "title": "Removed By You",
+            "type": "array"
           },
           "service": {
             "title": "Service",
@@ -1341,6 +1442,26 @@
         ],
         "title": "FieldKind",
         "type": "string"
+      },
+      "FromPreviewIn": {
+        "properties": {
+          "picks": {
+            "items": {
+              "$ref": "#/components/schemas/PickChoiceIn"
+            },
+            "title": "Picks",
+            "type": "array"
+          },
+          "preview_job_id": {
+            "title": "Preview Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_job_id"
+        ],
+        "title": "FromPreviewIn",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2038,6 +2159,34 @@
         "title": "OperationOut",
         "type": "object"
       },
+      "PickChoiceIn": {
+        "properties": {
+          "source_service": {
+            "title": "Source Service",
+            "type": "string"
+          },
+          "source_track_id": {
+            "title": "Source Track Id",
+            "type": "string"
+          },
+          "target_service": {
+            "title": "Target Service",
+            "type": "string"
+          },
+          "target_track_id": {
+            "title": "Target Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_service",
+          "source_track_id",
+          "target_service",
+          "target_track_id"
+        ],
+        "title": "PickChoiceIn",
+        "type": "object"
+      },
       "PickIn": {
         "properties": {
           "target_track_id": {
@@ -2123,6 +2272,24 @@
           "track_count"
         ],
         "title": "PlaylistOut",
+        "type": "object"
+      },
+      "ReAddIn": {
+        "properties": {
+          "source_service": {
+            "title": "Source Service",
+            "type": "string"
+          },
+          "source_track_id": {
+            "title": "Source Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_service",
+          "source_track_id"
+        ],
+        "title": "ReAddIn",
         "type": "object"
       },
       "RestoreIn": {
@@ -2912,6 +3079,16 @@
           },
           "source": {
             "$ref": "#/components/schemas/MemberIn"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncStartIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3111,6 +3288,27 @@
           }
         },
         "title": "SyncPatchIn",
+        "type": "object"
+      },
+      "SyncStartIn": {
+        "description": "Run the new sync for real from this preview run, applying these swaps.",
+        "properties": {
+          "picks": {
+            "items": {
+              "$ref": "#/components/schemas/PickChoiceIn"
+            },
+            "title": "Picks",
+            "type": "array"
+          },
+          "preview_run_id": {
+            "title": "Preview Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_run_id"
+        ],
+        "title": "SyncStartIn",
         "type": "object"
       },
       "TrackOut": {
@@ -5069,6 +5267,60 @@
         "summary": "Get Run"
       }
     },
+    "/api/runs/{run_id}/alternatives": {
+      "post": {
+        "description": "Other songs on a member's service that a source song could become:\nlooser matches, or what a text search finds when `query` is given.",
+        "operationId": "alternatives_api_runs__run_id__alternatives_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlternativesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CandidateOut"
+                  },
+                  "title": "Response Alternatives Api Runs  Run Id  Alternatives Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Alternatives"
+      }
+    },
     "/api/runs/{run_id}/undo": {
       "post": {
         "operationId": "undo_run_api_runs__run_id__undo_post",
@@ -5391,6 +5643,44 @@
         "summary": "Preview Sync"
       }
     },
+    "/api/syncs/preview/bulk": {
+      "post": {
+        "operationId": "preview_syncs_api_syncs_preview_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncBulkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Syncs"
+      }
+    },
     "/api/syncs/{sync_id}": {
       "delete": {
         "operationId": "delete_sync_api_syncs__sync_id__delete",
@@ -5505,6 +5795,124 @@
           }
         },
         "summary": "Patch Sync"
+      }
+    },
+    "/api/syncs/{sync_id}/destinations/{member_id}/copy-to-source": {
+      "post": {
+        "description": "Preview copying songs the user added on the destination into the source,\nor (with that preview) copy them; the sync then runs.",
+        "operationId": "copy_to_source_api_syncs__sync_id__destinations__member_id__copy_to_source_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sync_id",
+            "required": true,
+            "schema": {
+              "title": "Sync Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyToSourceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy To Source"
+      }
+    },
+    "/api/syncs/{sync_id}/destinations/{member_id}/re-add": {
+      "post": {
+        "description": "Put a song the user removed from the destination back on the next run.",
+        "operationId": "re_add_api_syncs__sync_id__destinations__member_id__re_add_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sync_id",
+            "required": true,
+            "schema": {
+              "title": "Sync Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Re Add"
       }
     },
     "/api/syncs/{sync_id}/run": {
@@ -5730,6 +6138,45 @@
           }
         },
         "summary": "Estimate"
+      }
+    },
+    "/api/transfers/from-preview": {
+      "post": {
+        "description": "Start the real transfer for a finished preview, reusing its matches and\napplying the person's swaps.",
+        "operationId": "from_preview_api_transfers_from_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FromPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "From Preview"
       }
     }
   }

@@ -6,28 +6,49 @@ import { ErrorNotice } from "@/components/ErrorNotice";
 import { TrackCard } from "@/components/TrackArt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ChangeMatch } from "@/features/matches/ChangeMatch";
+import { useMatchEditing } from "@/features/matches/MatchEditing";
 import { AttentionModal } from "@/features/attention/AttentionModal";
 import { useServiceNames } from "@/features/pickers/useServiceNames";
 import { MemberSection } from "./MemberSection";
 
 function Unresolved({
   item,
+  targetService,
   resolved,
   pending,
   onResolve,
 }: {
   item: UnresolvedOut;
+  targetService: string | null;
   resolved: boolean;
   pending: boolean;
   onResolve(): void;
 }) {
+  const editing = useMatchEditing();
+  const picked = targetService ? editing?.picks.picked(item.source, targetService) : undefined;
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
       <div className="min-w-0 space-y-1">
         <TrackCard track={item.source} />
         {item.reasons.length > 0 ? <p className="text-sm text-muted-foreground">{item.reasons.join("; ")}</p> : null}
+        {picked ? (
+          <div className="flex items-center gap-2">
+            <TrackCard track={picked} />
+            <Badge className="shrink-0">Your pick</Badge>
+          </div>
+        ) : null}
       </div>
-      {resolved ? (
+      {editing ? (
+        <ChangeMatch
+          runId={editing.runId}
+          memberId={item.member_id}
+          source={item.source}
+          onPick={(target) =>
+            editing.picks.pick({ runId: editing.runId, memberId: item.member_id, source: item.source, target })
+          }
+        />
+      ) : resolved ? (
         <Badge variant="outline">Resolved</Badge>
       ) : (
         <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onResolve}>
@@ -74,6 +95,7 @@ export function RunResults({ run }: { run: RunOut }) {
               <Unresolved
                 key={`${u.member_id}:${u.position}:${i}`}
                 item={u}
+                targetService={run.members.find((m) => m.member_id === u.member_id)?.service ?? null}
                 resolved={resolved.has(i)}
                 pending={open.isPending && opening === i}
                 onResolve={() => open.mutate(i)}

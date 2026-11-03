@@ -46,3 +46,8 @@ export function formatChangeCounts({ added, removed }: { added: number; removed:
 export function formatBackupResult(r: { saved: number; unchanged: number; archived: number; unreadable: number }): string {
   return `${r.saved} saved, ${r.unchanged} unchanged, ${r.archived} archived, ${r.unreadable} unreadable`;
 }
+
+/** The run history label for a run kind. */
+export function runKindLabel(kind: string): string {
+  return kind === "copy_to_source" ? "Copied to source" : kind;
+}

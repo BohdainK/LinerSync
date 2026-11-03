@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { isActive, useCancelJob, useJob, useOnJobEnd } from "@/live/useJob";
 import { AddDestination } from "./AddDestination";
 import { BusyTip } from "./BusyTip";
+import { DestinationEdits } from "./DestinationEdits";
 import { DestinationsTable } from "./DestinationsTable";
 import { RunHistory } from "./RunHistory";
 import { SyncAttention } from "./SyncAttention";
@@ -142,6 +143,14 @@ export function SyncPage() {
       </header>
       <SyncAttention syncId={s.sync_id} />
       <DestinationsTable sync={s} disabled={busy} />
+      <DestinationEdits
+        sync={s}
+        disabled={busy}
+        onJob={(j) => {
+          queryClient.setQueryData(keys.job(j.job_id), j);
+          setStartedId(j.job_id);
+        }}
+      />
       <AddDestination sync={s} disabled={busy} />
       <ScheduleEditor key={s.sync_id} sync={s} />
       <RunHistory syncId={s.sync_id} />

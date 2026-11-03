@@ -103,12 +103,158 @@ describe("NewTransferPage", () => {
     expect(
       screen.getByText("Fake B can't remove or reorder songs, so this sync runs as add only into Fake B"),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Transfer immediately (skip the preview)" }));
     await user.click(screen.getByRole("button", { name: "Start transfer" }));
     expect(await screen.findByText("Transfer to Fake B")).toBeInTheDocument();
     expect(bodies).toEqual([{ source_service: "fake_a", playlist_id: "P1", destination: "fake_b", dry_run: false }]);
   });
 
-  it("dry run flag is sent", async () => {
+  const pair = (title: string, id: string) => ({
+    source: trackOut({ service: "fake_a", track_id: `a-${id}`, title }),
+    target: trackOut({ service: "fake_c", track_id: `c-${id}`, title }),
+    added: true,
+  });
+  const previewRun = (runId: string, title: string) =>
+    runOut({
+      run_id: runId,
+      dry_run: true,
+      members: [
+        {
+          member_id: "dst0",
+          service: "fake_c",
+          playlist_id: null,
+          status: "dry_run" as const,
+          error: null,
+          rebuilt: false,
+          created_playlist_id: null,
+          operations: [],
+          not_made: [],
+          mismatch: null,
+          matches: [pair(title, runId)],
+        },
+      ],
+    });
+  const done = (id: string, runIds: string[]) =>
+    jobOut({ job_id: id, kind: "transfer", label: "Transfer to Fake C", status: "succeeded", run_ids: runIds });
+
+  async function selectGym(user: ReturnType<typeof userEvent.setup>) {
+    await pickSource(user);
+    const group = await screen.findByRole("group", { name: "Source playlists" });
+    await user.click(await within(group).findByRole("checkbox", { name: /Gym/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /Fake C/ }));
+  }
+
+  it("previews by default, then starts from the preview", async () => {
+    serve();
+    const bodies: unknown[] = [];
+    const starts: unknown[] = [];
+    server.use(
+      http.post("*/api/transfers", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(done("t1", ["r1"]), { status: 202 });
+      }),
+      http.get("*/api/jobs/t1", () => HttpResponse.json(done("t1", ["r1"]))),
+      http.get("*/api/runs/r1", () => HttpResponse.json(previewRun("r1", "Song one"))),
+      http.post("*/api/runs/r1/alternatives", () =>
+        HttpResponse.json([
+          {
+            track: trackOut({ service: "fake_c", track_id: "c-alt", title: "Song one live" }),
+            confidence: 0.8,
+            reasons: [],
+          },
+        ]),
+      ),
+      http.post("*/api/transfers/from-preview", async ({ request }) => {
+        starts.push(await request.json());
+        return HttpResponse.json(jobOut({ job_id: "t2", kind: "transfer", label: "Real run" }), { status: 202 });
+      }),
+      http.get("*/api/jobs/t2", () => HttpResponse.json(jobOut({ job_id: "t2", kind: "transfer", label: "Real run" }))),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await selectGym(user);
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ source_service: "fake_a", playlist_id: "P2", destination: "fake_c", dry_run: true });
+    await user.click(await screen.findByRole("button", { name: /^Change match for Song one/ }));
+    await user.click(await screen.findByRole("button", { name: /^Use this/ }));
+    expect(await screen.findByText("Your pick")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    expect(await screen.findByText("Real run", { selector: "span" })).toBeInTheDocument();
+    expect(starts).toEqual([
+      {
+        preview_job_id: "t1",
+        picks: [
+          { source_service: "fake_a", source_track_id: "a-r1", target_service: "fake_c", target_track_id: "c-alt" },
+        ],
+      },
+    ]);
+    expect(screen.queryByRole("button", { name: "Start transfer" })).not.toBeInTheDocument();
+  });
+
+  it("shows the error when starting from the preview fails", async () => {
+    serve();
+    server.use(
+      http.post("*/api/transfers", () => HttpResponse.json(done("t1", ["r1"]), { status: 202 })),
+      http.get("*/api/jobs/t1", () => HttpResponse.json(done("t1", ["r1"]))),
+      http.get("*/api/runs/r1", () => HttpResponse.json(previewRun("r1", "Song one"))),
+      http.post("*/api/transfers/from-preview", () =>
+        HttpResponse.json({ detail: "The preview did not finish" }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await selectGym(user);
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    await user.click(await screen.findByRole("button", { name: "Start transfer" }));
+    expect(await screen.findByText(/The preview did not finish/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start transfer" })).toBeEnabled();
+  });
+
+  it("a failed start does not leak into the next preview, and reset clears picks", async () => {
+    serve();
+    const starts: unknown[] = [];
+    server.use(
+      http.post("*/api/transfers", () => HttpResponse.json(done("t1", ["r1"]), { status: 202 })),
+      http.get("*/api/jobs/t1", () => HttpResponse.json(done("t1", ["r1"]))),
+      http.get("*/api/runs/r1", () => HttpResponse.json(previewRun("r1", "Song one"))),
+      http.post("*/api/runs/r1/alternatives", () =>
+        HttpResponse.json([
+          {
+            track: trackOut({ service: "fake_c", track_id: "c-alt", title: "Song one live" }),
+            confidence: 0.8,
+            reasons: [],
+          },
+        ]),
+      ),
+      http.post("*/api/transfers/from-preview", async ({ request }) => {
+        starts.push(await request.json());
+        return HttpResponse.json(
+          { detail: starts.length === 1 ? "The preview did not finish" : "Second start failed" },
+          { status: 409 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await selectGym(user);
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    await user.click(await screen.findByRole("button", { name: /^Change match for Song one/ }));
+    await user.click(await screen.findByRole("button", { name: /^Use this/ }));
+    await user.click(await screen.findByRole("button", { name: "Start transfer" }));
+    expect(await screen.findByText(/The preview did not finish/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start another transfer" }));
+    await selectGym(user);
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    await screen.findByRole("button", { name: /^Change match for Song one/ });
+    expect(screen.queryByText(/The preview did not finish/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    expect(await screen.findByText(/Second start failed/)).toBeInTheDocument();
+    expect(starts).toHaveLength(2);
+    expect((starts[1] as { picks: unknown[] }).picks).toEqual([]);
+  });
+
+  it("transfer immediately skips the preview", async () => {
     serve();
     const bodies: unknown[] = [];
     server.use(
@@ -116,26 +262,30 @@ describe("NewTransferPage", () => {
         bodies.push(await request.json());
         return HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer" }), { status: 202 });
       }),
-      http.get("*/api/jobs/t1", () => HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer" }))),
+      http.get("*/api/jobs/t1", () =>
+        HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", status: "succeeded", run_ids: [] })),
+      ),
     );
     const user = userEvent.setup();
     renderPage();
-    await pickSource(user);
-    const group = await screen.findByRole("group", { name: "Source playlists" });
-    await user.click(await within(group).findByRole("checkbox", { name: /Gym/ }));
-    await user.click(await screen.findByRole("checkbox", { name: /Fake C/ }));
-    await user.click(screen.getByRole("checkbox", { name: "Dry run (match only, change nothing)" }));
+    await selectGym(user);
+    const toggle = screen.getByRole("checkbox", { name: "Transfer immediately (skip the preview)" });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
     await user.click(screen.getByRole("button", { name: "Start transfer" }));
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ source_service: "fake_a", playlist_id: "P2", destination: "fake_c", dry_run: true });
+    expect(bodies[0]).toEqual({ source_service: "fake_a", playlist_id: "P2", destination: "fake_c", dry_run: false });
+    expect(await screen.findByRole("button", { name: "Start another transfer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start transfer" })).not.toBeInTheDocument();
   });
 
-  async function selectTwo(user: ReturnType<typeof userEvent.setup>) {
+  async function selectTwo(user: ReturnType<typeof userEvent.setup>, immediate = true) {
     await pickSource(user);
     const group = await screen.findByRole("group", { name: "Source playlists" });
     await user.click(await within(group).findByRole("checkbox", { name: /Road Trip/ }));
     await user.click(within(group).getByRole("checkbox", { name: /Gym/ }));
     await user.click(await screen.findByRole("checkbox", { name: /Fake B/ }));
+    if (immediate) await user.click(screen.getByRole("checkbox", { name: "Transfer immediately (skip the preview)" }));
     await user.click(screen.getByRole("button", { name: "Start transfer" }));
   }
 
@@ -181,6 +331,48 @@ describe("NewTransferPage", () => {
     }));
     expect(estimates).toEqual([{ items }]);
     expect(bulks).toEqual([{ items, dry_run: false }]);
+  });
+
+  it("bulk preview then start", async () => {
+    serve();
+    const bulks: unknown[] = [];
+    const starts: unknown[] = [];
+    const bulkJob = (id: string, runIds: string[]) =>
+      jobOut({
+        job_id: id,
+        kind: "bulk_transfer",
+        label: "Transfer 2 playlists",
+        status: "succeeded",
+        run_ids: runIds,
+      });
+    server.use(
+      http.post("*/api/transfers/estimate", () => HttpResponse.json(estimate)),
+      http.post("*/api/transfers/bulk", async ({ request }) => {
+        bulks.push(await request.json());
+        return HttpResponse.json(bulkJob("b1", ["r1", "r2"]), { status: 202 });
+      }),
+      http.get("*/api/jobs/b1", () => HttpResponse.json(bulkJob("b1", ["r1", "r2"]))),
+      http.get("*/api/runs/r1", () => HttpResponse.json(previewRun("r1", "Song one"))),
+      http.get("*/api/runs/r2", () => HttpResponse.json(previewRun("r2", "Song two"))),
+      http.post("*/api/transfers/from-preview", async ({ request }) => {
+        starts.push(await request.json());
+        return HttpResponse.json(jobOut({ job_id: "b2", kind: "bulk_transfer", label: "Real bulk" }), { status: 202 });
+      }),
+      http.get("*/api/jobs/b2", () =>
+        HttpResponse.json(jobOut({ job_id: "b2", kind: "bulk_transfer", label: "Real bulk" })),
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await selectTwo(user, false);
+    const dialog = await screen.findByRole("alertdialog", { name: "Transfer 2 playlists?" });
+    await user.click(within(dialog).getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(bulks).toHaveLength(1));
+    expect(bulks[0]).toMatchObject({ dry_run: true });
+    expect(await screen.findAllByRole("button", { name: /^Change match for/ })).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Start transfer" }));
+    expect(await screen.findByText("Real bulk", { selector: "span" })).toBeInTheDocument();
+    expect(starts).toEqual([{ preview_job_id: "b1", picks: [] }]);
   });
 
   it("cannot start when every playlist is unreadable", async () => {
@@ -315,6 +507,7 @@ describe("NewTransferPage", () => {
     const group = await screen.findByRole("group", { name: "Source playlists" });
     expect(await within(group).findByRole("checkbox", { name: /Old mix/ })).toBeChecked();
     await user.click(await screen.findByRole("checkbox", { name: /Fake A/ }));
+    await user.click(screen.getByRole("checkbox", { name: "Transfer immediately (skip the preview)" }));
     await user.click(screen.getByRole("button", { name: "Start transfer" }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ source_service: "backup", playlist_id: "e1", destination: "fake_a", dry_run: false });

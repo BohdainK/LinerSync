@@ -12,6 +12,7 @@ class RunKind(StrEnum):
     SYNC = "sync"
     TRANSFER = "transfer"
     UNDO = "undo"
+    COPY_TO_SOURCE = "copy_to_source"
 
 
 class Trigger(StrEnum):

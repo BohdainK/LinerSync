@@ -2,13 +2,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
-import type { BulkItemIn, BulkTransferIn, JobOut, TransferIn } from "@/api/types";
+import type { BulkItemIn, BulkTransferIn, FromPreviewIn, JobOut, TransferIn } from "@/api/types";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
 import { NotesList } from "@/components/NotesList";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { canAdd, isSetUp, useConnections } from "@/features/connections/useConnections";
+import { usePicks } from "@/features/matches/usePicks";
 import { BulkWarningDialog } from "@/features/pickers/BulkWarningDialog";
 import { PlaylistPicker } from "@/features/pickers/PlaylistPicker";
 import { ServiceSelect } from "@/features/pickers/ServiceSelect";
@@ -22,9 +23,11 @@ export function NewTransferPage() {
   const queryClient = useQueryClient();
   const { service, selection, setSelection, changeSource } = useSourceSelection();
   const [destinations, setDestinations] = useState<string[]>([]);
-  const [dryRun, setDryRun] = useState(false);
+  const [immediate, setImmediate] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const picks = usePicks();
   const [jobId, setJobId] = useState<string | null>(null);
-  const dryId = useId();
+  const immediateId = useId();
 
   const connections = useConnections();
   const job = useJob(jobId);
@@ -38,7 +41,9 @@ export function NewTransferPage() {
   }));
   const bulkEstimate = useBulkEstimate(items);
 
-  function started(out: JobOut) {
+  function started(out: JobOut, asPreview = false) {
+    setPreviewing(asPreview);
+    fromPreview.reset();
     queryClient.setQueryData(keys.job(out.job_id), out);
     setJobId(out.job_id);
     bulkEstimate.setWarnOpen(false);
@@ -46,12 +51,16 @@ export function NewTransferPage() {
 
   const single = useMutation<JobOut, ApiError, TransferIn>({
     mutationFn: (body) => call(api.POST("/api/transfers", { body })),
-    onSuccess: started,
+    onSuccess: (out, vars) => started(out, vars.dry_run === true),
   });
   const bulk = useMutation<JobOut, ApiError, BulkTransferIn>({
     mutationFn: (body) => call(api.POST("/api/transfers/bulk", { body })),
-    onSuccess: started,
+    onSuccess: (out, vars) => started(out, vars.dry_run === true),
     onSettled: () => bulkEstimate.setWarnOpen(false),
+  });
+  const fromPreview = useMutation<JobOut, ApiError, FromPreviewIn>({
+    mutationFn: (body) => call(api.POST("/api/transfers/from-preview", { body })),
+    onSuccess: (out) => started(out),
   });
 
   function start() {
@@ -59,7 +68,7 @@ export function NewTransferPage() {
     const [only] = selection;
     const [dest] = chosen;
     if (selection.length === 1 && chosen.length === 1 && only !== undefined && dest !== undefined) {
-      single.mutate({ source_service: service, playlist_id: only, destination: dest, dry_run: dryRun });
+      single.mutate({ source_service: service, playlist_id: only, destination: dest, dry_run: !immediate });
     } else {
       bulkEstimate.request.mutate();
     }
@@ -67,11 +76,14 @@ export function NewTransferPage() {
 
   function startBulk() {
     if (bulkEstimate.readable.length === 0) return;
-    bulk.mutate({ items: bulkEstimate.readable, dry_run: dryRun });
+    bulk.mutate({ items: bulkEstimate.readable, dry_run: !immediate });
   }
 
   function reset() {
     setJobId(null);
+    setPreviewing(false);
+    fromPreview.reset();
+    picks.clear();
     setSelection([]);
     setDestinations([]);
     bulkEstimate.clearEstimate();
@@ -91,11 +103,21 @@ export function NewTransferPage() {
         {cancel.error ? <ErrorNotice error={cancel.error} /> : null}
         {current && !isActive(current) ? (
           <div className="space-y-6">
-            <Button type="button" onClick={reset}>
+            {previewing && current.status === "succeeded" ? (
+              <Button
+                type="button"
+                disabled={fromPreview.isPending}
+                onClick={() => fromPreview.mutate({ preview_job_id: current.job_id, picks: picks.toApi() })}
+              >
+                Start transfer
+              </Button>
+            ) : null}
+            {fromPreview.error ? <ErrorNotice error={fromPreview.error} /> : null}
+            <Button type="button" variant={previewing ? "outline" : "default"} onClick={reset}>
               Start another transfer
             </Button>
             {current.run_ids.map((id) => (
-              <TransferResult key={id} runId={id} />
+              <TransferResult key={id} runId={id} picks={previewing ? picks : undefined} />
             ))}
           </div>
         ) : null}
@@ -150,9 +172,9 @@ export function NewTransferPage() {
       </Section>
 
       <div className="flex items-center gap-2">
-        <input id={dryId} type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-        <label htmlFor={dryId} className="text-sm">
-          Dry run (match only, change nothing)
+        <input id={immediateId} type="checkbox" checked={immediate} onChange={(e) => setImmediate(e.target.checked)} />
+        <label htmlFor={immediateId} className="text-sm">
+          Transfer immediately (skip the preview)
         </label>
       </div>
 

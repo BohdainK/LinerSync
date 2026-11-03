@@ -18,6 +18,7 @@ from linersync.domain.sync import (
     SOURCE_MEMBER_ID,
     Direction,
     MemberRole,
+    PriorState,
     SyncGroup,
     SyncMember,
     SyncMode,
@@ -44,7 +45,9 @@ class UndoNotAllowed(Exception):
 class UndoService:
     """Restores a run's destinations to their pre-write snapshots. An explicit
     user action on a known state: no brake, and the circuit breaker is neither
-    consulted nor fed. Leaves `last_synced` and the saved group untouched."""
+    consulted nor fed. A destination restored in full also gets back the sync
+    memory it had before the run (`last_synced`, `mirror_once`), so the next run
+    re-applies the source instead of reading the undo as the user's edits."""
 
     def __init__(self, deps: Deps, runner: SyncRunner) -> None:
         self._deps = deps
@@ -71,6 +74,7 @@ class UndoService:
         started_at = self._deps.clock.now()
         saved = self._deps.repos.syncs.get(original.sync_id)
         results: list[MemberResult] = []
+        memories: dict[str, tuple[PriorState, str | None]] = {}
         for m in original.members:
             if not snapshots.has_pre_write(run_id, m.member_id):
                 continue  # never written
@@ -86,9 +90,18 @@ class UndoService:
                 results.append(_changed(m.member_id))
                 continue
             group, member = _target(original.sync_id, saved, m.member_id, snap)
-            results.append(
-                await self._undo_member(undo_id, group, member, snap, m.verified_after)
+            result = await self._undo_member(
+                undo_id, group, member, snap, m.verified_after
             )
+            results.append(result)
+            prior = snapshots.get_prior_state(run_id, m.member_id)
+            if (
+                prior is not None
+                and _restored(result)
+                and not self._kept_by_later_run(original, m.member_id)
+            ):
+                memories[m.member_id] = (prior, snap.meta.playlist_id)
+        self._restore_memories(original.sync_id, memories)
 
         members = tuple(results)
         status = _undo_status(members)
@@ -125,6 +138,49 @@ class UndoService:
                 return True
         return False
 
+    def _kept_by_later_run(self, original: SyncRun, member_id: str) -> bool:
+        """A later sync or transfer run wrote to this member and wasn't undone
+        since: its memory must not be rolled back past it."""
+        snapshots = self._deps.repos.snapshots
+        undone: set[str] = set()
+        for run in self._deps.repos.runs.list_for_sync(original.sync_id):
+            if run.run_id == original.run_id:
+                return False
+            if run.kind is RunKind.UNDO:
+                mine = [r for r in run.members if r.member_id == member_id]
+                if run.undoes_run_id is not None and all(map(_restored, mine)):
+                    undone.add(run.undoes_run_id)
+                continue
+            if (
+                run.kind in _UNDOABLE_KINDS
+                and not run.dry_run
+                and run.run_id not in undone
+                and snapshots.has_pre_write(run.run_id, member_id)
+            ):
+                return True
+        return False
+
+    def _restore_memories(
+        self, sync_id: str, memories: dict[str, tuple[PriorState, str | None]]
+    ) -> None:
+        """Gives each restored member back its pre-run memory, unless it has
+        since been pointed at another playlist."""
+        group = self._deps.repos.syncs.get(sync_id)
+        if group is None or not memories:
+            return
+        updated = group
+        for m in group.members:
+            if m.member_id not in memories:
+                continue
+            prior, playlist_id = memories[m.member_id]
+            if m.playlist_id != playlist_id:
+                continue
+            updated = updated.with_member(
+                replace(m, last_synced=prior.last_synced, mirror_once=prior.mirror_once)
+            )
+        if updated != group:
+            self._deps.repos.syncs.save(updated)
+
     async def _undo_member(
         self,
         undo_id: str,
@@ -146,8 +202,15 @@ class UndoService:
         if verified_after is not None and current.track_ids != verified_after:
             return _changed(mid)
         caps = connector.capabilities
+        # Undo restores the snapshot exactly: a strict mirror.
         plan = plan_member(
-            mid, current, snap.track_ids, snap.meta.draft(), caps, SyncMode.FULL
+            mid,
+            current,
+            snap.track_ids,
+            snap.meta.draft(),
+            caps,
+            SyncMode.FULL,
+            mirror=True,
         )
         if effective_mode(SyncMode.FULL, caps) is SyncMode.ADD_ONLY:
             # The planner's add-only flags work on track ids (a set); undo must
@@ -188,6 +251,12 @@ def _target(
     )
     group = SyncGroup(sync_id, meta.name, Direction.ONE_WAY, (source, member))
     return group, member
+
+
+def _restored(result: MemberResult) -> bool:
+    """The member now matches its pre-write snapshot (as far as it can)."""
+    ok = (MemberStatus.APPLIED, MemberStatus.NOTHING_TO_DO)
+    return result.status in ok and result.mismatch is None
 
 
 def _changed(member_id: str) -> MemberResult:

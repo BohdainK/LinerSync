@@ -1,10 +1,13 @@
 """Transfer routes: one playlist, many playlists, and the bulk estimate."""
 
+from dataclasses import replace
+
 from fastapi import APIRouter, Depends, HTTPException
 
+from linersync.application.picks import remember_picks
 from linersync.application.runner import SyncRunner
 from linersync.application.transfer import BulkItem, TransferService
-from linersync.domain.jobs import BulkTransferJob, TransferJob
+from linersync.domain.jobs import BulkTransferJob, JobStatus, TransferJob
 from linersync.domain.tracks import ServiceId
 from linersync.ports.errors import ConnectorError
 from linersync.server.api.common import (
@@ -12,18 +15,25 @@ from linersync.server.api.common import (
     check_destinations,
     check_source,
     connector_failed,
+    display_name,
+    invalid,
+    pick_tuples,
 )
 from linersync.server.api.schemas import (
     BulkItemIn,
     BulkTransferIn,
     EstimateIn,
     EstimateOut,
+    FromPreviewIn,
     JobOut,
     PlaylistOut,
     TransferIn,
 )
 from linersync.server.auth import require_session
 from linersync.server.state import AppServices
+
+NOT_A_PREVIEW = "That is not a finished preview of a transfer"
+PREVIEW_INCOMPLETE = "The preview did not finish for every playlist; preview again"
 
 router = APIRouter(prefix="/api/transfers", dependencies=[Depends(require_session)])
 
@@ -45,8 +55,16 @@ async def transfer(body: TransferIn, services: Services) -> JobOut:
         ServiceId(body.destination),
         body.dry_run,
     )
-    job = services.jobs.submit(request, f"Transfer to {destination}")
+    job = services.jobs.submit(request, _transfer_label(destination))
     return JobOut.of(job)
+
+
+def _transfer_label(destination: str) -> str:
+    return f"Transfer to {destination}"
+
+
+def _bulk_label(playlists: int) -> str:
+    return f"Transfer {playlists} playlist{'' if playlists == 1 else 's'}"
 
 
 @router.post("/bulk", status_code=202)
@@ -62,9 +80,38 @@ async def bulk_transfer(body: BulkTransferIn, services: Services) -> JobOut:
         for item in body.items
         for destination in item.destination_services
     )
-    n = len(body.items)
-    label = f"Transfer {n} playlist{'' if n == 1 else 's'}"
-    job = services.jobs.submit(BulkTransferJob(transfers), label)
+    job = services.jobs.submit(BulkTransferJob(transfers), _bulk_label(len(body.items)))
+    return JobOut.of(job)
+
+
+@router.post("/from-preview", status_code=202)
+async def from_preview(body: FromPreviewIn, services: Services) -> JobOut:
+    """Start the real transfer for a finished preview, reusing its matches and
+    applying the person's swaps."""
+    preview = services.job_store.get(body.preview_job_id)
+    request = None if preview is None else preview.request
+    if preview is None or not isinstance(request, TransferJob | BulkTransferJob):
+        raise invalid(NOT_A_PREVIEW)
+    transfers = (
+        request.transfers if isinstance(request, BulkTransferJob) else (request,)
+    )
+    if not all(t.dry_run for t in transfers):
+        raise invalid(NOT_A_PREVIEW)
+    if preview.status is not JobStatus.SUCCEEDED or len(preview.run_ids) != len(
+        transfers
+    ):
+        raise HTTPException(status_code=409, detail=PREVIEW_INCOMPLETE)
+    real = tuple(
+        replace(t, dry_run=False, preview_run_id=run_id)
+        for t, run_id in zip(transfers, preview.run_ids, strict=True)
+    )
+    remember_picks(services.repos.matches, pick_tuples(body.picks))
+    if isinstance(request, BulkTransferJob):
+        playlists = len({(t.source_service, t.playlist_id) for t in real})
+        job = services.jobs.submit(BulkTransferJob(real), _bulk_label(playlists))
+    else:
+        destination = display_name(services, real[0].destination)
+        job = services.jobs.submit(real[0], _transfer_label(destination))
     return JobOut.of(job)
 
 

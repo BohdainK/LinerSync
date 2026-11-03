@@ -1,10 +1,11 @@
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from unittest.mock import ANY
 
 import pytest
 from hypothesis import given
-from hypothesis.strategies import lists, sampled_from, sets
+from hypothesis.strategies import booleans, lists, sampled_from, sets, tuples
 
 from linersync.domain.capabilities import Capability
 from linersync.domain.matching.types import (
@@ -62,12 +63,18 @@ DEFAULT_MATCHES: dict[TrackKey, MatchDecision] = {
 }
 
 
-def last(*pairs: tuple[str, str]) -> MemberState:
+def last(
+    *pairs: tuple[str, str],
+    order: Sequence[str] = (),
+    pinned: Sequence[str] = (),
+) -> MemberState:
     return MemberState(
         entries=tuple(SyncedEntry(key(s), t) for s, t in pairs),
         draft=PlaylistDraft("Mix"),
         version_token=None,
         synced_at=NOW,
+        target_order=tuple(order),
+        pinned=tuple(pinned),
     )
 
 
@@ -80,15 +87,11 @@ def request(
     decisions: Mapping[TrackKey, MatchDecision] | None = None,
     last_synced: MemberState | None = None,
     target_name: str = "Mix",
+    mirror: bool = False,
 ) -> PlanRequest:
     g = group(destinations=[(DST, f"A{i}", m) for i, m in enumerate(modes)])
-    if last_synced is not None:
-        for d in g.destinations:
-            g = g.with_member(
-                SyncMember(
-                    d.member_id, d.service, d.playlist_id, d.role, d.mode, last_synced
-                )
-            )
+    for d in g.destinations:
+        g = g.with_member(replace(d, last_synced=last_synced, mirror_once=mirror))
     snaps: dict[str, PlaylistSnapshot | None] = {"src": snapshot(SRC, "P1", source)}
     for d in g.destinations:
         snaps[d.member_id] = (
@@ -105,7 +108,7 @@ def request(
 
 
 def test_full_mirror_adds_then_reorders_then_removes() -> None:
-    p = plan_sync(request(["a", "b", "c"], ["A", "X"])).for_member("dst0")
+    p = plan_sync(request(["a", "b", "c"], ["A", "X"], mirror=True)).for_member("dst0")
     assert [type(o) for o in p.operations] == [AddTracks, Reorder, RemoveTracks]
     ops = p.operations
     assert isinstance(ops[0], AddTracks) and ops[0].track_ids == ("B", "C")
@@ -380,7 +383,12 @@ def test_plan_sync_uses_last_synced_draft() -> None:
 
 
 def test_no_reorder_capability_records_not_made() -> None:
-    req = request(["a", "b"], ["B", "A", "X"], caps=ALL_CAPS - {Capability.REORDER})
+    req = request(
+        ["a", "b"],
+        ["B", "A", "X"],
+        caps=ALL_CAPS - {Capability.REORDER},
+        last_synced=last(("a", "A"), ("b", "B"), ("x", "X")),
+    )
     p = plan_sync(req).for_member("dst0")
     assert [type(o) for o in p.operations] == [RemoveTracks]
     assert isinstance(p.operations[0], RemoveTracks)
@@ -391,7 +399,10 @@ def test_no_reorder_capability_records_not_made() -> None:
 
 def test_no_reorder_capability_same_order_is_quiet() -> None:
     req = request(
-        ["a", "b", "c"], ["A", "X", "B"], caps=ALL_CAPS - {Capability.REORDER}
+        ["a", "b", "c"],
+        ["A", "X", "B"],
+        caps=ALL_CAPS - {Capability.REORDER},
+        last_synced=last(("a", "A"), ("b", "B"), ("x", "X")),
     )
     p = plan_sync(req).for_member("dst0")
     assert [type(o) for o in p.operations] == [AddTracks, RemoveTracks]
@@ -402,7 +413,12 @@ def test_no_reorder_capability_same_order_is_quiet() -> None:
 
 
 def test_one_to_many_independent_modes() -> None:
-    req = request(["a", "b", "c"], ["A", "X"], modes=[SyncMode.FULL, SyncMode.ADD_ONLY])
+    req = request(
+        ["a", "b", "c"],
+        ["A", "X"],
+        modes=[SyncMode.FULL, SyncMode.ADD_ONLY],
+        mirror=True,
+    )
     plan = plan_sync(req)
     assert [p.member_id for p in plan.member_plans] == ["dst0", "dst1"]
     assert plan.sync_id == "s1"
@@ -435,6 +451,326 @@ def test_repeats_survive_planning() -> None:
     assert p.operations[0].track_ids == ("A", "B", "A")
 
 
+def test_full_keeps_song_user_deleted() -> None:
+    req = request(
+        ["a", "b", "c"],
+        ["A", "C"],
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C"), order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.operations == ()
+    assert p.expected_after == ("A", "C")
+    assert p.user_removed == (SyncedEntry(key("b"), "B"),)
+    assert SyncedEntry(key("b"), "B") in p.synced
+
+
+def test_full_keeps_song_user_added() -> None:
+    req = request(
+        ["a", "b", "c"],
+        ["A", "X", "B", "C"],
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C"), order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.operations == ()
+    assert p.expected_after == ("A", "X", "B", "C")
+    assert p.user_added == ("X",)
+    assert p.pinned == ()
+
+
+def test_full_removes_song_removed_from_source() -> None:
+    req = request(
+        ["a", "c"],
+        ["A", "B", "C"],
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C"), order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    removals = [o for o in p.operations if isinstance(o, RemoveTracks)]
+    assert len(removals) == 1 and [r.track_id for r in removals[0].removals] == ["B"]
+    assert p.expected_after == ("A", "C")
+    assert p.user_added == ()
+    assert _apply(["A", "B", "C"], p.operations) == p.expected_after
+
+
+def test_full_keeps_user_duplicate_of_owned_song() -> None:
+    req = request(
+        ["a", "b"],
+        ["A", "A", "B"],
+        last_synced=last(("a", "A"), ("b", "B"), order=["A", "B"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert not any(isinstance(o, RemoveTracks) for o in p.operations)
+    assert p.user_added == ("A",)
+    assert p.expected_after == ("A", "A", "B")
+
+    # the sync's copy still follows the source: removed when the source drops it
+    gone = request(
+        ["b"],
+        ["A", "A", "B"],
+        last_synced=last(("a", "A"), ("b", "B"), order=["A", "B"]),
+    )
+    p2 = plan_sync(gone).for_member("dst0")
+    removed = [
+        r.track_id
+        for o in p2.operations
+        if isinstance(o, RemoveTracks)
+        for r in o.removals
+    ]
+    assert removed == ["A"]
+    assert p2.user_added == ("A",)
+    assert sorted(p2.expected_after) == ["A", "B"]
+
+
+def test_full_keeps_user_order_and_takes_source_reorder() -> None:
+    pairs = [("a", "A"), ("b", "B"), ("c", "C"), ("d", "D")]
+    req = request(
+        ["a", "b", "d", "c"],
+        ["A", "C", "D", "B"],
+        decisions={key("d"): matched("D")},
+        last_synced=last(*pairs, order=["A", "B", "C", "D"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.expected_after == ("A", "D", "C", "B")
+    assert p.pinned == ("B",)
+    assert [type(o) for o in p.operations] == [Reorder]
+    assert _apply(["A", "C", "D", "B"], p.operations) == p.expected_after
+
+    # the pin is remembered on the next run
+    again = request(
+        ["a", "b", "d", "c"],
+        ["A", "D", "C", "B"],
+        decisions={key("d"): matched("D")},
+        last_synced=last(*pairs, order=["A", "D", "C", "B"], pinned=["B"]),
+    )
+    p2 = plan_sync(again).for_member("dst0")
+    assert p2.operations == ()
+    assert p2.pinned == ("B",)
+
+
+def test_swap_replaces_owned_song_in_place() -> None:
+    pairs = [("a", "A"), ("b", "B"), ("c", "C")]
+    req = request(
+        ["a", "b", "c"],
+        ["A", "B", "C"],
+        decisions={key("b"): matched("B9")},
+        last_synced=last(*pairs, order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.expected_after == ("A", "B9", "C")
+    removed = [
+        r.track_id
+        for o in p.operations
+        if isinstance(o, RemoveTracks)
+        for r in o.removals
+    ]
+    assert removed == ["B"]
+    assert p.user_added == ()
+    assert _apply(["A", "B", "C"], p.operations) == p.expected_after
+
+    # the user had moved B to the end: B9 takes B's place there
+    moved_b = request(
+        ["a", "b", "c"],
+        ["A", "C", "B"],
+        decisions={key("b"): matched("B9")},
+        last_synced=last(*pairs, order=["A", "B", "C"]),
+    )
+    p2 = plan_sync(moved_b).for_member("dst0")
+    assert p2.expected_after == ("A", "C", "B9")
+    assert p2.pinned == ("B9",)
+    assert p2.user_added == ()
+    assert _apply(["A", "C", "B"], p2.operations) == p2.expected_after
+
+
+def test_pick_after_deleting_wrong_version_adds_the_pick() -> None:
+    # The user deleted B (the wrong version) on the destination, then picked B9.
+    pairs = [("a", "A"), ("b", "B"), ("c", "C")]
+    picked = Matched("B9", 1.0, (), MatchVia.REMEMBERED)
+    req = request(
+        ["a", "b", "c"],
+        ["A", "C"],
+        decisions={key("b"): picked},
+        last_synced=last(*pairs, order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert [type(o) for o in p.operations] == [AddTracks, Reorder]
+    assert p.expected_after == ("A", "B9", "C")
+    assert p.user_removed == ()
+    assert SyncedEntry(key("b"), "B9") in p.synced
+    assert SyncedEntry(key("b"), "B") not in p.synced
+    assert _apply(["A", "C"], p.operations) == p.expected_after
+
+
+def test_new_match_after_deletion_keeps_song_deleted() -> None:
+    # Not the user's pick (a fresh scored match): the deletion stands.
+    pairs = [("a", "A"), ("b", "B"), ("c", "C")]
+    for decision in (matched("B9"), Matched("B", 1.0, (), MatchVia.REMEMBERED)):
+        req = request(
+            ["a", "b", "c"],
+            ["A", "C"],
+            decisions={key("b"): decision},
+            last_synced=last(*pairs, order=["A", "B", "C"]),
+        )
+        p = plan_sync(req).for_member("dst0")
+        assert p.operations == ()
+        assert p.expected_after == ("A", "C")
+        assert p.user_removed == (SyncedEntry(key("b"), "B"),)
+
+
+def test_legacy_state_keeps_unowned_songs_and_pins_nothing() -> None:
+    req = request(
+        ["a", "b"],
+        ["B", "A", "X", "C"],
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C")),
+    )
+    p = plan_sync(req).for_member("dst0")
+    removed = [
+        r.track_id
+        for o in p.operations
+        if isinstance(o, RemoveTracks)
+        for r in o.removals
+    ]
+    assert removed == ["C"]
+    assert p.user_added == ("X",)
+    assert p.pinned == ()
+    assert p.expected_after == ("A", "B", "X")
+    assert _apply(["B", "A", "X", "C"], p.operations) == p.expected_after
+
+
+def test_full_without_reorder_appends_and_keeps_user_order() -> None:
+    no_reorder = ALL_CAPS - {Capability.REORDER}
+    pairs = [("a", "A"), ("b", "B"), ("c", "C")]
+    req = request(
+        ["a", "b", "c", "d"],
+        ["A", "C", "B", "X"],
+        caps=no_reorder,
+        decisions={key("d"): matched("D")},
+        last_synced=last(*pairs, order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert [type(o) for o in p.operations] == [AddTracks]
+    assert p.expected_after == ("A", "C", "B", "X", "D")
+    assert p.pinned == ("B",)
+    assert p.user_added == ("X",)
+    assert p.not_made == ()
+
+    # a source reorder of unpinned songs can't be made: noted
+    moved_src = request(
+        ["c", "a", "b", "d"],
+        ["A", "C", "B", "X"],
+        caps=no_reorder,
+        decisions={key("d"): matched("D")},
+        last_synced=last(*pairs, order=["A", "B", "C"]),
+    )
+    p2 = plan_sync(moved_src).for_member("dst0")
+    assert not any(isinstance(o, Reorder) for o in p2.operations)
+    assert p2.expected_after == ("A", "C", "B", "X", "D")
+    assert p2.not_made == (ChangeNotMade("reorder", None, ANY),)
+
+
+def test_mirror_once_strict_mirrors() -> None:
+    req = request(
+        ["a", "b"],
+        ["B", "X", "A"],
+        last_synced=last(("a", "A"), ("b", "B"), order=["A", "B"]),
+        mirror=True,
+    )
+    p = plan_sync(req).for_member("dst0")
+    removed = [
+        r.track_id
+        for o in p.operations
+        if isinstance(o, RemoveTracks)
+        for r in o.removals
+    ]
+    assert removed == ["X"]
+    assert p.expected_after == ("A", "B")
+    assert p.user_added == ()
+    assert p.pinned == ()
+
+
+def test_add_only_reports_user_lists() -> None:
+    req = request(
+        ["a", "b", "c", "d"],
+        ["A", "X", "C"],
+        modes=[SyncMode.ADD_ONLY],
+        decisions={key("d"): matched("D")},
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C"), order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert [type(o) for o in p.operations] == [AddTracks]
+    assert isinstance(p.operations[0], AddTracks)
+    assert p.operations[0].track_ids == ("D",)
+    assert p.expected_after == ("A", "X", "C", "D")
+    assert p.user_removed == (SyncedEntry(key("b"), "B"),)
+    assert p.user_added == ("X",)
+
+
+def _after_unresolved_b() -> MemberState:
+    """State saved after a run in which b needed attention (cur A,B,C)."""
+    req = request(
+        ["a", "b", "c"],
+        ["A", "B", "C"],
+        decisions={key("b"): NeedsAttention(("low confidence",), ())},
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C"), order=["A", "B", "C"]),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.held == (SyncedEntry(key("b"), "B"),)
+    assert SyncedEntry(key("b"), "B") not in p.synced
+    assert p.user_added == ()
+    assert p.operations == ()
+    return MemberState(
+        p.synced + p.held, p.draft, None, NOW, target_order=p.expected_after
+    )
+
+
+def test_unresolved_pair_held_then_source_drops_song() -> None:
+    req = request(["a", "c"], ["A", "B", "C"], last_synced=_after_unresolved_b())
+    p = plan_sync(req).for_member("dst0")
+    removed = [
+        r.track_id
+        for o in p.operations
+        if isinstance(o, RemoveTracks)
+        for r in o.removals
+    ]
+    assert removed == ["B"]
+    assert p.expected_after == ("A", "C")
+    assert p.user_added == ()
+
+
+def test_unresolved_pair_held_then_resolves_to_new_version() -> None:
+    req = request(
+        ["a", "b", "c"],
+        ["A", "B", "C"],
+        decisions={key("b"): matched("B9")},
+        last_synced=_after_unresolved_b(),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.expected_after == ("A", "B9", "C")
+    assert p.user_added == ()
+    assert _apply(["A", "B", "C"], p.operations) == p.expected_after
+
+
+def test_unresolved_pair_held_while_still_unresolved() -> None:
+    req = request(
+        ["a", "b", "c"],
+        ["A", "B", "C"],
+        decisions={key("b"): NeedsAttention(("low confidence",), ())},
+        last_synced=_after_unresolved_b(),
+    )
+    p = plan_sync(req).for_member("dst0")
+    assert p.operations == ()
+    assert p.user_added == ()
+    assert p.held == (SyncedEntry(key("b"), "B"),)
+
+
+def test_held_pair_dropped_when_target_gone() -> None:
+    req = request(
+        ["a", "b", "c"],
+        ["A", "C"],
+        decisions={key("b"): NeedsAttention(("low confidence",), ())},
+        last_synced=last(("a", "A"), ("b", "B"), ("c", "C"), order=["A", "B", "C"]),
+    )
+    assert plan_sync(req).for_member("dst0").held == ()
+
+
 def _apply(current: Sequence[str], ops: Sequence[object]) -> tuple[str, ...]:
     items = list(current)
     for op in ops:
@@ -457,6 +793,11 @@ def _apply(current: Sequence[str], ops: Sequence[object]) -> tuple[str, ...]:
     sets(sampled_from("ABCD")),
     sets(sampled_from(list(Capability))),
     sampled_from(list(SyncMode)),
+    lists(sampled_from("ABCD"), max_size=8),
+    lists(sampled_from("ABCD"), max_size=8),
+    lists(sampled_from("ABCD"), max_size=4),
+    lists(tuples(sampled_from("ABCD"), sampled_from("ABCD")), max_size=3),
+    booleans(),
 )
 def test_expected_after_matches_applied_ops(
     current: list[str],
@@ -464,6 +805,11 @@ def test_expected_after_matches_applied_ops(
     protected: set[str],
     caps: set[Capability],
     mode: SyncMode,
+    owned: list[str],
+    previous_order: list[str],
+    previous_pinned: list[str],
+    swaps: list[tuple[str, str]],
+    mirror: bool,
 ) -> None:
     snap = snapshot(DST, "A0", current)
     p = plan_member(
@@ -474,6 +820,11 @@ def test_expected_after_matches_applied_ops(
         frozenset(caps),
         mode,
         protected=frozenset(protected),
+        owned=owned,
+        previous_order=previous_order,
+        previous_pinned=previous_pinned,
+        swaps=swaps,
+        mirror=mirror,
     )
     assert _apply(current, p.operations) == p.expected_after
     removed = [
@@ -485,6 +836,9 @@ def test_expected_after_matches_applied_ops(
     assert not set(removed) & protected
     if mode is SyncMode.ADD_ONLY or Capability.REMOVE not in caps:
         assert not removed
+    if not mirror:
+        # never removes a song the sync didn't write
+        assert not Counter(removed) - Counter(owned)
     emission = [UpdateMetadata, AddTracks, Reorder, RemoveTracks]
     kinds = [emission.index(type(o)) for o in p.operations]
     assert kinds == sorted(kinds)

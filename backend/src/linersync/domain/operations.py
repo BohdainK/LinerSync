@@ -63,6 +63,16 @@ class MemberPlan:
     expected_after: tuple[str, ...]
     synced: tuple[SyncedEntry, ...]
     draft: PlaylistDraft
+    # Pairs the user deleted on the destination; not re-added.
+    user_removed: tuple[SyncedEntry, ...] = ()
+    # Destination ids the sync doesn't own; kept.
+    user_added: tuple[str, ...] = ()
+    # Owned ids the user moved; they keep their place.
+    pinned: tuple[str, ...] = ()
+    # Previous pairs of songs unresolved this run whose target is still on
+    # the destination: still the sync's, kept in the saved state but never
+    # used to seed matches (unlike `synced`).
+    held: tuple[SyncedEntry, ...] = ()
 
     @property
     def removal_count(self) -> int:

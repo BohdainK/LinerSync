@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 
@@ -57,10 +57,15 @@ class World:
         playlist_id: str = "P2",
         mode: SyncMode = SyncMode.FULL,
         sync_id: str = "s2",
+        mirror: bool = False,
     ) -> SyncGroup:
-        """Seed Spotify `playlist_id` with `target` and save a P1→it group."""
+        """Seed Spotify `playlist_id` with `target` and save a P1→it group.
+        `mirror` makes the first full run mirror the source (`mirror_once`):
+        otherwise the seeded songs count as the user's and are kept."""
         self.spotify.add_playlist(snapshot("spotify", playlist_id, target))
         g = group(destinations=[("spotify", playlist_id, mode)], sync_id=sync_id)
+        if mirror:
+            g = g.with_member(replace(g.destinations[0], mirror_once=True))
         self.repos.syncs.save(g)
         return g
 

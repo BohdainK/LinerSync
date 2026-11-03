@@ -26,6 +26,7 @@ class SyncJob:
     sync_id: str
     trigger: Trigger
     dry_run: bool = False
+    preview_run_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +35,17 @@ class PreviewJob:
 
 
 @dataclass(frozen=True, slots=True)
+class BulkPreviewJob:
+    groups: tuple[SyncGroup, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class TransferJob:
     source_service: ServiceId
     playlist_id: str
     destination: ServiceId
     dry_run: bool = False
+    preview_run_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,12 +59,33 @@ class UndoJob:
 
 
 @dataclass(frozen=True, slots=True)
+class CopyToSourceJob:
+    """Copy songs the user added on a destination into the source playlist.
+    An empty `track_ids` means every song they added there."""
+
+    sync_id: str
+    member_id: str
+    track_ids: tuple[str, ...]
+    dry_run: bool = True
+    preview_run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BackupJob:
     services: tuple[ServiceId, ...] = ()  # () = every set-up service
     trigger: Trigger = Trigger.MANUAL
 
 
-JobRequest = SyncJob | PreviewJob | TransferJob | BulkTransferJob | UndoJob | BackupJob
+JobRequest = (
+    SyncJob
+    | PreviewJob
+    | BulkPreviewJob
+    | TransferJob
+    | BulkTransferJob
+    | UndoJob
+    | BackupJob
+    | CopyToSourceJob
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +118,8 @@ class Job:
                 return "sync"
             case PreviewJob():
                 return "preview"
+            case BulkPreviewJob():
+                return "bulk_preview"
             case TransferJob():
                 return "transfer"
             case BulkTransferJob():
@@ -98,10 +128,14 @@ class Job:
                 return "undo"
             case BackupJob():
                 return "backup"
+            case CopyToSourceJob():
+                return "copy_to_source"
 
     @property
     def sync_id(self) -> str | None:
-        return self.request.sync_id if isinstance(self.request, SyncJob) else None
+        if isinstance(self.request, SyncJob | CopyToSourceJob):
+            return self.request.sync_id
+        return None
 
     @property
     def finished(self) -> bool:

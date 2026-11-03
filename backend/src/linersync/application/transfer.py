@@ -15,7 +15,7 @@ from linersync.domain.sync import (
     SyncMode,
     destination_member_id,
 )
-from linersync.domain.tracks import ServiceId
+from linersync.domain.tracks import ServiceId, TrackKey
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +46,7 @@ class TransferService:
         destination: ServiceId,
         *,
         dry_run: bool = False,
+        seed: Mapping[ServiceId, Mapping[TrackKey, str]] | None = None,
     ) -> SyncRun:
         """Copy one playlist to a new playlist on `destination`; not a saved sync."""
         sync_id = f"transfer-{self._deps.new_id()}"
@@ -72,6 +73,7 @@ class TransferService:
             trigger=Trigger.MANUAL,
             dry_run=dry_run,
             persist=False,
+            seed=seed,
         )
         return run
 

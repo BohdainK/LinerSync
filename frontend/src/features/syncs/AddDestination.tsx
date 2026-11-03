@@ -18,7 +18,7 @@ export function AddDestination({ sync, disabled }: { sync: SyncOut; disabled: bo
   function add() {
     if (service === null || selection.length !== 1) return;
     patch.mutate(
-      { add_destinations: [{ service, playlist_id: chosenPlaylistId(selection), mode }] },
+      { add_destinations: [{ service, playlist_id: chosenPlaylistId(selection), mode, existing: "merge" }] },
       {
         onSuccess: () => {
           setService(null);

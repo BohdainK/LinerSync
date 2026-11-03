@@ -10,6 +10,7 @@ from linersync.adapters.sqlite.repositories import sqlite_repositories
 from linersync.domain.attention import AttentionItem, AttentionKind
 from linersync.domain.matching.types import RememberedMatch
 from linersync.domain.runs import RunKind, RunStatus, SyncRun, Trigger
+from linersync.domain.sync import MemberState, PriorState, SyncedEntry
 from linersync.domain.tracks import ServiceId, TrackKey
 from linersync.ports.repositories import BreakerState, Repositories
 from tests.factories import NOW, group, snapshot, track
@@ -149,6 +150,25 @@ def test_pre_write_snapshot_roundtrip_including_none(make: Factory) -> None:
     assert repos.snapshots.get_pre_write("r1", "m1") == snap
     assert repos.snapshots.has_pre_write("r1", "m2")
     assert repos.snapshots.get_pre_write("r1", "m2") is None
+
+
+def test_pre_write_prior_state_roundtrip(make: Factory) -> None:
+    repos = make()
+    snap = snapshot("spotify", "P1", ["a"])
+    state = MemberState(
+        (SyncedEntry(track("spotify", "a").key, "a"),),
+        snap.meta.draft(),
+        None,
+        NOW,
+        target_order=("a",),
+    )
+    repos.snapshots.save_pre_write("r1", "m1", snap, PriorState(state, True))
+    repos.snapshots.save_pre_write("r1", "m2", snap, PriorState(None))
+    repos.snapshots.save_pre_write("r1", "m3", snap)  # legacy: nothing kept
+    assert repos.snapshots.get_prior_state("r1", "m1") == PriorState(state, True)
+    assert repos.snapshots.get_prior_state("r1", "m2") == PriorState(None, False)
+    assert repos.snapshots.get_prior_state("r1", "m3") is None
+    assert repos.snapshots.get_prior_state("r1", "nope") is None
 
 
 def test_remembered_match_roundtrip_including_not_on_service(make: Factory) -> None:

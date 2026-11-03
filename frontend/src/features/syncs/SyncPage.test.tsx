@@ -13,6 +13,7 @@ import {
   runSummaryOut,
   settingsOut,
   syncOut,
+  trackOut,
 } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
@@ -238,7 +239,7 @@ describe("SyncPage", () => {
     await userEvent.click(await screen.findByRole("radio", { name: /New playlist/ }));
     await userEvent.click(screen.getByRole("button", { name: "Add destination" }));
     await waitFor(() =>
-      expect(bodies).toEqual([{ add_destinations: [{ service: "deezer", playlist_id: null, mode: "full" }] }]),
+      expect(bodies).toEqual([{ add_destinations: [{ service: "deezer", playlist_id: null, mode: "full", existing: "merge" }] }]),
     );
   });
 
@@ -428,5 +429,135 @@ describe("SyncsPage", () => {
     renderWithProviders(<SyncsPage />);
     expect(await screen.findByText("No syncs yet")).toBeInTheDocument();
     expect(screen.getAllByRole("link").some((l) => l.getAttribute("href") === "/syncs/new")).toBe(true);
+  });
+
+  describe("destination edits", () => {
+    const gone = trackOut({ track_id: "s-gone", title: "Gone song" });
+    const mine = trackOut({ service: "tidal", track_id: "d-mine", title: "My own song" });
+    const edited = (o: Partial<ReturnType<typeof destinationOut>> = {}) =>
+      syncOut({ destinations: [destinationOut({ removed_by_you: [gone], added_by_you: [mine], ...o })] });
+    const copyJob = (id: string, status: "succeeded" | "running", runIds: string[]) =>
+      jobOut({ job_id: id, kind: "copy_to_source", label: `Copy ${id}`, status, run_ids: runIds });
+    const previewRun = runOut({
+      run_id: "copy-run",
+      kind: "copy_to_source",
+      dry_run: true,
+      members: [
+        {
+          member_id: "src",
+          service: "spotify",
+          playlist_id: "pl-spotify",
+          status: "dry_run" as const,
+          error: null,
+          rebuilt: false,
+          created_playlist_id: null,
+          operations: [],
+          not_made: [],
+          mismatch: null,
+          matches: [
+            {
+              source: trackOut({ service: "tidal", track_id: "d-mine", title: "My own song" }),
+              target: trackOut({ track_id: "s-mine", title: "My own song" }),
+              added: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    it("lists songs removed and added on the destination", async () => {
+      serve(edited());
+      renderSync();
+      const removed = await screen.findByRole("region", { name: "Removed on Tidal" });
+      expect(within(removed).getByText("Gone song")).toBeInTheDocument();
+      const added = screen.getByRole("region", { name: "Added on Tidal" });
+      expect(within(added).getByText("My own song")).toBeInTheDocument();
+    });
+
+    it("re-add posts the song and shows the job", async () => {
+      const { bodies, handler } = captureBodies(
+        "post",
+        "*/api/syncs/sync-1/destinations/member-2/re-add",
+        jobOut({ label: "Re-add Gone song" }),
+        202,
+      );
+      serve(edited(), [handler, http.get("*/api/jobs/job-1", () => HttpResponse.json(jobOut({ label: "Re-add Gone song" })))]);
+      renderSync();
+      await userEvent.click(await screen.findByRole("button", { name: "Re-add Gone song" }));
+      expect(await screen.findByText("Re-add Gone song", { selector: "span" })).toBeInTheDocument();
+      expect(bodies).toEqual([{ source_service: "spotify", source_track_id: "s-gone" }]);
+    });
+
+    it("copy all previews then copies with picks", async () => {
+      const bodies: unknown[] = [];
+      serve(edited(), [
+        http.post("*/api/syncs/sync-1/destinations/member-2/copy-to-source", async ({ request }) => {
+          const body = (await request.json()) as { dry_run: boolean };
+          bodies.push(body);
+          return HttpResponse.json(body.dry_run ? copyJob("c1", "succeeded", ["copy-run"]) : copyJob("c2", "succeeded", ["r-copy", "r-sync"]), {
+            status: 202,
+          });
+        }),
+        http.get("*/api/jobs/c1", () => HttpResponse.json(copyJob("c1", "succeeded", ["copy-run"]))),
+        http.get("*/api/jobs/c2", () => HttpResponse.json(copyJob("c2", "succeeded", ["r-copy", "r-sync"]))),
+        http.get("*/api/runs/copy-run", () => HttpResponse.json(previewRun)),
+        http.get("*/api/runs/r-copy", () => HttpResponse.json(runOut({ run_id: "r-copy", kind: "copy_to_source" }))),
+        http.get("*/api/runs/r-sync", () => HttpResponse.json(runOut({ run_id: "r-sync" }))),
+        http.post("*/api/runs/copy-run/alternatives", () =>
+          HttpResponse.json([
+            { track: trackOut({ track_id: "s-alt", title: "My own song live" }), confidence: 0.8, reasons: [] },
+          ]),
+        ),
+      ]);
+      renderSync();
+      await userEvent.click(await screen.findByRole("button", { name: "Copy all to source" }));
+      await userEvent.click(await screen.findByRole("button", { name: /^Change match for My own song/ }));
+      await userEvent.click(await screen.findByRole("button", { name: /^Use this/ }));
+      await userEvent.click(screen.getByRole("button", { name: "Copy to Spotify" }));
+      await waitFor(() => expect(bodies).toHaveLength(2));
+      expect(bodies[0]).toEqual({ track_ids: [], dry_run: true });
+      expect(bodies[1]).toEqual({
+        track_ids: [],
+        dry_run: false,
+        preview_job_id: "c1",
+        picks: [
+          { source_service: "tidal", source_track_id: "d-mine", target_service: "spotify", target_track_id: "s-alt" },
+        ],
+      });
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Copy to Spotify" })).not.toBeInTheDocument());
+    });
+
+    it("keeps the copy results after the refetch empties the added list", async () => {
+      serve(edited(), [
+        http.post("*/api/syncs/sync-1/destinations/member-2/copy-to-source", async ({ request }) => {
+          const body = (await request.json()) as { dry_run: boolean };
+          if (!body.dry_run) state.sync = edited({ added_by_you: [] });
+          return HttpResponse.json(
+            body.dry_run ? copyJob("c1", "succeeded", ["copy-run"]) : copyJob("c2", "succeeded", ["r-copy"]),
+            { status: 202 },
+          );
+        }),
+        http.get("*/api/jobs/c1", () => HttpResponse.json(copyJob("c1", "succeeded", ["copy-run"]))),
+        http.get("*/api/jobs/c2", () => HttpResponse.json(copyJob("c2", "succeeded", ["r-copy"]))),
+        http.get("*/api/runs/copy-run", () => HttpResponse.json(previewRun)),
+        http.get("*/api/runs/r-copy", () =>
+          HttpResponse.json({ ...previewRun, run_id: "r-copy", dry_run: false }),
+        ),
+      ]);
+      renderSync();
+      await userEvent.click(await screen.findByRole("button", { name: "Copy all to source" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Copy to Spotify" }));
+      await waitFor(() => expect(screen.queryByRole("region", { name: "Added on Tidal" })).not.toBeInTheDocument());
+      expect(screen.getByRole("article", { name: "Transfer result" })).toBeInTheDocument();
+      expect(screen.getByText("Copy c2", { selector: "span" })).toBeInTheDocument();
+    });
+
+    it("copy buttons hidden when the source can't take songs", async () => {
+      serve(edited({ can_copy_to_source: false }));
+      renderSync();
+      await screen.findByText("My own song");
+      expect(screen.queryByRole("button", { name: "Copy to source" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Copy all to source" })).not.toBeInTheDocument();
+    });
   });
 });

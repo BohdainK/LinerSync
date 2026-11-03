@@ -103,8 +103,9 @@ def referenced_keys(plan: SyncPlan, services: Mapping[str, ServiceId]) -> set[Tr
     lists only tracks the playlist already holds, so it is skipped."""
     keys: set[TrackKey] = set()
     for mp in plan.member_plans:
-        for entry in mp.synced:
+        for entry in mp.synced + mp.held:
             keys.add(entry.source_key)
+        keys.update(entry.source_key for entry in mp.user_removed)
         service = services.get(mp.member_id)
         if service is None:
             continue
@@ -115,7 +116,8 @@ def referenced_keys(plan: SyncPlan, services: Mapping[str, ServiceId]) -> set[Tr
             elif isinstance(op, RemoveTracks):
                 ids.extend(r.track_id for r in op.removals)
         ids.extend(n.track_id for n in mp.not_made if n.track_id is not None)
-        ids.extend(entry.target_track_id for entry in mp.synced)
+        ids.extend(entry.target_track_id for entry in mp.synced + mp.held)
+        ids.extend(mp.user_added)
         keys.update(TrackKey(service, tid) for tid in ids)
     for u in plan.unresolved:
         keys.add(u.source.key)

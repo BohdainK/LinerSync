@@ -161,6 +161,13 @@ class DestinationIn(BaseModel):
     service: str
     playlist_id: str | None = None
     mode: SyncMode = SyncMode.FULL
+    # An existing playlist: keep its songs (merge) or make it match (overwrite).
+    existing: Literal["merge", "overwrite"] = "merge"
+
+
+class ReAddIn(BaseModel):
+    source_service: str
+    source_track_id: str
 
 
 class MemberIn(BaseModel):
@@ -168,11 +175,37 @@ class MemberIn(BaseModel):
     playlist_id: str
 
 
+class PickChoiceIn(BaseModel):
+    source_service: str
+    source_track_id: str
+    target_service: str
+    target_track_id: str
+
+
+class SyncStartIn(BaseModel):
+    """Run the new sync for real from this preview run, applying these swaps."""
+
+    preview_run_id: str
+    picks: list[PickChoiceIn] = Field(default_factory=list)
+
+
+class CopyToSourceIn(BaseModel):
+    """Copy songs the user added on a destination into the source: first a
+    dry run, then the real copy from that preview (with the person's swaps).
+    No `track_ids` means every song they added there."""
+
+    track_ids: list[str] = Field(default_factory=list)
+    dry_run: bool = True
+    preview_job_id: str | None = None
+    picks: list[PickChoiceIn] = Field(default_factory=list)
+
+
 class SyncCreateIn(BaseModel):
     name: SyncName
     source: MemberIn
     destinations: list[DestinationIn] = Field(min_length=1, max_length=10)
     schedule: str | None = None
+    start: SyncStartIn | None = None
 
 
 class SyncBulkIn(BaseModel):
@@ -289,32 +322,6 @@ class SourceOut(BaseModel):
     playlist_id: str | None
 
 
-class DestinationOut(BaseModel):
-    member_id: str
-    service: str
-    playlist_id: str | None
-    mode: SyncMode
-    effective_mode: SyncMode
-    limitations: list[str]
-    last_synced_at: datetime | None
-    missing: bool
-
-
-class SyncOut(BaseModel):
-    sync_id: str
-    name: str
-    status: str
-    pause_reason: str | None
-    schedule: str | None
-    effective_schedule: str
-    next_run_at: datetime | None
-    source: SourceOut
-    destinations: list[DestinationOut]
-    active_job: JobOut | None
-    last_run: RunSummaryOut | None
-
-
-# -- runs -------------------------------------------------------------------
 class TrackOut(BaseModel):
     service: str
     track_id: str
@@ -343,6 +350,35 @@ class TrackOut(BaseModel):
         )
 
 
+class DestinationOut(BaseModel):
+    member_id: str
+    service: str
+    playlist_id: str | None
+    mode: SyncMode
+    effective_mode: SyncMode
+    limitations: list[str]
+    last_synced_at: datetime | None
+    missing: bool
+    removed_by_you: list[TrackOut] = []
+    added_by_you: list[TrackOut] = []
+    can_copy_to_source: bool = False
+
+
+class SyncOut(BaseModel):
+    sync_id: str
+    name: str
+    status: str
+    pause_reason: str | None
+    schedule: str | None
+    effective_schedule: str
+    next_run_at: datetime | None
+    source: SourceOut
+    destinations: list[DestinationOut]
+    active_job: JobOut | None
+    last_run: RunSummaryOut | None
+
+
+# -- runs -------------------------------------------------------------------
 OperationType = Literal[
     "create_playlist", "update_metadata", "add_tracks", "reorder", "remove_tracks"
 ]
@@ -436,6 +472,18 @@ class BulkItemIn(BaseModel):
 class BulkTransferIn(BaseModel):
     items: list[BulkItemIn] = Field(min_length=1)
     dry_run: bool = False
+
+
+class FromPreviewIn(BaseModel):
+    preview_job_id: str
+    picks: list[PickChoiceIn] = Field(default_factory=list)
+
+
+class AlternativesIn(BaseModel):
+    member_id: str
+    source_service: str
+    source_track_id: str
+    query: str | None = None
 
 
 class EstimateIn(BaseModel):

@@ -7,7 +7,7 @@ import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatChangeCounts, formatDateTime } from "@/lib/format";
+import { formatChangeCounts, formatDateTime, runKindLabel } from "@/lib/format";
 import { linkClass } from "@/lib/styles";
 
 export function RunHistory({ syncId }: { syncId: string }) {
@@ -39,7 +39,7 @@ export function RunHistory({ syncId }: { syncId: string }) {
                   </Link>
                 </TableCell>
                 <TableCell>
-                  {r.kind} · {r.trigger} {r.dry_run ? <Badge variant="outline">Dry run</Badge> : null}
+                  {runKindLabel(r.kind)} · {r.trigger} {r.dry_run ? <Badge variant="outline">Dry run</Badge> : null}
                 </TableCell>
                 <TableCell>
                   <StatusBadge kind="run" status={r.status} />
