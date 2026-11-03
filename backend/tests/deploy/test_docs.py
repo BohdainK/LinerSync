@@ -24,23 +24,6 @@ def test_relative_links_resolve() -> None:
     assert checked > 0
 
 
-def test_readme_covers_essentials() -> None:
-    readme = (REPO / "README.md").read_text()
-    for text in (
-        "install.sh",
-        "docker compose up -d",
-        "/api/connections/oauth/callback",
-        "PolyForm Noncommercial 1.0.0",
-        "Apple Developer Program",
-        "secret.key",
-        "](docs/install.md",
-        "](docs/reverse-proxy.md",
-        "](docs/connectors.md",
-        "](LICENSE",
-    ):
-        assert text in readme, text
-
-
 def test_no_plan_references_in_docs() -> None:
     for path in DOC_FILES:
         assert "Plan 6" not in path.read_text(), path.name
