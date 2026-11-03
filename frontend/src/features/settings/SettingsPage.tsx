@@ -1,18 +1,23 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { api, call, fieldErrors, type ApiError } from "@/api/client";
+import { api, call, errorMessage, fieldErrors, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { SettingsIn, SettingsOut } from "@/api/types";
+import { CronPicker } from "@/components/CronPicker";
 import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
 import { ExternalLink } from "@/components/ExternalLink";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { DONATE_URL } from "@/config";
+import { useBulkPatchSyncs } from "@/features/syncs/useSync";
+import { DefaultScheduleDialog, type DefaultScheduleImpact } from "./DefaultScheduleDialog";
 import { useSettings } from "./useSettings";
 
 const DEFAULT_BACKUP_SCHEDULE = "0 3 * * *";
+
+const sameCron = (a: string, b: string) => a.trim().replace(/\s+/g, " ") === b.trim().replace(/\s+/g, " ");
 
 function Field(props: { label: string; error?: string | undefined; children: (id: string) => ReactNode }) {
   const id = useId();
@@ -86,24 +91,64 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
     mutationFn: (body) => call(api.PUT("/api/settings", { body })),
     onSuccess: (s) => {
       queryClient.setQueryData(keys.settings, s);
+      // Syncs on the default now show a different schedule and next run.
+      void queryClient.invalidateQueries({ queryKey: keys.syncs });
+      void queryClient.invalidateQueries({ queryKey: keys.home });
       toast("Saved");
     },
   });
+  const bulk = useBulkPatchSyncs();
+  const [impact, setImpact] = useState<DefaultScheduleImpact | null>(null);
+  const [checking, setChecking] = useState(false);
   const invalid = NUMBER_FIELDS.some((f) => numbers[f.key].trim() === "" || Number.isNaN(Number(numbers[f.key])));
   const errors = save.isError ? fieldErrors(save.error) : {};
   const known = ["default_schedule", "backup_schedule", ...NUMBER_FIELDS.map((f) => f.key)];
   const unmapped = save.isError && !known.some((k) => k in errors);
 
-  function submit() {
+  function body(): SettingsIn {
     const parsed = Object.fromEntries(
       NUMBER_FIELDS.map((f) => [f.key, Number(numbers[f.key]) / (f.percent ? 100 : 1)]),
     ) as Record<NumberField["key"], number>;
-    save.mutate({
+    return {
       ...parsed,
       default_schedule: v.default_schedule.trim(),
       backup_schedule: v.backupOn ? v.backup_schedule.trim() : null,
-    });
+    };
   }
+
+  /** Asks first when a new default would move syncs that run on the old one. */
+  async function submit() {
+    const next = v.default_schedule.trim();
+    if (!next || sameCron(next, settings.default_schedule)) return save.mutate(body());
+    setChecking(true);
+    try {
+      const all = await queryClient.fetchQuery({ queryKey: keys.syncs, queryFn: () => call(api.GET("/api/syncs")) });
+      const found = {
+        following: all.filter((s) => s.schedule === null),
+        sameCron: all.filter((s) => s.schedule !== null && sameCron(s.schedule, settings.default_schedule)),
+      };
+      if (found.following.length + found.sameCron.length === 0) save.mutate(body());
+      else {
+        bulk.reset();
+        setImpact(found);
+      }
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  /** Patches the affected syncs first, then saves; any failed patch stops the save so no sync moves unasked. */
+  function resolve(syncIds: string[], schedule: string | null) {
+    const saveSettings = () => save.mutate(body(), { onSuccess: () => setImpact(null) });
+    if (syncIds.length === 0) return saveSettings();
+    bulk.mutate(
+      { syncIds, body: { schedule } },
+      { onSuccess: ({ failed }) => (failed.length === 0 ? saveSettings() : undefined) },
+    );
+  }
+  const bulkFailure = bulk.data?.failed[0]?.error ?? bulk.error;
 
   const numberField = (f: NumberField) => (
     <Field key={f.key} label={f.label} error={errors[f.key]}>
@@ -126,17 +171,16 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
       className="max-w-xl space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        submit();
+        void submit();
       }}
     >
       <Field label="Default sync schedule" error={errors["default_schedule"]}>
         {(id) => (
-          <Input
+          <CronPicker
             id={id}
-            className="max-w-xs font-mono"
             value={v.default_schedule}
-            aria-invalid={errors["default_schedule"] ? true : undefined}
-            onChange={(e) => set("default_schedule", e.target.value)}
+            invalid={Boolean(errors["default_schedule"])}
+            onChange={(c) => set("default_schedule", c ?? "")}
           />
         )}
       </Field>
@@ -153,13 +197,12 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
       </div>
       <Field label="Backup schedule" error={errors["backup_schedule"]}>
         {(id) => (
-          <Input
+          <CronPicker
             id={id}
-            className="max-w-xs font-mono"
             disabled={!v.backupOn}
             value={v.backup_schedule}
-            aria-invalid={errors["backup_schedule"] ? true : undefined}
-            onChange={(e) => set("backup_schedule", e.target.value)}
+            invalid={Boolean(errors["backup_schedule"])}
+            onChange={(c) => set("backup_schedule", c ?? "")}
           />
         )}
       </Field>
@@ -168,9 +211,21 @@ function SettingsForm({ settings }: { settings: SettingsOut }) {
         Schedules use {settings.timezone}. Change it with LINERSYNC_TIMEZONE.
       </p>
       {unmapped ? <ErrorNotice error={save.error} /> : null}
-      <Button type="submit" disabled={save.isPending || invalid}>
+      <Button type="submit" disabled={save.isPending || checking || invalid}>
         Save
       </Button>
+      {impact ? (
+        <DefaultScheduleDialog
+          impact={impact}
+          from={settings.default_schedule}
+          to={v.default_schedule.trim()}
+          pending={bulk.isPending || save.isPending}
+          error={bulkFailure ?? (save.isError ? save.error : null)}
+          onOpenChange={(open) => (open ? undefined : setImpact(null))}
+          onUpdate={() => resolve(impact.sameCron.map((s) => s.sync_id), null)}
+          onKeep={() => resolve(impact.following.map((s) => s.sync_id), settings.default_schedule)}
+        />
+      ) : null}
     </form>
   );
 }

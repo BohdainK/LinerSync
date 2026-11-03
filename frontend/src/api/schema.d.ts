@@ -106,6 +106,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/attention/{item_id}/similar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Similar
+         * @description Search the target service more loosely and keep what scores well enough
+         *     as extra candidates, so they can be picked.
+         */
+        post: operations["similar_api_attention__item_id__similar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -721,6 +742,27 @@ export interface paths {
         put?: never;
         /** Undo Run */
         post: operations["undo_run_api_runs__run_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/unresolved/{index}/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unresolved Attention
+         * @description The open "song didn't match" item for the run's `index`th unresolved
+         *     song, made now when the run left none (dry runs and transfers don't).
+         */
+        post: operations["unresolved_attention_api_runs__run_id__unresolved__index__attention_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1499,6 +1541,16 @@ export interface components {
             /** Password */
             password: string;
         };
+        /**
+         * MatchPairOut
+         * @description A source song and the destination song it was matched to.
+         */
+        MatchPairOut: {
+            /** Added */
+            added: boolean;
+            source: components["schemas"]["TrackOut"];
+            target: components["schemas"]["TrackOut"];
+        };
         /** MatchingOut */
         MatchingOut: {
             /** Not On Service */
@@ -1521,6 +1573,11 @@ export interface components {
             created_playlist_id: string | null;
             /** Error */
             error: string | null;
+            /**
+             * Matches
+             * @default []
+             */
+            matches: components["schemas"]["MatchPairOut"][];
             /** Member Id */
             member_id: string;
             mismatch: components["schemas"]["MismatchOut"] | null;
@@ -1995,6 +2052,8 @@ export interface components {
             album: string | null;
             /** Artists */
             artists: string[];
+            /** Artwork Url */
+            artwork_url?: string | null;
             /** Duration Ms */
             duration_ms: number | null;
             /** Isrc */
@@ -2238,6 +2297,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    similar_api_attention__item_id__similar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttentionOut"];
                 };
             };
             /** @description Validation Error */
@@ -3374,6 +3464,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unresolved_attention_api_runs__run_id__unresolved__index__attention_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttentionOut"];
                 };
             };
             /** @description Validation Error */

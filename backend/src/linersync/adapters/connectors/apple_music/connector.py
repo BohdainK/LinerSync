@@ -211,6 +211,7 @@ class AppleMusicConnector:
                     isrc=f.get("isrc") or None,
                     url=f.get("url") or None,
                     artwork_hash=artwork_hash,
+                    fallback_artwork=f.get("artwork"),
                 )
             )
             for s, f, artwork_hash in zip(songs, found, hashes, strict=True)

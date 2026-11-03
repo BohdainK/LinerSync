@@ -358,3 +358,10 @@ def test_strict_decode_turns_any_exception_into_value_error() -> None:
 
 def test_lenient_decode_is_unchanged() -> None:
     assert decode(_Strict, {"name": None, "count": "1"}) == _Strict(None, "1")  # type: ignore[arg-type]
+
+
+def test_track_artwork_url_round_trips_and_old_bodies_default_to_none() -> None:
+    t = Track(ServiceId("spotify"), "t1", "Song", ("A",), artwork_url="https://i/a")
+    assert loads(Track, dumps(Track, t)).artwork_url == "https://i/a"
+    old = '{"service":"spotify","track_id":"t1","title":"Song","artists":["A"]}'
+    assert loads(Track, old).artwork_url is None

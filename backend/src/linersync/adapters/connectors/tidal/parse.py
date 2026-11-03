@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from linersync.adapters.connectors.kit.parsing import attributes, iso_datetime
+from linersync.adapters.connectors.kit.parsing import (
+    attributes,
+    display_image,
+    iso_datetime,
+)
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -82,10 +86,16 @@ def _cover_files(
     return _files(arts[0]) if arts else []
 
 
+def _album_files(
+    resource: Mapping[str, Any], included: Included
+) -> list[tuple[int, str]]:
+    albums = included.related(resource, "albums")
+    return _cover_files(albums[0], included) if albums else []
+
+
 def artwork_url(resource: Mapping[str, Any], included: Included) -> str | None:
     """The smallest cover file of the track's first album."""
-    albums = included.related(resource, "albums")
-    files = _cover_files(albums[0], included) if albums else []
+    files = _album_files(resource, included)
     return min(files)[1] if files else None
 
 
@@ -115,6 +125,7 @@ def parse_track(
         isrc=None if video else attrs.get("isrc"),
         artwork_hash=artwork_hash,
         url=f"https://tidal.com/browse/{'video' if video else 'track'}/{rid}",
+        artwork_url=display_image(_album_files(resource, included)),
     )
 
 

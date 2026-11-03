@@ -4,6 +4,7 @@ from linersync.adapters.connectors.youtube_music.parse import (
     ATV,
     SERVICE,
     context,
+    display_thumbnail_url,
     parse_account_name,
     parse_continuation,
     parse_duration,
@@ -60,6 +61,7 @@ def test_search_recorded() -> None:
     assert first.video_type == ATV
     assert first.set_video_id is None
     assert first.artwork_url and first.artwork_url.startswith("https://")
+    assert t.artwork_url == first.artwork_url
 
 
 def test_playlist_recorded() -> None:
@@ -181,3 +183,24 @@ def test_unlinked_co_artists_are_kept(
     song = parse_item(_row(*runs))
     assert song is not None
     assert song.track.artists == artists
+
+
+def test_playlist_tracks_have_artwork_url() -> None:
+    page = parse_playlist(load_fixture("youtube_music", "playlist"))
+    first = page.items[0]
+    assert first is not None
+    assert first.track.artwork_url and first.track.artwork_url.startswith("https://")
+
+
+def test_display_thumbnail_prefers_display_size() -> None:
+    def renderer(*widths: int) -> dict[str, object]:
+        thumbs = [{"url": f"https://t/{w}", "width": w, "height": w} for w in widths]
+        return {
+            "thumbnail": {
+                "musicThumbnailRenderer": {"thumbnail": {"thumbnails": thumbs}}
+            }
+        }
+
+    assert display_thumbnail_url(renderer(60, 120, 544)) == "https://t/544"
+    assert display_thumbnail_url(renderer(60, 120)) == "https://t/120"
+    assert display_thumbnail_url({}) is None

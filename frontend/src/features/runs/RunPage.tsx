@@ -7,20 +7,17 @@ import type { JobOut } from "@/api/types";
 import { ErrorNotice, QueryError } from "@/components/ErrorNotice";
 import { JobProgress } from "@/components/JobProgress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { UnresolvedItem } from "@/components/UnresolvedItem";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useServiceNames } from "@/features/pickers/useServiceNames";
 import { formatChangeCounts, formatDateTime } from "@/lib/format";
 import { linkClass } from "@/lib/styles";
 import { isActive, useCancelJob, useJob, useOnJobEnd } from "@/live/useJob";
-import { MemberSection } from "./MemberSection";
+import { RunResults } from "./RunResults";
 import { useRun } from "./useRun";
 
 export function RunPage() {
   const { runId = "" } = useParams();
   const queryClient = useQueryClient();
-  const nameOf = useServiceNames();
   const run = useRun(runId);
   const [undoJobId, setUndoJobId] = useState<string | null>(null);
   const undo = useMutation<JobOut, ApiError, void>({
@@ -70,14 +67,17 @@ export function RunPage() {
         </p>
         {r.error ? <p className="text-sm text-destructive">{r.error}</p> : null}
         {r.undoable ? (
-          <Button type="button" variant="outline" disabled={undo.isPending || (undoJob.data !== undefined && isActive(undoJob.data))} onClick={() => undo.mutate()}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={undo.isPending || (undoJob.data !== undefined && isActive(undoJob.data))}
+            onClick={() => undo.mutate()}
+          >
             Undo this run
           </Button>
         ) : null}
         {undo.error ? <ErrorNotice error={undo.error} /> : null}
-        {undoJob.data ? (
-          <JobProgress job={undoJob.data} onCancel={() => cancel.mutate(undoJob.data.job_id)} />
-        ) : null}
+        {undoJob.data ? <JobProgress job={undoJob.data} onCancel={() => cancel.mutate(undoJob.data.job_id)} /> : null}
         {undoJob.data?.run_ids[0] ? (
           <p className="text-sm">
             <Link className={linkClass} to={`/runs/${undoJob.data.run_ids[0]}`}>
@@ -87,23 +87,7 @@ export function RunPage() {
         ) : null}
       </header>
 
-      {r.members.map((m) => (
-        <MemberSection key={m.member_id} member={m} serviceName={m.service ? nameOf(m.service) : m.member_id} />
-      ))}
-
-      {r.unresolved.length > 0 ? (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Didn't match ({r.unresolved.length})</h2>
-          <ul className="space-y-3">
-            {r.unresolved.map((u, i) => (
-              <UnresolvedItem key={`${u.member_id}:${u.position}:${i}`} item={u} />
-            ))}
-          </ul>
-          <Link className={linkClass} to="/">
-            Resolve in Needs attention
-          </Link>
-        </section>
-      ) : null}
+      <RunResults run={r} />
     </div>
   );
 }

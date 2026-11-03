@@ -11,6 +11,7 @@ import {
   playlistOut,
   runOut,
   runSummaryOut,
+  settingsOut,
   syncOut,
 } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
@@ -178,13 +179,42 @@ describe("SyncPage", () => {
     const { bodies, handler } = captureBodies("patch", "*/api/syncs/sync-1", syncOut());
     serve(syncOut(), [handler]);
     renderSync();
-    await userEvent.click(await screen.findByRole("radio", { name: "Custom" }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Cron schedule" }), "0 * * * *");
+    const schedule = await screen.findByRole("combobox", { name: "Schedule" });
+    await userEvent.selectOptions(schedule, "Every week");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Day" }), "Friday");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Time" }), "18:30");
     await userEvent.click(screen.getByRole("button", { name: "Save schedule" }));
-    await waitFor(() => expect(bodies).toEqual([{ schedule: "0 * * * *" }]));
-    await userEvent.click(screen.getByRole("radio", { name: "Default (0 * * * *)" }));
+    await waitFor(() => expect(bodies).toEqual([{ schedule: "30 18 * * 5" }]));
+    await userEvent.selectOptions(schedule, "Default (Every hour)");
     await userEvent.click(screen.getByRole("button", { name: "Save schedule" }));
-    await waitFor(() => expect(bodies).toEqual([{ schedule: "0 * * * *" }, { schedule: null }]));
+    await waitFor(() => expect(bodies).toEqual([{ schedule: "30 18 * * 5" }, { schedule: null }]));
+  });
+
+  it("keeps an unusual cron editable as text", async () => {
+    serve(syncOut({ schedule: "0 3 1 1 *", effective_schedule: "0 3 1 1 *" }));
+    renderSync();
+    expect(await screen.findByRole("combobox", { name: "Schedule" })).toHaveDisplayValue("Custom (cron)");
+    expect(screen.getByRole("textbox", { name: "Cron schedule" })).toHaveValue("0 3 1 1 *");
+  });
+
+  it("schedules twice a month", async () => {
+    const { bodies, handler } = captureBodies("patch", "*/api/syncs/sync-1", syncOut());
+    serve(syncOut(), [handler]);
+    renderSync();
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Schedule" }), "Twice a month (1st and 15th)");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Time" }), "07:00");
+    await userEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+    await waitFor(() => expect(bodies).toEqual([{ schedule: "0 7 1,15 * *" }]));
+  });
+
+  it("schedules a monthly run on a chosen day", async () => {
+    const { bodies, handler } = captureBodies("patch", "*/api/syncs/sync-1", syncOut());
+    serve(syncOut(), [handler]);
+    renderSync();
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Schedule" }), "Every month");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Day of the month" }), "15th");
+    await userEvent.click(screen.getByRole("button", { name: "Save schedule" }));
+    await waitFor(() => expect(bodies).toEqual([{ schedule: "0 3 15 * *" }]));
   });
 
   it("shows a 422 under the cron input", async () => {
@@ -192,7 +222,8 @@ describe("SyncPage", () => {
       http.patch("*/api/syncs/sync-1", () => HttpResponse.json({ detail: "Not a valid cron expression" }, { status: 422 })),
     ]);
     renderSync();
-    await userEvent.click(await screen.findByRole("radio", { name: "Custom" }));
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Schedule" }), "Custom (cron)");
+    await userEvent.clear(screen.getByRole("textbox", { name: "Cron schedule" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Cron schedule" }), "nope");
     await userEvent.click(screen.getByRole("button", { name: "Save schedule" }));
     expect(await screen.findByText("Not a valid cron expression")).toBeInTheDocument();
@@ -261,6 +292,7 @@ describe("SyncPage", () => {
                   operations: [],
                   not_made: [changeOut({ detail: "Removing Old song was skipped" })],
                   mismatch: null,
+                  matches: [],
                 },
               ],
             }),
@@ -310,6 +342,82 @@ describe("SyncsPage", () => {
     expect(screen.getByText("+3 −1")).toBeInTheDocument();
     expect(screen.getByText("Sync Gym")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "+ New sync" })).toHaveAttribute("href", "/syncs/new");
+  });
+
+  function serveList(syncs: SyncOut[]) {
+    const patches: { id: string; body: unknown }[] = [];
+    server.use(
+      http.get("*/api/connections", () => HttpResponse.json({ load_errors: [], services: [] })),
+      http.get("*/api/settings", () => HttpResponse.json(settingsOut())),
+      http.get("*/api/syncs", () => HttpResponse.json(syncs)),
+      http.patch("*/api/syncs/:id", async ({ params, request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        const id = String(params.id);
+        patches.push({ id, body });
+        if (body.schedule === "nope") return HttpResponse.json({ detail: "Not a valid cron schedule" }, { status: 422 });
+        const sync = syncs.find((x) => x.sync_id === id) ?? syncOut({ sync_id: id });
+        return HttpResponse.json({ ...sync, ...body });
+      }),
+    );
+    return patches;
+  }
+
+  const TWO = [
+    syncOut(),
+    syncOut({ sync_id: "sync-2", name: "Gym", schedule: "0 */6 * * *", effective_schedule: "0 */6 * * *" }),
+  ];
+
+  it("shows each sync's schedule, marking the default", async () => {
+    serveList(TWO);
+    renderWithProviders(<SyncsPage />);
+    const road = (await screen.findByRole("link", { name: "Road trip" })).closest("tr");
+    const gym = screen.getByRole("link", { name: "Gym" }).closest("tr");
+    expect(within(road as HTMLElement).getByText("Every hour")).toBeInTheDocument();
+    expect(within(road as HTMLElement).getByText("default")).toBeInTheDocument();
+    expect(within(gym as HTMLElement).getByText("Every 6 hours")).toBeInTheDocument();
+    expect(within(gym as HTMLElement).queryByText("default")).not.toBeInTheDocument();
+  });
+
+  it("pauses the selected syncs together", async () => {
+    const patches = serveList(TWO);
+    renderWithProviders(<SyncsPage />);
+    const bar = await screen.findByRole("toolbar", { name: "Selected syncs" });
+    expect(within(bar).getByRole("button", { name: "Pause" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select all syncs" }));
+    expect(within(bar).getByText("2 selected")).toBeInTheDocument();
+    await userEvent.click(within(bar).getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(patches).toHaveLength(2));
+    expect(patches.map((p) => p.id).sort()).toEqual(["sync-1", "sync-2"]);
+    expect(patches.every((p) => JSON.stringify(p.body) === JSON.stringify({ paused: true }))).toBe(true);
+    await waitFor(() => expect(within(bar).getByRole("button", { name: "Pause" })).toBeDisabled());
+    expect(within(bar).queryByText("2 selected")).not.toBeInTheDocument();
+  });
+
+  it("changes the schedule of only the picked syncs", async () => {
+    const patches = serveList(TWO);
+    renderWithProviders(<SyncsPage />);
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Select Gym" }));
+    await userEvent.click(screen.getByRole("button", { name: "Change schedule…" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Applies to 1 sync.")).toBeInTheDocument();
+    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Schedule" }), "Every day");
+    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Time" }), "06:00");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(patches).toEqual([{ id: "sync-2", body: { schedule: "0 6 * * *" } }]);
+  });
+
+  it("keeps the schedule dialog open with the error when the cron is rejected", async () => {
+    serveList(TWO);
+    renderWithProviders(<SyncsPage />);
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Select Road trip" }));
+    await userEvent.click(screen.getByRole("button", { name: "Change schedule…" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Schedule" }), "Custom (cron)");
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Cron schedule" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Cron schedule" }), "nope");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+    expect(await within(dialog).findByText("Not a valid cron schedule")).toBeInTheDocument();
   });
 
   it("shows the empty state", async () => {

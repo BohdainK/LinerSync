@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import { Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 import type { MemberOut, OperationOut, RunOut } from "@/api/types";
-import { changeOut, connectionOut, jobOut, runOut, trackOut } from "@/test/fixtures";
+import { attentionOut, changeOut, connectionOut, jobOut, runOut, trackOut } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
 import { RunPage } from "./RunPage";
@@ -21,6 +21,7 @@ function member(o: Partial<MemberOut> = {}): MemberOut {
     operations: [],
     not_made: [],
     mismatch: null,
+    matches: [],
     ...o,
   };
 }
@@ -144,7 +145,10 @@ describe("RunPage", () => {
         members: [
           member({
             not_made: [changeOut({ detail: "Could not remove X" })],
-            mismatch: { missing: [trackOut({ title: "Lost song" })], unexpected: [trackOut({ track_id: "u", title: "Extra song" })] },
+            mismatch: {
+              missing: [trackOut({ title: "Lost song" })],
+              unexpected: [trackOut({ track_id: "u", title: "Extra song" })],
+            },
           }),
         ],
         unresolved: [
@@ -166,13 +170,58 @@ describe("RunPage", () => {
     expect(screen.getByText("Didn't match (1)")).toBeInTheDocument();
     expect(screen.getByText("Unknown tune")).toBeInTheDocument();
     expect(screen.getByText("No close match")).toBeInTheDocument();
-    expect(screen.getByText("Maybe tune")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Resolve in Needs attention" })).toHaveAttribute("href", "/");
+    expect(screen.queryByRole("link", { name: "Resolve in Needs attention" })).not.toBeInTheDocument();
+  });
+
+  it("resolves a song that didn't match in a dialog", async () => {
+    const opened: string[] = [];
+    server.use(
+      http.post("*/api/runs/run-1/unresolved/0/attention", () => {
+        opened.push("run-1");
+        return HttpResponse.json(
+          attentionOut({
+            source: trackOut({ title: "Unknown tune" }),
+            candidates: [
+              { confidence: 0.72, reasons: ["same artist"], track: trackOut({ track_id: "c1", title: "Maybe tune" }) },
+              { confidence: 0.2, reasons: [], track: trackOut({ track_id: "c2", title: "Far tune" }) },
+            ],
+          }),
+        );
+      }),
+      http.post("*/api/attention/att-1/pick", () => new HttpResponse(null, { status: 204 })),
+    );
+    renderRun(
+      runOut({
+        run_id: "run-1",
+        unmatched: 1,
+        unresolved: [
+          {
+            member_id: "member-2",
+            position: 0,
+            source: trackOut({ title: "Unknown tune" }),
+            reasons: ["No close match"],
+            candidates: [],
+          },
+        ],
+      }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Resolve…" }));
+    expect(await screen.findByText("Maybe tune")).toBeInTheDocument();
+    expect(screen.getByText("72% match")).toBeInTheDocument();
+    expect(screen.queryByText("Far tune")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show 1 weaker match" }));
+    expect(screen.getByText("Far tune")).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: "Use this song" })[0]!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByText("Resolved")).toBeInTheDocument();
+    expect(opened).toEqual(["run-1"]);
   });
 
   it("renders a playlist name with markup as text", async () => {
     const { container } = renderRun(
-      runOut({ members: [member({ operations: [op({ type: "create_playlist", name: "<img src=x onerror=alert(1)>" })] })] }),
+      runOut({
+        members: [member({ operations: [op({ type: "create_playlist", name: "<img src=x onerror=alert(1)>" })] })],
+      }),
     );
     expect(await screen.findByText("Created playlist <img src=x onerror=alert(1)>")).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();

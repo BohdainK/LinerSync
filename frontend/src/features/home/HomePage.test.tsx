@@ -41,14 +41,16 @@ describe("HomePage", () => {
         running: [jobOut({ label: "Sync Running one" })],
         queued: [jobOut({ job_id: "job-2", status: "queued", label: "Sync Queued one" })],
         next_up: [{ kind: "sync", sync_id: "sync-1", name: "Road trip", at: FUTURE }],
-        recent: [jobOut({ job_id: "job-3", status: "succeeded", label: "Sync Done one", finished_at: "2026-01-01T12:00:00Z" })],
+        recent: [
+          jobOut({ job_id: "job-3", status: "succeeded", label: "Sync Done one", finished_at: "2026-01-01T12:00:00Z" }),
+        ],
       }),
     );
     renderHome();
     expect(await screen.findByRole("heading", { name: "Running now" })).toBeInTheDocument();
     expect(screen.getByText("Sync Running one")).toBeInTheDocument();
     expect(screen.getByText("Sync Queued one")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Song didn't match/ })).toHaveTextContent("Road trip");
+    expect(await screen.findByRole("button", { name: /Didn't match/ })).toHaveTextContent("Road trip");
     expect(screen.getByText("in 3 hours")).toBeInTheDocument();
     expect(screen.getByText("Sync Done one")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent activity" })).toBeInTheDocument();
@@ -78,7 +80,10 @@ describe("HomePage", () => {
   });
 
   it("warnings link to the connection", async () => {
-    serve(homeOut({ warnings: [{ kind: "needs_sign_in", service: "tidal", message: "Tidal needs you to sign in" }] }), []);
+    serve(
+      homeOut({ warnings: [{ kind: "needs_sign_in", service: "tidal", message: "Tidal needs you to sign in" }] }),
+      [],
+    );
     renderHome();
     expect(await screen.findByText("Tidal needs you to sign in")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("link", { name: "Open tidal" }));
@@ -105,6 +110,8 @@ describe("HomePage", () => {
     renderHome();
     expect(await screen.findByRole("link", { name: "Gym" })).toHaveAttribute("href", "/syncs/sync-9");
     expect(screen.getByRole("link", { name: "Backup" })).toHaveAttribute("href", "/backup");
+    const stops = within(screen.getByRole("region", { name: "Next up" })).getAllByRole("listitem");
+    expect(stops.map((li) => li.textContent?.split("in ")[0])).toEqual(["Gym", "Backup"]);
   });
 
   it("recent activity links a single run", async () => {
@@ -141,8 +148,17 @@ describe("HomePage", () => {
       [],
     );
     renderHome();
-    expect(await screen.findByText(/Spotify: 12 of 100/)).toHaveTextContent("resets in 3 hours");
-    expect(screen.getByText(/Tidal: 5 \(no daily limit\)/)).toBeInTheDocument();
+    const spotify = (await screen.findByText("Spotify")).closest("li")!;
+    expect(spotify).toHaveTextContent("12 of 100");
+    expect(spotify).toHaveTextContent("Resets in 3 hours");
+    expect(screen.getByRole("progressbar", { name: "Spotify requests used today" })).toHaveAttribute(
+      "aria-valuetext",
+      "12 of 100",
+    );
+    const tidal = screen.getByText("Tidal").closest("li")!;
+    expect(tidal).toHaveTextContent("5 used");
+    expect(tidal).toHaveTextContent("No daily limit");
+    expect(screen.queryByRole("progressbar", { name: "Tidal requests used today" })).not.toBeInTheDocument();
   });
 
   it("progress updates from the stream without refetch", async () => {
@@ -161,9 +177,7 @@ describe("HomePage", () => {
     const es = FakeEventSource.last;
     expect(es).not.toBeNull();
     act(() => es?.open());
-    act(() =>
-      es?.emit("job", jobOut({ progress: { done: 7, total: 10, phase: "p", message: "Writing" } })),
-    );
+    act(() => es?.emit("job", jobOut({ progress: { done: 7, total: 10, phase: "p", message: "Writing" } })));
     expect(await screen.findByText("Writing")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute("value", "7");
     expect(fetches).toBe(1);

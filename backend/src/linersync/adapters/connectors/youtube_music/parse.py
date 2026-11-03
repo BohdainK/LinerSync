@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from linersync.adapters.connectors.kit.parsing import display_image
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -101,8 +102,8 @@ def _column_runs(renderer: Mapping[str, Any], n: int) -> list[Mapping[str, Any]]
     return [r for r in runs or [] if isinstance(r, Mapping)]
 
 
-def thumbnail_url(renderer: Mapping[str, Any]) -> str | None:
-    thumbs = nav(
+def _thumbnails(renderer: Mapping[str, Any]) -> Any:
+    return nav(
         renderer, "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"
     ) or nav(
         renderer,
@@ -111,8 +112,21 @@ def thumbnail_url(renderer: Mapping[str, Any]) -> str | None:
         "thumbnail",
         "thumbnails",
     )
-    url = nav(thumbs, 0, "url")
+
+
+def thumbnail_url(renderer: Mapping[str, Any]) -> str | None:
+    url = nav(_thumbnails(renderer), 0, "url")
     return str(url) if url else None
+
+
+def display_thumbnail_url(renderer: Mapping[str, Any]) -> str | None:
+    """The thumbnail closest to the UI's album-cover size."""
+    thumbs = _thumbnails(renderer)
+    return display_image(
+        (int(t.get("width") or 0), str(t["url"]))
+        for t in (thumbs if isinstance(thumbs, list) else [])
+        if isinstance(t, Mapping) and t.get("url")
+    )
 
 
 def _artists(runs: list[Mapping[str, Any]]) -> tuple[str, ...]:
@@ -166,6 +180,7 @@ def parse_item(renderer: Mapping[str, Any]) -> Song | None:
         album=album,
         duration_ms=duration,
         url=f"{ORIGIN}/watch?v={video_id}",
+        artwork_url=display_thumbnail_url(renderer),
     )
     video_type = nav(
         watch,

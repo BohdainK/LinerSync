@@ -13,6 +13,7 @@ import { AddDestination } from "./AddDestination";
 import { BusyTip } from "./BusyTip";
 import { DestinationsTable } from "./DestinationsTable";
 import { RunHistory } from "./RunHistory";
+import { SyncAttention } from "./SyncAttention";
 import { ScheduleEditor } from "./ScheduleEditor";
 import { useDeleteSync, usePatchSync, useRunSync, useSync } from "./useSync";
 
@@ -139,6 +140,7 @@ export function SyncPage() {
         {actionError ? <ErrorNotice error={actionError} /> : null}
         {job ? <JobProgress job={job} onCancel={() => cancel.mutate(job.job_id)} /> : null}
       </header>
+      <SyncAttention syncId={s.sync_id} />
       <DestinationsTable sync={s} disabled={busy} />
       <AddDestination sync={s} disabled={busy} />
       <ScheduleEditor key={s.sync_id} sync={s} />

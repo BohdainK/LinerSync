@@ -5,7 +5,7 @@ import { Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 import type { EstimateOut } from "@/api/types";
 import { keys } from "@/api/keys";
-import { backupPlaylistOut, connectionOut, jobOut, playlistOut } from "@/test/fixtures";
+import { backupPlaylistOut, connectionOut, jobOut, playlistOut, runOut, trackOut } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
 import { NewTransferPage } from "./NewTransferPage";
@@ -19,7 +19,11 @@ function serve() {
         load_errors: [],
         services: [
           connectionOut({ service: "fake_a", display_name: "Fake A", capabilities: FULL }),
-          connectionOut({ service: "fake_b", display_name: "Fake B", capabilities: ["read_order", "add", "create_playlist"] }),
+          connectionOut({
+            service: "fake_b",
+            display_name: "Fake B",
+            capabilities: ["read_order", "add", "create_playlist"],
+          }),
           connectionOut({ service: "fake_c", display_name: "Fake C", capabilities: FULL }),
         ],
       }),
@@ -79,9 +83,13 @@ describe("NewTransferPage", () => {
     server.use(
       http.post("*/api/transfers", async ({ request }) => {
         bodies.push(await request.json());
-        return HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" }), { status: 202 });
+        return HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" }), {
+          status: 202,
+        });
       }),
-      http.get("*/api/jobs/t1", () => HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" }))),
+      http.get("*/api/jobs/t1", () =>
+        HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" })),
+      ),
     );
     const user = userEvent.setup();
     renderPage();
@@ -92,12 +100,12 @@ describe("NewTransferPage", () => {
     await user.click(await within(group).findByRole("checkbox", { name: /Road Trip/ }));
     expect(screen.queryByRole("checkbox", { name: "Fake A" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("checkbox", { name: /Fake B/ }));
-    expect(screen.getByText("Fake B can't remove or reorder songs, so this sync runs as add only into Fake B")).toBeInTheDocument();
+    expect(
+      screen.getByText("Fake B can't remove or reorder songs, so this sync runs as add only into Fake B"),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Start transfer" }));
     expect(await screen.findByText("Transfer to Fake B")).toBeInTheDocument();
-    expect(bodies).toEqual([
-      { source_service: "fake_a", playlist_id: "P1", destination: "fake_b", dry_run: false },
-    ]);
+    expect(bodies).toEqual([{ source_service: "fake_a", playlist_id: "P1", destination: "fake_b", dry_run: false }]);
   });
 
   it("dry run flag is sent", async () => {
@@ -150,9 +158,13 @@ describe("NewTransferPage", () => {
       }),
       http.post("*/api/transfers/bulk", async ({ request }) => {
         bulks.push(await request.json());
-        return HttpResponse.json(jobOut({ job_id: "b1", kind: "bulk_transfer", label: "Transfer 2 playlists" }), { status: 202 });
+        return HttpResponse.json(jobOut({ job_id: "b1", kind: "bulk_transfer", label: "Transfer 2 playlists" }), {
+          status: 202,
+        });
       }),
-      http.get("*/api/jobs/b1", () => HttpResponse.json(jobOut({ job_id: "b1", kind: "bulk_transfer", label: "Transfer 2 playlists" }))),
+      http.get("*/api/jobs/b1", () =>
+        HttpResponse.json(jobOut({ job_id: "b1", kind: "bulk_transfer", label: "Transfer 2 playlists" })),
+      ),
     );
     const user = userEvent.setup();
     renderPage();
@@ -162,7 +174,11 @@ describe("NewTransferPage", () => {
     expect(bulks).toEqual([]);
     await user.click(within(dialog).getByRole("button", { name: "Start" }));
     expect(await screen.findByText("Transfer 2 playlists", { selector: "span" })).toBeInTheDocument();
-    const items = ["P1", "P2"].map((id) => ({ source_service: "fake_a", playlist_id: id, destination_services: ["fake_b"] }));
+    const items = ["P1", "P2"].map((id) => ({
+      source_service: "fake_a",
+      playlist_id: id,
+      destination_services: ["fake_b"],
+    }));
     expect(estimates).toEqual([{ items }]);
     expect(bulks).toEqual([{ items, dry_run: false }]);
   });
@@ -215,13 +231,39 @@ describe("NewTransferPage", () => {
     expect(screen.getByRole("button", { name: "Start transfer" })).toBeEnabled();
   });
 
-  it("shows progress then result links", async () => {
+  it("shows progress then each result's songs", async () => {
     serve();
+    const pair = (title: string) => ({
+      source: trackOut({ service: "fake_a", track_id: `a-${title}`, title, artwork_url: "https://img.test/a.jpg" }),
+      target: trackOut({ service: "fake_b", track_id: `b-${title}`, title, artwork_url: "https://img.test/b.jpg" }),
+      added: true,
+    });
+    const member = (matches: ReturnType<typeof pair>[]) => ({
+      member_id: "dst0",
+      service: "fake_b",
+      playlist_id: null,
+      status: "dry_run" as const,
+      error: null,
+      rebuilt: false,
+      created_playlist_id: null,
+      operations: [],
+      not_made: [],
+      mismatch: null,
+      matches,
+    });
     server.use(
+      http.get("*/api/runs/r1", () =>
+        HttpResponse.json(runOut({ run_id: "r1", dry_run: true, members: [member([pair("Song one")])] })),
+      ),
+      http.get("*/api/runs/r2", () =>
+        HttpResponse.json(runOut({ run_id: "r2", dry_run: true, members: [member([pair("Song two")])] })),
+      ),
       http.post("*/api/transfers", () =>
         HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" }), { status: 202 }),
       ),
-      http.get("*/api/jobs/t1", () => HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" }))),
+      http.get("*/api/jobs/t1", () =>
+        HttpResponse.json(jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B" })),
+      ),
     );
     const user = userEvent.setup();
     const { queryClient } = renderPage();
@@ -235,10 +277,25 @@ describe("NewTransferPage", () => {
 
     queryClient.setQueryData(
       keys.job("t1"),
-      jobOut({ job_id: "t1", kind: "transfer", label: "Transfer to Fake B", status: "succeeded", run_ids: ["r1", "r2"] }),
+      jobOut({
+        job_id: "t1",
+        kind: "transfer",
+        label: "Transfer to Fake B",
+        status: "succeeded",
+        run_ids: ["r1", "r2"],
+      }),
     );
-    const links = await screen.findAllByRole("link", { name: "Open result" });
-    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/runs/r1", "/runs/r2"]);
+    expect(await screen.findAllByText("Song one")).toHaveLength(2);
+    expect(await screen.findAllByText("Song two")).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "Open result" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Nothing was changed. This is what the transfer would do.")).toHaveLength(2);
+    const images = document.querySelectorAll("img");
+    expect([...images].map((i) => i.getAttribute("src"))).toEqual([
+      "https://img.test/a.jpg",
+      "https://img.test/b.jpg",
+      "https://img.test/a.jpg",
+      "https://img.test/b.jpg",
+    ]);
     await user.click(screen.getByRole("button", { name: "Start another transfer" }));
     expect(await screen.findByRole("button", { name: "Start transfer" })).toBeInTheDocument();
   });

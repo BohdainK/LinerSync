@@ -328,9 +328,9 @@ describe("NewSyncPage", () => {
     renderPage();
     await chooseSource(user, "Road Trip");
     await pick(user, "Destination 1", "Fake C");
-    expect(await screen.findByText("Default (0 3 * * *)")).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Custom" }));
-    await user.type(screen.getByRole("textbox", { name: "Cron schedule" }), "0 5 * * *");
+    await screen.findByRole("option", { name: "Default (Every day at 03:00)" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Schedule" }), "Every day");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Time" }), "05:00");
     await user.click(screen.getByRole("button", { name: "Create sync" }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ schedule: "0 5 * * *" });
@@ -418,6 +418,7 @@ describe("PreviewPanel", () => {
           ],
           not_made: [changeOut({ kind: "remove", detail: "Fake B can't remove “Old song”" })],
           mismatch: null,
+          matches: [],
         },
         {
           member_id: "dst1",
@@ -432,6 +433,7 @@ describe("PreviewPanel", () => {
           ],
           not_made: [],
           mismatch: null,
+          matches: [],
         },
       ],
       unresolved: [

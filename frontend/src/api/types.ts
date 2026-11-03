@@ -40,6 +40,7 @@ export type LoadErrorOut = components["schemas"]["LoadErrorOut"];
 export type LoginBody = components["schemas"]["LoginBody"];
 export type MatchingOut = components["schemas"]["MatchingOut"];
 export type MemberIn = components["schemas"]["MemberIn"];
+export type MatchPairOut = components["schemas"]["MatchPairOut"];
 export type MemberOut = components["schemas"]["MemberOut"];
 export type MemberStatus = components["schemas"]["MemberStatus"];
 export type MismatchOut = components["schemas"]["MismatchOut"];

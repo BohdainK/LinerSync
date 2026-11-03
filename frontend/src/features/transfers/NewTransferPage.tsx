@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { Link } from "react-router";
 import { api, call, type ApiError } from "@/api/client";
 import { keys } from "@/api/keys";
 import type { BulkItemIn, BulkTransferIn, JobOut, TransferIn } from "@/api/types";
@@ -17,6 +16,7 @@ import { useBulkEstimate } from "@/features/pickers/useBulkEstimate";
 import { useSourceSelection } from "@/features/pickers/useSourceSelection";
 import { isActive, useCancelJob, useJob } from "@/live/useJob";
 import { limitations } from "@/lib/limitations";
+import { TransferResult } from "./TransferResult";
 
 export function NewTransferPage() {
   const queryClient = useQueryClient();
@@ -29,9 +29,7 @@ export function NewTransferPage() {
   const connections = useConnections();
   const job = useJob(jobId);
   const cancel = useCancelJob();
-  const targets = (connections.data?.services ?? []).filter(
-    (s) => isSetUp(s) && s.service !== service && canAdd(s),
-  );
+  const targets = (connections.data?.services ?? []).filter((s) => isSetUp(s) && s.service !== service && canAdd(s));
   const chosen = targets.filter((t) => destinations.includes(t.service)).map((t) => t.service);
   const items: BulkItemIn[] = selection.map((id) => ({
     source_service: service ?? "",
@@ -92,22 +90,13 @@ export function NewTransferPage() {
         )}
         {cancel.error ? <ErrorNotice error={cancel.error} /> : null}
         {current && !isActive(current) ? (
-          <div className="space-y-2">
-            {current.run_ids.length > 1 ? (
-              <p className="text-sm text-muted-foreground">One result per transfer.</p>
-            ) : null}
-            <ul className="space-y-1">
-              {current.run_ids.map((id) => (
-                <li key={id}>
-                  <Link className="text-sm underline" to={`/runs/${id}`}>
-                    Open result
-                  </Link>
-                </li>
-              ))}
-            </ul>
+          <div className="space-y-6">
             <Button type="button" onClick={reset}>
               Start another transfer
             </Button>
+            {current.run_ids.map((id) => (
+              <TransferResult key={id} runId={id} />
+            ))}
           </div>
         ) : null}
       </div>
@@ -135,9 +124,7 @@ export function NewTransferPage() {
       </Section>
 
       <Section title="Destinations">
-        {targets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No other connected services.</p>
-        ) : null}
+        {targets.length === 0 ? <p className="text-sm text-muted-foreground">No other connected services.</p> : null}
         <ul className="space-y-3">
           {targets.map((t) => {
             const notes = limitations(t.display_name, t.capabilities, "full");
@@ -149,9 +136,7 @@ export function NewTransferPage() {
                     checked={destinations.includes(t.service)}
                     onChange={(e) =>
                       setDestinations(
-                        e.target.checked
-                          ? [...destinations, t.service]
-                          : destinations.filter((d) => d !== t.service),
+                        e.target.checked ? [...destinations, t.service] : destinations.filter((d) => d !== t.service),
                       )
                     }
                   />

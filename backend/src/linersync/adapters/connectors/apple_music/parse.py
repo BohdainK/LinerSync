@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from linersync.adapters.connectors.kit.parsing import attributes
+from linersync.adapters.connectors.kit.parsing import DISPLAY_ART_SIZE, attributes
 from linersync.domain.playlists import PlaylistMeta
 from linersync.domain.tracks import ServiceId, Track
 
@@ -24,6 +24,7 @@ def _track(
     isrc: str | None,
     url: str | None,
     artwork_hash: str | None,
+    fallback_artwork: Mapping[str, Any] | None = None,
 ) -> Track:
     return Track(
         service=APPLE,
@@ -35,6 +36,8 @@ def _track(
         isrc=isrc,
         artwork_hash=artwork_hash,
         url=url,
+        artwork_url=artwork_url(attrs.get("artwork"), DISPLAY_ART_SIZE)
+        or artwork_url(fallback_artwork, DISPLAY_ART_SIZE),
     )
 
 
@@ -44,10 +47,19 @@ def parse_library_song(
     isrc: str | None = None,
     url: str | None = None,
     artwork_hash: str | None = None,
+    fallback_artwork: Mapping[str, Any] | None = None,
 ) -> Track:
+    """``fallback_artwork``: the catalog song's, for a library song without."""
     attrs = attributes(obj)
     catalog_id = (attrs.get("playParams") or {}).get("catalogId")
-    return _track(str(catalog_id or obj["id"]), attrs, isrc, url, artwork_hash)
+    return _track(
+        str(catalog_id or obj["id"]),
+        attrs,
+        isrc,
+        url,
+        artwork_hash,
+        fallback_artwork,
+    )
 
 
 def parse_catalog_song(

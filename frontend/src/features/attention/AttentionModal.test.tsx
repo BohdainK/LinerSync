@@ -42,9 +42,7 @@ describe("AttentionModal", () => {
     const seen = post("pick");
     const item = attentionOut({
       detail: "No good match",
-      candidates: [
-        { track: trackOut({ track_id: "c1", title: "Cand" }), confidence: 0.82, reasons: ["same artist"] },
-      ],
+      candidates: [{ track: trackOut({ track_id: "c1", title: "Cand" }), confidence: 0.82, reasons: ["same artist"] }],
     });
     renderWithProviders(<Harness item={item} />);
     expect(screen.getByRole("heading", { name: "Song didn't match" })).toBeInTheDocument();
@@ -53,6 +51,40 @@ describe("AttentionModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Use this song" }));
     await waitFor(() => expect(seen).toEqual([{ body: { target_track_id: "c1" } }]));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("unmatched without candidates searches for similar songs on open", async () => {
+    const seen = post(
+      "similar",
+      200,
+      attentionOut({
+        candidates: [
+          { track: trackOut({ track_id: "s1", title: "Close one" }), confidence: 0.64, reasons: ["same title"] },
+        ],
+      }),
+    );
+    const pick = post("pick");
+    renderWithProviders(<Harness item={attentionOut({ candidates: [] })} />);
+    expect(await screen.findByText("Close one")).toBeInTheDocument();
+    expect(screen.getByText("64% match")).toBeInTheDocument();
+    expect(seen).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Use this song" }));
+    await waitFor(() => expect(pick).toEqual([{ body: { target_track_id: "s1" } }]));
+  });
+
+  it("unmatched with candidates searches only when asked", async () => {
+    const seen = post("similar", 200, attentionOut());
+    renderWithProviders(
+      <Harness
+        item={attentionOut({
+          candidates: [{ track: trackOut({ track_id: "c1", title: "Cand" }), confidence: 0.9, reasons: [] }],
+        })}
+      />,
+    );
+    expect(await screen.findByText("Cand")).toBeInTheDocument();
+    expect(seen).toHaveLength(0);
+    await userEvent.click(screen.getByRole("button", { name: "Find similar songs" }));
+    await waitFor(() => expect(seen).toHaveLength(1));
   });
 
   it("unmatched: not on service", async () => {
@@ -105,7 +137,9 @@ describe("AttentionModal", () => {
 
   it("an error keeps the modal open with the message", async () => {
     server.use(
-      http.post("/api/attention/att-1/dismiss", () => HttpResponse.json({ detail: "Already resolved" }, { status: 409 })),
+      http.post("/api/attention/att-1/dismiss", () =>
+        HttpResponse.json({ detail: "Already resolved" }, { status: 409 }),
+      ),
     );
     renderWithProviders(<Harness item={attentionOut({ kind: "conflict" })} />);
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));

@@ -1,0 +1,24 @@
+/* Alternative theme, not in use: "Jade pebble morning" (#7B9669 #E6E6E6 #404E3B #6C8480 #BAC8B1).
+   To try it, swap these values into :root in src/index.css. Still to do: --header and
+   --header-foreground for the top bar, a .dark variant, and night colours for the sunset scene. */
+:root {
+  --radius: 0.625rem;
+  --background: #e6e6e6;
+  --foreground: #232b20;
+  --card: #f4f4f3;
+  --card-foreground: #232b20;
+  --popover: #f4f4f3;
+  --popover-foreground: #232b20;
+  --primary: #404e3b;
+  --primary-foreground: #f4f4f3;
+  --secondary: #d9ddd5;
+  --secondary-foreground: #232b20;
+  --muted: #d9ddd5;
+  --muted-foreground: #52665f;
+  --accent: #bac8b1;
+  --accent-foreground: #232b20;
+  --destructive: #b3261e;
+  --border: #cdd2c8;
+  --input: #bfc6b9;
+  --ring: #7b9669;
+}

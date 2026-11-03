@@ -73,3 +73,12 @@ def test_parse_playlist_meta() -> None:
         f"{BASE}/Items/a1b2c3d4e5f60718293a4b5c6d7e8f90/Images/Primary"
         "?tag=9f8e7d6c5b4a39281706f5e4d3c2b1a0&maxWidth=300"
     )
+
+
+def test_parse_track_artwork_url_has_no_credentials() -> None:
+    t = parse_track(_song(), BASE)
+    assert t is not None
+    assert t.artwork_url == artwork_url(_song(), BASE)
+    assert t.artwork_url is not None and "api_key" not in t.artwork_url.lower()
+    bare = parse_track({**_song(), "ImageTags": {}, "AlbumId": None}, BASE)
+    assert bare is not None and bare.artwork_url is None

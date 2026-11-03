@@ -61,3 +61,30 @@ export function useDeleteSync(syncId: string): UseMutationResult<unknown, ApiErr
     },
   });
 }
+
+export type BulkPatch = { syncIds: string[]; body: SyncPatchIn };
+export type BulkPatchResult = { updated: SyncOut[]; failed: { syncId: string; error: unknown }[] };
+
+/** Applies one patch to many syncs. Each is patched on its own, so one bad sync doesn't block the rest. */
+export function useBulkPatchSyncs(): UseMutationResult<BulkPatchResult, ApiError, BulkPatch> {
+  const queryClient = useQueryClient();
+  return useMutation<BulkPatchResult, ApiError, BulkPatch>({
+    mutationFn: async ({ syncIds, body }) => {
+      const results = await Promise.allSettled(
+        syncIds.map((id) => call(api.PATCH("/api/syncs/{sync_id}", { params: { path: { sync_id: id } }, body }))),
+      );
+      const updated: SyncOut[] = [];
+      const failed: BulkPatchResult["failed"] = [];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") updated.push(r.value);
+        else failed.push({ syncId: syncIds[i] ?? "", error: r.reason });
+      });
+      return { updated, failed };
+    },
+    onSuccess: ({ updated }) => {
+      for (const sync of updated) queryClient.setQueryData(keys.sync(sync.sync_id), sync);
+      void queryClient.invalidateQueries({ queryKey: keys.syncs });
+      void queryClient.invalidateQueries({ queryKey: keys.home });
+    },
+  });
+}

@@ -12,6 +12,7 @@ export const keys = {
   syncRuns: (id: string) => ["syncs", id, "runs"],
   run: (id: string) => ["runs", id],
   job: (id: string) => ["jobs", id],
+  jobHistory: ["jobs", "recent"],
   backups: ["backups"],
   backupPlaylists: (f: { service?: string; archived: boolean }) => ["backups", "playlists", f],
   backupEntry: (id: string) => ["backups", "entry", id],

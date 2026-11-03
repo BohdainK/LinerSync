@@ -91,3 +91,20 @@ def test_items_page_total_and_next() -> None:
     assert page.items[0].added_at == datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
     assert page.items[3].item is not None
     assert page.items[3].item["type"] == "episode"
+
+
+def test_parse_track_artwork_url_is_display_sized() -> None:
+    t = parse_track(_items()[0]["item"])  # type: ignore[arg-type]
+    assert t is not None
+    assert t.artwork_url == "https://i.scdn.co/image/a300"
+    local = parse_track(_items()[2]["item"])  # type: ignore[arg-type]
+    assert local is not None and local.artwork_url is None
+    # No image as large as the display size: the largest there is.
+    ep = parse_track(_items()[3]["item"])  # type: ignore[arg-type]
+    assert ep is not None and ep.artwork_url == "https://i.scdn.co/image/e640"
+
+
+def test_search_track_has_artwork_url() -> None:
+    items = load_fixture("spotify", "search_tracks")["tracks"]["items"]
+    t = parse_track(items[0])
+    assert t is not None and t.artwork_url is not None

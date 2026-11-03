@@ -75,3 +75,23 @@ def test_add_tracks_body_types() -> None:
             {"id": "i.abc123", "type": "library-songs"},
         ]
     }
+
+
+ART = "https://is2-ssl.mzstatic.com/image/thumb/Music114/v4/aa/bb/cc/886448619161.jpg"
+
+
+def test_track_artwork_url_is_300_square() -> None:
+    lib = parse_library_song(_fx("library_playlist_tracks")["data"][0])
+    assert lib.artwork_url == f"{ART}/300x300bb.jpg"
+    cat = parse_catalog_song(_fx("catalog_songs")["data"][0])
+    assert cat.artwork_url == f"{ART}/300x300bb.jpg"
+    search = _fx("catalog_search")["results"]["songs"]["data"][0]
+    assert parse_catalog_song(search).artwork_url == f"{ART}/300x300bb.jpg"
+
+
+def test_library_song_artwork_falls_back_to_catalog() -> None:
+    bare = _fx("library_playlist_tracks")["data"][1]
+    assert parse_library_song(bare).artwork_url is None
+    fallback = {"url": "https://x/{w}x{h}bb.jpg"}
+    t = parse_library_song(bare, fallback_artwork=fallback)
+    assert t.artwork_url == "https://x/300x300bb.jpg"

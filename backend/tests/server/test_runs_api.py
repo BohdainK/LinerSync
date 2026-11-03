@@ -71,6 +71,20 @@ def test_run_detail_names_songs(app_factory: AppFactory) -> None:
     assert add["positions"] == []
     assert add["order_length"] is None
     assert [m["member_id"] for m in run["members"]] == ["dst0"]
+    pairs = [
+        (
+            p["source"]["service"],
+            p["source"]["known"],
+            p["target"]["track_id"],
+            p["added"],
+        )
+        for p in dst["matches"]
+    ]
+    assert pairs == [
+        ("fake_a", True, "A", True),
+        ("fake_a", True, "B", True),
+        ("fake_a", True, "C", True),
+    ]
 
 
 def test_preview_shows_unmatched_with_candidates(app_factory: AppFactory) -> None:
@@ -104,6 +118,49 @@ def test_preview_shows_unmatched_with_candidates(app_factory: AppFactory) -> Non
     assert sorted(c["track"]["track_id"] for c in candidates) == ["D1", "D2"]
     assert all(c["track"]["title"] == "Dup song" for c in candidates)
     assert all(isinstance(c["confidence"], float) for c in candidates)
+
+
+def test_dry_run_song_gets_an_attention_item_on_demand(app_factory: AppFactory) -> None:
+    with world(app_factory) as w:
+        w.a.add_playlist(
+            snapshot(
+                "fake_a",
+                "P1",
+                ["a", "dup"],
+                tracks={"dup": track("fake_a", "dup", title="Dup song")},
+            )
+        )
+        w.b.catalog = (
+            *w.b.catalog,
+            track("fake_b", "D1", title="Dup song"),
+            track("fake_b", "D2", title="Dup song"),
+        )
+        sync_id = create(w.client)["sync_id"]
+        run_now(w.client, sync_id, dry_run=True)
+        drain(w.client)
+        run_id = last_run_id(w.client, sync_id)
+        before = w.client.get("/api/attention").json()
+        first = w.client.post(f"/api/runs/{run_id}/unresolved/0/attention", json={})
+        second = w.client.post(f"/api/runs/{run_id}/unresolved/0/attention", json={})
+        missing = w.client.post(f"/api/runs/{run_id}/unresolved/5/attention", json={})
+        assert first.status_code == 200, first.text
+        item_id = first.json()["item_id"]
+        picked = w.client.post(
+            f"/api/attention/{item_id}/pick", json={"target_track_id": "D1"}
+        )
+    assert before == []
+    assert first.status_code == 200, first.text
+    item = first.json()
+    assert (item["kind"], item["sync_id"], item["target_service"]) == (
+        "unmatched",
+        sync_id,
+        "fake_b",
+    )
+    assert item["source"]["title"] == "Dup song"
+    assert sorted(c["track"]["track_id"] for c in item["candidates"]) == ["D1", "D2"]
+    assert second.json()["item_id"] == item_id
+    assert missing.status_code == 404
+    assert picked.status_code == 204, picked.text
 
 
 def test_not_made_listed_for_add_only(app_factory: AppFactory) -> None:

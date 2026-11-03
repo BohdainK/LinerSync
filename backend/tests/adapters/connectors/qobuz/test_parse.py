@@ -121,3 +121,11 @@ def test_tracks_page_item_without_occurrence_id_is_not_understood() -> None:
 def test_account() -> None:
     assert parse_account(load_fixture("qobuz", "user_playlists")) == (ME, "sam")
     assert parse_account({"playlists": {}}) == (None, None)
+
+
+def test_track_artwork_url_is_small_cover() -> None:
+    item = load_fixture("qobuz", "playlist_get")["tracks"]["items"][0]
+    assert parse_track(item).artwork_url == (
+        "https://static.qobuz.com/images/covers/ab/c1/abc123def_230.jpg"
+    )
+    assert parse_track({"id": 1, "title": "x"}).artwork_url is None
