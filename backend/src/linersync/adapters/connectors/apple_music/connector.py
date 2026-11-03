@@ -234,22 +234,29 @@ class AppleMusicConnector:
         return found
 
     async def search(self, query: TrackQuery) -> list[Track]:
+        """ISRC hits, then term hits not already among them. The term search
+        always runs: a label may give the album copy another ISRC than the
+        source's, leaving only compilations under the source's ISRC."""
         try:
             sf = await self._storefront()
+            hits: list[Track] = []
             if query.isrc:
                 body = await self._get(
                     f"{API_BASE}/v1/catalog/{sf}/songs", {"filter[isrc]": query.isrc}
                 )
                 hits = [parse_catalog_song(obj) for obj in _data(body)]
-                if hits:
-                    return hits
             term = " ".join([query.title, *query.artists[:1]]).strip()
             body = await self._get(
                 f"{API_BASE}/v1/catalog/{sf}/search",
                 {"types": "songs", "term": term, "limit": SEARCH_LIMIT},
             )
             songs = (body.get("results") or {}).get("songs") or {}
-            return [parse_catalog_song(obj) for obj in _data(songs)]
+            seen = {t.track_id for t in hits}
+            for t in (parse_catalog_song(obj) for obj in _data(songs)):
+                if t.track_id not in seen:
+                    hits.append(t)
+                    seen.add(t.track_id)
+            return hits
         except HttpFailure as e:
             raise _read_failed(e) from None
         except (KeyError, TypeError, ValueError):

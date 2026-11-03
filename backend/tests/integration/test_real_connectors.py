@@ -233,7 +233,8 @@ async def test_first_sync_creates_apple_playlist_and_matches_by_isrc() -> None:
     assert r.apple.ids(pid) == apple_ids(apple)
     lookups = [q for q in r.apple.requests if "filter[isrc]" in q.url.params]
     assert len(lookups) == 3
-    assert not [q for q in r.apple.requests if q.url.path.endswith("/search")]
+    # The term search runs too: the album copy may carry another ISRC.
+    assert len([q for q in r.apple.requests if q.url.path.endswith("/search")]) == 3
 
 
 async def test_apple_failure_midway_never_touches_spotify_and_rerun_completes() -> None:

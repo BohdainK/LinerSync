@@ -254,3 +254,65 @@ def test_isrc_hit_beside_a_close_non_isrc_candidate_still_needs_margin() -> None
 def test_artwork_url_ignored_in_equality() -> None:
     t = track("youtube_music", "v")
     assert replace(t, artwork_url="https://i/a") == t
+
+
+# -- the source's own album beats a same-ISRC copy elsewhere ------------------
+
+
+def _routines(track_id: str, album: str, isrc: str) -> Track:
+    return track(
+        "apple_music",
+        track_id,
+        title="Routines in the Night",
+        artists=("twenty one pilots",),
+        album=album,
+        duration_ms=202_600,
+        isrc=isrc,
+    )
+
+
+_ROUTINES_SRC = track(
+    "spotify",
+    "s",
+    title="Routines In The Night",
+    artists=("Twenty One Pilots",),
+    album="Clancy",
+    duration_ms=202_600,
+    isrc="USAT22402066",
+)
+
+
+def test_own_album_copy_beats_isrc_copy_on_a_compilation() -> None:
+    # Seen live: Spotify's ISRC is only on Apple's compilations; Apple's
+    # Clancy copy carries another ISRC.
+    comp = _routines("comp", "Play - Hits", "USAT22402066")
+    other = _routines("other", "Pop Drive", "USAT22402066")
+    clancy = _routines("clancy", "Clancy", "USAT22401700")
+    for candidates in ([comp, other, clancy], [clancy, comp, other]):
+        d = decide_match(_ROUTINES_SRC, candidates, CFG)
+        assert isinstance(d, Matched) and d.target_track_id == "clancy"
+        assert "same album" in d.reasons
+
+
+def test_own_album_ignores_ep_and_single_suffix() -> None:
+    src = track("spotify", "s", title="Song", album="One Million Pieces", isrc="A")
+    comp = track("apple_music", "c", title="Song", album="Hits 2024", isrc="A")
+    ep = track(
+        "apple_music", "e", title="Song", album="One Million Pieces - EP", isrc="B"
+    )
+    d = decide_match(src, [comp, ep], CFG)
+    assert isinstance(d, Matched) and d.target_track_id == "e"
+
+
+def test_own_album_other_version_gets_no_floor() -> None:
+    live = _routines("live", "Clancy", "USAT22401700")
+    live = replace(live, title="Routines in the Night (Live)")
+    c = score_candidate(_ROUTINES_SRC, live, CFG)
+    assert "same album" not in c.reasons
+    assert c.confidence < 0.85
+
+
+def test_own_album_far_duration_gets_no_floor() -> None:
+    long = replace(_routines("x", "Clancy", "USAT22401700"), duration_ms=240_000)
+    c = score_candidate(_ROUTINES_SRC, long, CFG)
+    assert "same album" not in c.reasons

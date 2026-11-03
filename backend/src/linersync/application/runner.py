@@ -18,6 +18,7 @@ from linersync.domain.operations import (
 )
 from linersync.domain.planning.brake import BrakeTrip, check_brake, fingerprint
 from linersync.domain.planning.planner import PlanRequest, plan_sync
+from linersync.domain.planning.substitutes import accept_substitutes
 from linersync.domain.playlists import PlaylistSnapshot
 from linersync.domain.runs import (
     MemberResult,
@@ -537,6 +538,8 @@ class SyncRunner:
         mid = member.member_id
         assert a.playlist_id is not None
         snap, verify_error = await self._verify(connector, a.playlist_id)
+        if snap is not None and snap.track_ids != plan.expected_after:
+            plan = self._substituted(plan, snap, source) or plan
         expected = plan.expected_after
         actual = None if snap is None else snap.track_ids
         mismatch = None
@@ -550,10 +553,7 @@ class SyncRunner:
                 AttentionKind.VERIFY_MISMATCH,
                 group,
                 member,
-                verify_error
-                or f"After syncing, {connector.display_name} has "
-                f"{len(mismatch.actual)} songs where "
-                f"{len(mismatch.expected)} were expected",
+                verify_error or _mismatch_detail(connector.display_name, mismatch),
             )
         result = MemberResult(
             mid,
@@ -569,6 +569,20 @@ class SyncRunner:
         if snap is not None and mismatch is None:
             state = self._state(plan, snap, source)
         return _Outcome(result, plan, a.playlist_id, state)
+
+    def _substituted(
+        self,
+        plan: MemberPlan,
+        snap: PlaylistSnapshot,
+        source: PlaylistSnapshot | None,
+    ) -> MemberPlan | None:
+        """`plan` with the ids the service filed added songs under, when that
+        is the only difference (see accept_substitutes)."""
+        if source is None:
+            return None
+        sources = {e.track.key: e.track for e in source.entries}
+        actual = [e.track for e in snap.entries]
+        return accept_substitutes(plan, actual, sources, self._deps.config.match)
 
     async def _verify(
         self, connector: Connector, playlist_id: str
@@ -883,6 +897,13 @@ class SyncRunner:
         msg: str,
     ) -> None:
         self._deps.events.publish(RunEvent(run_id, sync_id, phase, done, total, msg))
+
+
+def _mismatch_detail(service: str, m: VerificationMismatch) -> str:
+    have, want = len(m.actual), len(m.expected)
+    if have == want:
+        return f"After syncing, {service} has other songs than the plan expected"
+    return f"After syncing, {service} has {have} songs where {want} were expected"
 
 
 def seed_from_run(

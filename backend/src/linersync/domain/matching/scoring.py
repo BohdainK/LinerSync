@@ -1,4 +1,5 @@
 import difflib
+import re
 from collections.abc import Sequence
 
 from linersync.domain.matching.normalize import (
@@ -23,6 +24,11 @@ _ISRC_SEARCH_FLOOR = 0.95
 _ISRC_SEARCH_TITLE = 0.9
 _ISRC_SEARCH_ARTISTS = 0.5
 _ISRC_SEARCH_REASON = "found by ISRC search"
+_ISRC_DIFFERS = 0.05
+_SAME_ALBUM = 0.9
+_SAME_ALBUM_REASON = "same album"
+# Release-type suffixes services add to an album name ("Name - EP").
+_ALBUM_SUFFIX = re.compile(r"\s+(ep|single)$")
 
 
 def _artist_similarity(a: frozenset[str], b: frozenset[str]) -> float:
@@ -64,8 +70,12 @@ def _album_similarity(source: Track, candidate: Track) -> float:
     albums, so a compilation doesn't win over the source's own album."""
     if not source.album or not candidate.album:
         return 0.0
-    a, b = normalize_text(source.album), normalize_text(candidate.album)
+    a, b = _album_key(source.album), _album_key(candidate.album)
     return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _album_key(album: str) -> str:
+    return _ALBUM_SUFFIX.sub("", normalize_text(album))
 
 
 def score_candidate(
@@ -89,7 +99,7 @@ def score_candidate(
     elif _same_isrc(source, candidate):
         pass  # applied below, after the other adjustments
     elif candidate.isrc is not None:
-        conf -= 0.05
+        conf -= _ISRC_DIFFERS
         reasons.append("ISRC differs")
 
     version = (ps.versions ^ pc.versions) - IGNORED_VERSIONS
@@ -110,23 +120,41 @@ def score_candidate(
             conf -= 0.02
             reasons.append("different artwork")
 
-    if (
-        candidate.found_by_isrc
-        and source.isrc is not None
-        and title_sim >= _ISRC_SEARCH_TITLE
+    agrees = (
+        title_sim >= _ISRC_SEARCH_TITLE
         and artist_sim >= _ISRC_SEARCH_ARTISTS
         and delta_s is not None
         and delta_s <= cfg.duration_full_s
         and not version
-    ):
+    )
+    if candidate.found_by_isrc and source.isrc is not None and agrees:
         conf = max(conf, _ISRC_SEARCH_FLOOR)
         reasons.append(_ISRC_SEARCH_REASON)
+
+    # A label can give one recording a new ISRC per release: a copy on the
+    # source's own album that agrees ranks with an ISRC match (the ISRC
+    # penalty is lifted), and the album tie-break then prefers it over the
+    # ISRC's copies on compilations.
+    if (
+        not _same_isrc(source, candidate)
+        and _album_similarity(source, candidate) >= _SAME_ALBUM
+        and agrees
+    ):
+        if "ISRC differs" in reasons:
+            conf += _ISRC_DIFFERS
+        conf = max(conf, _ISRC_FLOOR)
+        reasons.append(_SAME_ALBUM_REASON)
 
     if _same_isrc(source, candidate):
         conf = max(conf, _ISRC_FLOOR)
         reasons.insert(0, "ISRC matches")
 
     return ScoredCandidate(candidate, min(1.0, max(0.0, conf)), tuple(reasons))
+
+
+def _same_recording(source: Track, other: ScoredCandidate) -> bool:
+    """`other` is a copy of the source's recording on another release."""
+    return _same_isrc(source, other.track) or _SAME_ALBUM_REASON in other.reasons
 
 
 def decide_match(
@@ -149,6 +177,7 @@ def decide_match(
             _ISRC_SEARCH_REASON in top.reasons
             and _ISRC_SEARCH_REASON in scored[1].reasons
         )
+        or (_SAME_ALBUM_REASON in top.reasons and _same_recording(source, scored[1]))
     ):
         return Matched(
             target_track_id=top.track.track_id,

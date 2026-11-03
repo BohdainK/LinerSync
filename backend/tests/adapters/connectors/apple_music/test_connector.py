@@ -662,11 +662,11 @@ async def test_search_isrc_then_term() -> None:
     connector, _, _ = make(sim)
 
     found = await connector.search(TrackQuery.from_track(CATALOG[1]))
-    assert [t.track_id for t in found] == [Y]
+    assert [t.track_id for t in found] == [Y]  # the term hit is the same song
     assert found[0].isrc == "USY000000002"
     (isrc,) = sent(sim, "GET", r"/v1/catalog/us/songs")
     assert isrc.url.params["filter[isrc]"] == "USY000000002"
-    assert sent(sim, "GET", r"/v1/catalog/us/search") == []
+    assert len(sent(sim, "GET", r"/v1/catalog/us/search")) == 1
 
     sim.requests.clear()
     miss = TrackQuery("Yellow", ("Band Y", "Other"), isrc="ZZZ000000000")
@@ -686,6 +686,21 @@ async def test_search_isrc_then_term() -> None:
     assert sent(sim, "GET", r"/v1/catalog/us/songs") == []
     (term,) = sent(sim, "GET", r"/v1/catalog/us/search")
     assert term.url.params["term"] == "Nothing Like It"
+
+
+async def test_search_keeps_term_hits_beside_isrc_hits() -> None:
+    # Seen live: the source's ISRC is only on compilations; the album copy has
+    # another ISRC and only the term search finds it.
+    comp = track(
+        "apple_music", "101", title="Routines", artists=("Band",), isrc="ISRC1"
+    )
+    album = track(
+        "apple_music", "102", title="Routines", artists=("Band",), isrc="ISRC2"
+    )
+    sim = AppleMusicSim(catalog=[comp, album])
+    connector, _, _ = make(sim)
+    found = await connector.search(TrackQuery("Routines", ("Band",), isrc="ISRC1"))
+    assert [t.track_id for t in found] == ["101", "102"]
 
 
 async def test_search_failure_is_read_failed() -> None:

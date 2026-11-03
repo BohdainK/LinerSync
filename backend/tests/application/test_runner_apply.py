@@ -83,6 +83,47 @@ async def test_verify_mismatch_flagged(world: World) -> None:
     assert saved is not None and saved.members[1].last_synced is None
 
 
+async def test_service_filing_an_added_song_under_another_id_is_verified(
+    world: World,
+) -> None:
+    # Seen live: Apple took catalog id B but lists it as B2 (the same song).
+    world.apple.substitute_adds({"B": track("apple_music", "B2", title="b")})
+    run = await world.runner().run("s1", trigger=MANUAL)
+    assert run.status is RunStatus.SUCCEEDED
+    (member,) = run.members
+    assert member.mismatch is None
+    assert member.verified_after == ("A", "B2", "C")
+    assert _open(world, AttentionKind.VERIFY_MISMATCH) == []
+    saved = world.repos.syncs.get("s1")
+    assert saved is not None
+    dst = saved.members[1].last_synced
+    assert dst is not None
+    assert [e.target_track_id for e in dst.entries] == ["A", "B2", "C"]
+
+    # The next run sees b as already there: nothing is added again.
+    world.apple.calls.clear()
+    again = await world.runner().run("s1", trigger=MANUAL)
+    assert again.status is RunStatus.SUCCEEDED
+    assert "apply:AddTracks:A1" not in world.apple.calls
+    assert world.apple.playlists["A1"].track_ids == ("A", "B2", "C")
+
+
+async def test_added_song_replaced_by_another_song_is_a_mismatch(
+    world: World,
+) -> None:
+    world.apple.substitute_adds({"B": track("apple_music", "Z", title="zebra")})
+    run = await world.runner().run("s1", trigger=MANUAL)
+    assert run.status is RunStatus.PARTIAL
+    (member,) = run.members
+    assert member.mismatch is not None
+    assert member.mismatch.actual == ("A", "Z", "C")
+    assert _open(world, AttentionKind.VERIFY_MISMATCH) == ["dst0"]
+    (item,) = world.repos.attention.list_open()
+    assert item.detail == (
+        "After syncing, Apple Music has other songs than the plan expected"
+    )
+
+
 async def test_verify_read_failure_is_not_empty(world: World) -> None:
     runner = world.runner()
     original = world.apple.read_playlist

@@ -1,5 +1,5 @@
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -51,6 +51,7 @@ class FakeConnector:
         self._truncated: dict[str, str | None] = {}
         self._write_failures: dict[type, list[bool]] = {}
         self._dropped: set[str] = set()
+        self._substitutes: dict[str, Track] = {}
         self._search_failures = 0
         self._versions: dict[str, int] = {}
         self._created = 0
@@ -80,6 +81,11 @@ class FakeConnector:
 
     def drop_adds(self, track_ids: Iterable[str]) -> None:
         self._dropped.update(track_ids)
+
+    def substitute_adds(self, substitutes: Mapping[str, Track]) -> None:
+        """Adding a key stores its track instead, as Apple does when it files
+        a song under another catalog id."""
+        self._substitutes.update(substitutes)
 
     def fail_search(self, times: int = 1) -> None:
         self._search_failures = times
@@ -190,7 +196,9 @@ class FakeConnector:
         match op:
             case AddTracks():
                 for tid in op.track_ids:
-                    if tid not in self._dropped:
+                    if tid in self._substitutes:
+                        entries.append(PlaylistEntry(self._substitutes[tid], now))
+                    elif tid not in self._dropped:
                         entries.append(PlaylistEntry(self._resolve(snap, tid), now))
             case Reorder():
                 current = Counter(e.track.track_id for e in entries)
