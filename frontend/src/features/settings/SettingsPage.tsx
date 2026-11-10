@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { DONATE_URL } from "@/config";
 import { useBulkPatchSyncs } from "@/features/syncs/useSync";
 import { DefaultScheduleDialog, type DefaultScheduleImpact } from "./DefaultScheduleDialog";
+import { ExperimentalFlags } from "./ExperimentalFlags";
 import { useSettings } from "./useSettings";
 
 const DEFAULT_BACKUP_SCHEDULE = "0 3 * * *";
@@ -237,6 +238,7 @@ export function SettingsPage() {
       <h1 className="text-2xl font-semibold">Settings</h1>
       <QueryError query={settings} />
       {settings.data ? <SettingsForm settings={settings.data} /> : null}
+      <ExperimentalFlags />
       {DONATE_URL ? (
         <footer className="text-sm">
           <ExternalLink href={DONATE_URL}>Support LinerSync</ExternalLink>

@@ -808,6 +808,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Flags */
+        get: operations["list_flags_api_settings_flags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/flags/{flag_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Flag */
+        put: operations["put_flag_api_settings_flags__flag_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats": {
         parameters: {
             query?: never;
@@ -1578,6 +1612,41 @@ export interface components {
          * @enum {string}
          */
         FieldKind: "text" | "secret" | "multiline_secret";
+        /** FlagIn */
+        FlagIn: {
+            /** On */
+            on: boolean;
+        };
+        /** FlagOut */
+        FlagOut: {
+            /** Affected Syncs */
+            affected_syncs: components["schemas"]["FlagSyncOut"][];
+            /** Confirm */
+            confirm: string;
+            /** Description */
+            description: string;
+            /** Flag Id */
+            flag_id: string;
+            /** Locked By */
+            locked_by: string;
+            /** On */
+            on: boolean;
+            /** Service */
+            service: string;
+            /** Service Name */
+            service_name: string;
+            /** Title */
+            title: string;
+            /** Unavailable */
+            unavailable: string;
+        };
+        /** FlagSyncOut */
+        FlagSyncOut: {
+            /** Name */
+            name: string;
+            /** Sync Id */
+            sync_id: string;
+        };
         /** FromPreviewIn */
         FromPreviewIn: {
             /** Picks */
@@ -3802,6 +3871,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_flags_api_settings_flags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagOut"][];
+                };
+            };
+        };
+    };
+    put_flag_api_settings_flags__flag_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flag_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlagOut"];
                 };
             };
             /** @description Validation Error */

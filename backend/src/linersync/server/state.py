@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from linersync.server.auth import LoginThrottle
     from linersync.server.connections import ConnectionManager
     from linersync.server.events import EventHub
+    from linersync.server.flags import FeatureFlags
 
 
 @dataclass
@@ -45,6 +46,7 @@ class AppServices:
     scheduler: SyncScheduler
     settings_store: SqliteSettings
     backups: BackupRepository
+    flags: "FeatureFlags"
 
 
 def get_services(request: Request) -> AppServices:

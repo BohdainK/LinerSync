@@ -29,8 +29,8 @@ class Connector(Protocol):
 `ADD`, `REMOVE`, `REORDER`, `EDIT_METADATA`, `CREATE_PLAYLIST`, `DELETE_PLAYLIST`.
 The planner reads them and degrades honestly. For example, Apple Music's public API can
 only add, so it declares `{READ_ORDER, ADD, CREATE_PLAYLIST}` and syncs into Apple run
-as add only. (With the experimental `LINERSYNC_APPLE_MUSIC_EDITING=on`, web token only,
-it also declares `REMOVE`, `REORDER` and `DELETE_PLAYLIST`: see the Apple Music notes
+as add only. (With the experimental playlist editing flag on, web token only, it also
+declares `REMOVE`, `REORDER` and `DELETE_PLAYLIST`: see the Apple Music notes
 in section 8.) Declare a capability only if `apply` really implements it, and do not
 declare one the service cannot do. The contract suite (section 7) checks both.
 
@@ -121,6 +121,23 @@ setup, a connection test and a factory:
 | `login_expires_at(credentials)` | When the stored login stops working, or `None`. |
 | `create(ctx)` | Builds the `Connector`. |
 | `experimental` | Optional, `False` when absent. `True` for unofficial access that may break at any time; the app shows an "Experimental" badge. Read it with `is_experimental(plugin)`. |
+
+**Feature flags** (`FlagSetup`, optional, `runtime_checkable`) let the user switch part
+of a plugin on or off in Settings, Experimental, without a restart. Apple Music's
+playlist editing is one.
+
+- `feature_flags() -> tuple[FeatureFlag, ...]` reports each flag as it is now: `key`,
+  `title`, `description`, `on`, and optionally `confirm` (asked before turning it on),
+  `unavailable` (why it can't be turned on with this server's setup), `locked_by` (the
+  environment variable that fixes it) and `affects_full_syncs` (the confirm dialog
+  lists syncs into this service in full mode).
+- `set_flag(key, on)` changes it; `KeyError` for an unknown key, `FlagUnavailable` when
+  it is locked or can't be turned on here.
+
+The server stores each value as `"<service>.<key>"`, sets every unlocked flag from it at
+startup (absent means off) and calls `set_flag` again when the user changes it. So
+`capabilities` must be computed from the current value (a property), and `create` must
+read it when it builds the connector: connectors are built per job, plugins once.
 
 `ConnectorContext` carries what a plugin needs and nothing global: a `CredentialStore`
 (`ports/credentials.py`), a `QuotaRecorder` (`ports/quota.py`), a `Clock`,

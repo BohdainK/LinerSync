@@ -7,6 +7,7 @@ import type {
   ChangeOut,
   ConnectionOut,
   DestinationOut,
+  FlagOut,
   HomeOut,
   JobOut,
   PlaylistOut,
@@ -224,6 +225,22 @@ export function settingsOut(o: Partial<SettingsOut> = {}): SettingsOut {
     breaker_cooldown_minutes: 30,
     backup_schedule: null,
     backup_versions_kept: 10,
+    ...o,
+  };
+}
+
+export function flagOut(o: Partial<FlagOut> = {}): FlagOut {
+  return {
+    flag_id: "apple_music.editing",
+    service: "apple_music",
+    service_name: "Apple Music",
+    title: "Apple Music playlist editing",
+    description: "Experimental. It only works by borrowing the web player's token.",
+    on: false,
+    confirm: "Syncs into Apple Music in full mode will start removing and reordering songs the sync added.",
+    unavailable: "",
+    locked_by: "",
+    affected_syncs: [],
     ...o,
   };
 }

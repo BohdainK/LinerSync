@@ -46,6 +46,7 @@ from linersync.server.config import ServerConfig
 from linersync.server.connections import ConnectionManager
 from linersync.server.environment import ServerJobEnvironment
 from linersync.server.events import EventHub
+from linersync.server.flags import FeatureFlags
 from linersync.server.state import AppServices
 from linersync.server.web import mount_web
 
@@ -69,6 +70,8 @@ def create_app(
     credentials = SqliteCredentials(engine, key)
     quota = SqliteQuota(engine)
     settings_store = SqliteSettings(engine)
+    flags = FeatureFlags(used_registry, settings_store)
+    flags.apply_stored()
     connections = ConnectionManager(
         used_registry,
         credentials,
@@ -174,6 +177,7 @@ def create_app(
         scheduler=scheduler,
         settings_store=settings_store,
         backups=backups,
+        flags=flags,
     )
     app.add_middleware(SameOriginMiddleware, public_origin=config.public_origin)
     app.include_router(auth.router)

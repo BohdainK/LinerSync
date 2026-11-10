@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from linersync.adapters.fake.plugin import FakePlugin
 from linersync.adapters.memory.runtime import FixedClock
 from linersync.domain.capabilities import Capability
 from linersync.domain.jobs import JobStatus, SyncJob
@@ -713,6 +714,7 @@ def test_cannot_copy_to_source_without_add(app_factory: AppFactory) -> None:
         before = w.client.get(f"/api/syncs/{sync_id}").json()["destinations"][0]
         assert before["can_copy_to_source"] is True
         plugin = services(w.client).registry.plugins[ServiceId("fake_a")]
+        assert isinstance(plugin, FakePlugin)
         plugin.capabilities = plugin.capabilities - {Capability.ADD}
         out = w.client.get(f"/api/syncs/{sync_id}").json()["destinations"][0]
     assert out["can_copy_to_source"] is False
@@ -813,6 +815,7 @@ def test_copy_to_source_refused(app_factory: AppFactory) -> None:
         no_member = w.client.post(_copy_url(sync_id, "dst9"), json={})
         no_sync = w.client.post(_copy_url("nope"), json={})
         plugin = services(w.client).registry.plugins[ServiceId("fake_a")]
+        assert isinstance(plugin, FakePlugin)
         plugin.capabilities = plugin.capabilities - {Capability.ADD}
         cant_add = w.client.post(_copy_url(sync_id), json={})
     assert not_added.status_code == 422

@@ -31,6 +31,7 @@ export type EstimateIn = components["schemas"]["EstimateIn"];
 export type EstimateOut = components["schemas"]["EstimateOut"];
 export type ExportOut = components["schemas"]["ExportOut"];
 export type FieldKind = components["schemas"]["FieldKind"];
+export type FlagOut = components["schemas"]["FlagOut"];
 export type HomeOut = components["schemas"]["HomeOut"];
 export type JobOut = components["schemas"]["JobOut"];
 export type JobProgressOut = components["schemas"]["JobProgressOut"];

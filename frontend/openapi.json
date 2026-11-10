@@ -1443,6 +1443,98 @@
         "title": "FieldKind",
         "type": "string"
       },
+      "FlagIn": {
+        "properties": {
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ],
+        "title": "FlagIn",
+        "type": "object"
+      },
+      "FlagOut": {
+        "properties": {
+          "affected_syncs": {
+            "items": {
+              "$ref": "#/components/schemas/FlagSyncOut"
+            },
+            "title": "Affected Syncs",
+            "type": "array"
+          },
+          "confirm": {
+            "title": "Confirm",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "flag_id": {
+            "title": "Flag Id",
+            "type": "string"
+          },
+          "locked_by": {
+            "title": "Locked By",
+            "type": "string"
+          },
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "service_name": {
+            "title": "Service Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unavailable": {
+            "title": "Unavailable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flag_id",
+          "service",
+          "service_name",
+          "title",
+          "description",
+          "on",
+          "confirm",
+          "unavailable",
+          "locked_by",
+          "affected_syncs"
+        ],
+        "title": "FlagOut",
+        "type": "object"
+      },
+      "FlagSyncOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sync_id": {
+            "title": "Sync Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sync_id",
+          "name"
+        ],
+        "title": "FlagSyncOut",
+        "type": "object"
+      },
       "FromPreviewIn": {
         "properties": {
           "picks": {
@@ -5526,6 +5618,77 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/settings/flags": {
+      "get": {
+        "operationId": "list_flags_api_settings_flags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FlagOut"
+                  },
+                  "title": "Response List Flags Api Settings Flags Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Flags"
+      }
+    },
+    "/api/settings/flags/{flag_id}": {
+      "put": {
+        "operationId": "put_flag_api_settings_flags__flag_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "flag_id",
+            "required": true,
+            "schema": {
+              "title": "Flag Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlagIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlagOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Flag"
       }
     },
     "/api/stats": {

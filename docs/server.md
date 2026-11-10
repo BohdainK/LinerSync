@@ -34,10 +34,34 @@ and a message naming the variable.
 | `LINERSYNC_WEB_DIR` | unset | Folder with the built web app (`frontend/dist`). Unset: the server serves only the API. The Docker image sets it. |
 | `LINERSYNC_YTMUSIC_AUTH` | `headers` | How YouTube Music signs in. `headers`: the Cookie header of a signed-in music.youtube.com tab, pasted in the setup steps. `oauth`: your own Google Cloud OAuth client ("TVs and Limited Input devices"), signed in with a code. Both are unofficial: YouTube Music has no public API. After switching, set YouTube Music up again. |
 | `LINERSYNC_APPLE_MUSIC_AUTH` | `web` | How Apple Music signs in. `web`: the token Apple's web player uses plus your `media-user-token` cookie. Unofficial, and it can break when Apple changes music.apple.com, but needs no developer membership. `developer`: your own MusicKit key and MusicKit sign-in. After switching, set Apple Music up again: the two modes' user tokens are not interchangeable. |
-| `LINERSYNC_APPLE_MUSIC_EDITING` | `off` | **Experimental.** `on` lets LinerSync remove and reorder songs and delete playlists on Apple Music, so syncs into Apple can run in full and undo can clean up there. This only works by borrowing the web player's token: the writes go to the web player's own host (`amp-api.music.apple.com`), and Apple's official API can't do them. So it needs `LINERSYNC_APPLE_MUSIC_AUTH=web`; with `developer` the server refuses to start. It can stop working, or behave unexpectedly, whenever Apple changes its web player. Off: Apple Music is add only, in either auth mode. Turning it on makes existing syncs into Apple start removing and reordering songs the sync added. |
+| `LINERSYNC_APPLE_MUSIC_EDITING` | unset | **Experimental.** Normally you turn Apple Music playlist editing on or off in the app, under Settings, Experimental (see [Experimental features](#experimental-features)). Set this to `on` or `off` to fix it from the server instead: the Settings toggle then shows the value as set by the server and can't change it. `on` needs `LINERSYNC_APPLE_MUSIC_AUTH=web`; with `developer` the server refuses to start. |
 
 Syncs without their own schedule use the default schedule `0 */6 * * *` (every six
 hours). You can change it in the app's settings.
+
+## Experimental features
+
+The Experimental section of the app's Settings page lists switches that services offer.
+A change applies at once, without restarting the server: the next run, plan or undo uses
+it. A run already going finishes as it started. The choice is stored in the database, so
+it survives restarts and upgrades.
+
+If a switch has an environment variable and that variable is set, the variable wins:
+the app shows the value as set by the server, and you change it by changing the
+variable and restarting. Unset the variable to choose in the app again.
+
+**Apple Music playlist editing** (off by default; `LINERSYNC_APPLE_MUSIC_EDITING`). On,
+LinerSync can remove and reorder songs and delete playlists on Apple Music, so syncs
+into Apple can run in full and undo can clean up there. This only works by borrowing the
+web player's token: the writes go to the web player's own host
+(`amp-api.music.apple.com`), and Apple's official API can't do them. So it needs
+`LINERSYNC_APPLE_MUSIC_AUTH=web`. With `developer` (your own MusicKit key) the toggle is
+disabled and says why; switching sign-in methods means setting Apple Music up again. It
+can stop working, or behave unexpectedly, whenever Apple changes its web player. Off,
+Apple Music is add only, in either sign-in method. Turning it on makes existing syncs
+into Apple Music in full mode start removing and reordering songs the sync added, so
+the app asks first and lists those syncs. A setting saved as on while the sign-in method
+can't use it stays off.
 
 ## Access setups
 

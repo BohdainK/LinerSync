@@ -1,4 +1,5 @@
-"""Experimental playlist editing (LINERSYNC_APPLE_MUSIC_EDITING=on): remove,
+"""Experimental playlist editing (the Settings flag, or
+LINERSYNC_APPLE_MUSIC_EDITING=on): remove,
 reorder and delete through the web player's host, with its token only."""
 
 import pytest
@@ -9,10 +10,13 @@ from linersync.adapters.connectors.apple_music.connector import (
 )
 from linersync.adapters.connectors.apple_music.plugin import (
     EDITING_ENV,
+    EDITING_FLAG,
     AppleMusicPlugin,
     AuthMode,
+    editing_env,
     editing_from_env,
 )
+from linersync.adapters.connectors.kit.plugin import FlagSetup, FlagUnavailable
 from linersync.domain.capabilities import Capability
 from linersync.domain.operations import Removal, RemoveTracks, Reorder
 from linersync.ports.errors import WriteFailed
@@ -79,6 +83,79 @@ def test_setup_guide_says_it_is_experimental() -> None:
     assert (
         "Experimental" not in AppleMusicPlugin(AuthMode.WEB).setup_guide().steps[0].body
     )
+
+
+def test_unset_env_leaves_it_to_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(EDITING_ENV, raising=False)
+    assert editing_env(AuthMode.WEB) is None
+    monkeypatch.setenv(EDITING_ENV, "off")
+    assert editing_env(AuthMode.WEB) is False
+    assert editing_env(AuthMode.DEVELOPER) is False
+
+
+# -- the Settings flag ----------------------------------------------------------
+
+
+def test_the_flag_says_what_it_is() -> None:
+    plugin = AppleMusicPlugin(AuthMode.WEB)
+    assert isinstance(plugin, FlagSetup)
+    (flag,) = plugin.feature_flags()
+    assert (flag.key, flag.on, flag.unavailable, flag.locked_by) == (
+        EDITING_FLAG,
+        False,
+        "",
+        "",
+    )
+    assert "Experimental" in flag.description
+    assert "web player" in flag.description
+    assert "official API can't" in flag.description
+    assert "developer (MusicKit) sign-in" in flag.description
+    assert "full mode" in flag.confirm and "removing and reordering" in flag.confirm
+    assert flag.affects_full_syncs
+
+
+def test_the_flag_switches_capabilities_and_connectors() -> None:
+    plugin = AppleMusicPlugin(AuthMode.WEB)
+    plugin.set_flag(EDITING_FLAG, True)
+    assert plugin.capabilities == EDITING_CAPABILITIES
+    assert plugin.feature_flags()[0].on
+    assert "Experimental" in plugin.setup_guide().steps[0].body
+    plugin.set_flag(EDITING_FLAG, False)
+    assert plugin.capabilities == CAPABILITIES
+
+
+async def test_a_connector_built_after_turning_it_on_edits() -> None:
+    plugin = AppleMusicPlugin(AuthMode.WEB)
+    plugin.set_flag(EDITING_FLAG, True)
+    sim = AppleMusicSim(catalog=CATALOG)
+    pid = sim.add_playlist("Mix", [X, Y])
+    connector, _, _ = make(sim, plugin=plugin)
+    await connector.apply(pid, RemoveTracks("op", (Removal(X, 0),)))
+    assert sim.ids(pid) == [Y]
+
+
+def test_the_flag_is_unavailable_with_the_official_api() -> None:
+    plugin = AppleMusicPlugin(AuthMode.DEVELOPER)
+    (flag,) = plugin.feature_flags()
+    assert "LINERSYNC_APPLE_MUSIC_AUTH=developer" in flag.unavailable
+    with pytest.raises(FlagUnavailable):
+        plugin.set_flag(EDITING_FLAG, True)
+    plugin.set_flag(EDITING_FLAG, False)  # already off: fine
+    assert plugin.capabilities == CAPABILITIES
+
+
+def test_the_env_var_locks_the_flag() -> None:
+    plugin = AppleMusicPlugin(AuthMode.WEB, editing=True, editing_locked=True)
+    assert plugin.feature_flags()[0].locked_by == EDITING_ENV
+    with pytest.raises(FlagUnavailable, match=EDITING_ENV):
+        plugin.set_flag(EDITING_FLAG, False)
+    plugin.set_flag(EDITING_FLAG, True)  # no change: fine
+    assert plugin.editing
+
+
+def test_unknown_flag_key() -> None:
+    with pytest.raises(KeyError):
+        AppleMusicPlugin(AuthMode.WEB).set_flag("nope", True)
 
 
 # -- writes ---------------------------------------------------------------------

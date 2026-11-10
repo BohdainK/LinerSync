@@ -644,6 +644,30 @@ class SettingsOut(BaseModel):
     backup_versions_kept: int
 
 
+class FlagSyncOut(BaseModel):
+    sync_id: str
+    name: str
+
+
+class FlagOut(BaseModel):
+    flag_id: str
+    service: str
+    service_name: str
+    title: str
+    description: str
+    on: bool
+    confirm: str
+    unavailable: str  # why it can't be turned on here; "" = it can
+    locked_by: str  # the environment variable that fixes it; "" = none
+    # Syncs whose behaviour changes when it is on: they sync into this
+    # service in full mode.
+    affected_syncs: list[FlagSyncOut]
+
+
+class FlagIn(BaseModel):
+    on: bool
+
+
 class BackupRunOut(BaseModel):
     backup_id: str
     service: str

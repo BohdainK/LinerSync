@@ -16,6 +16,7 @@ function serve(put?: (body: unknown) => Response) {
   const bodies: unknown[] = [];
   server.use(
     http.get("*/api/settings", () => HttpResponse.json(settingsOut({ brake_max_fraction: 0.2 }))),
+    http.get("*/api/settings/flags", () => HttpResponse.json([])),
     http.put("*/api/settings", async ({ request }) => {
       const body = await request.json();
       bodies.push(body);

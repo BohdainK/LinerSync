@@ -112,8 +112,14 @@ class ConnectorPlugin(Protocol):
     service: ServiceId
     display_name: str
     category: Category
-    capabilities: frozenset[Capability]
     limits: ConnectorLimits
+
+    @property
+    def capabilities(self) -> frozenset[Capability]:
+        """Read on every use: a feature flag may change it while the server
+        runs (FlagSetup)."""
+        ...
+
     quota_policy: QuotaPolicy
 
     def setup_guide(self) -> SetupGuide: ...
@@ -143,6 +149,41 @@ def is_login_expiry_estimated(plugin: ConnectorPlugin) -> bool:
     means False) when ``login_expires_at`` is a guess rather than a deadline
     the service announced, so the app words it as a reminder."""
     return bool(getattr(plugin, "login_expiry_estimated", False))
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureFlag:
+    """A switch the user can flip on the Settings page, as it is right now."""
+
+    key: str  # unique within the plugin; the app's id is "<service>.<key>"
+    title: str
+    description: str
+    on: bool
+    # Asked before turning it on; "" turns it on without asking.
+    confirm: str = ""
+    # Why it can't be turned on with this server's setup; "" = it can.
+    unavailable: str = ""
+    # The environment variable that fixes its value; "" = the user decides.
+    locked_by: str = ""
+    # Turning it on changes what syncs into this service do in full mode.
+    affects_full_syncs: bool = False
+
+
+class FlagUnavailable(ValueError):
+    """The flag is locked by the server or can't be turned on here."""
+
+
+@runtime_checkable
+class FlagSetup(Protocol):
+    """Optional: a plugin with feature flags. The server sets each one from
+    the stored settings at startup and again whenever the user changes it,
+    so ``capabilities`` and ``create`` must read the current value."""
+
+    def feature_flags(self) -> tuple[FeatureFlag, ...]: ...
+
+    def set_flag(self, key: str, on: bool) -> None:
+        """KeyError for an unknown key; FlagUnavailable when it can't be set."""
+        ...
 
 
 @runtime_checkable

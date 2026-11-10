@@ -15,3 +15,5 @@ class AppSettings:
     engine: EngineConfig = field(default_factory=EngineConfig)
     backup_schedule: str | None = DEFAULT_BACKUP_SCHEDULE
     backup_versions_kept: int = DEFAULT_VERSIONS_KEPT
+    # Feature flags the user set, by "<service>.<key>"; absent = off.
+    flags: dict[str, bool] = field(default_factory=dict)

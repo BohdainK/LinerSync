@@ -3,6 +3,7 @@ export const keys = {
   home: ["home"],
   attention: ["attention"],
   settings: ["settings"],
+  flags: ["settings", "flags"],
   connections: ["connections"],
   connection: (service: string) => ["connections", service],
   guide: (service: string) => ["connections", service, "guide"],
